@@ -10,6 +10,7 @@
     "dev:web": "pnpm --filter web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "db:up": "docker compose -f docker-compose.dev.yml up -d"
+    "db:up": "docker compose -f docker-compose.dev.yml up -d",
+    "test": "pnpm -r test"
   }
 }

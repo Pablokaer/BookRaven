@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: readsync
+          POSTGRES_PASSWORD: readsync
+          POSTGRES_DB: readsync_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U readsync -d readsync_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://readsync:readsync@localhost:5432/readsync_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - name: API tests (against the Postgres service)
+        run: pnpm --filter api test
+      - name: Web unit tests
+        run: pnpm --filter web test
+      - run: pnpm build

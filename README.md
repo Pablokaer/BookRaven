@@ -1,28 +1,24 @@
 # ReadSync
 
-Self-hosted reader for PDF and ebooks (EPUB, MOBI, AZW3, FB2, CBZ) that saves your exact reading position and lets you continue on any device: web browser or Android app.
+Self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT) that saves your exact reading position and lets you continue on any device: web browser, Android app, or e-ink readers through KOReader.
 
-## Features (MVP)
+## Features
 
-- **Accounts:** email + password, plus Google sign-in on the web. Sign-ups can be closed with `ALLOW_SIGNUP=false`.
-- **Library:** upload by button or drag-and-drop. Title, author and cover are read from the file. Duplicates are detected by SHA-256 hash, and you can search and delete books.
-- **PDF reader** (pdf.js):
-  - Loads large files in pieces (HTTP Range requests)
-  - Fit to whole page or page width
-  - Light / sepia / dark / inverted themes, plus a contrast setting
-- **Ebook reader** (foliate-js):
-  - 8 fonts, bundled so they work offline (Literata, Merriweather, Source Sans, Atkinson Hyperlegible, OpenDyslexic, …)
-  - Font size, line spacing, margins, justification
-  - 1 or 2 columns
-  - Themes, including **Inverted** (white text on a black background), and a contrast setting
-  - Table of contents
-- **Page turning:** arrow keys / PageUp / PageDown / Space; swipe left or right; tap the left or right third of the page (the middle toggles the menu). Android's back button is handled.
+- **Accounts:** email + password (change it in the profile, or reset it by email), plus Google sign-in on the web. Sign-ups can be closed with `ALLOW_SIGNUP=false`.
+- **Library dashboard:** upload by button or drag-and-drop (title, author and cover are read from the file; duplicates are detected by SHA-256). Collections, tags, favorites, filters by type, sorting, grid or list, a yearly reading goal, and a 2 GB storage limit per account (`UPLOAD_QUOTA_MB`; administrators are unlimited).
+- **Ebook reader** (foliate-js): 8 bundled fonts, size, line and letter spacing, margins, page width, one or two pages, themes (including inverted) and contrast; table of contents and full-text search.
+- **PDF reader** (pdf.js): streams large files with Range requests, fit page or width, color themes, and a selectable text layer so PDFs get highlights, notes and search too.
+- **Comics:** CBZ, CBR (RAR), CB7 (7-Zip) and CBT (TAR), unpacked in the browser (7-Zip compiled to WebAssembly); natural page order, ComicInfo.xml metadata, two-page spreads with the cover alone, automatic detection of double-page scans, manga right-to-left, a vertical-scroll (webtoon) layout and a magnifier.
+- **Highlights and notes** in four colors, exported as Markdown; **dictionary** (Wiktionary) and **translation** (Chrome's on-device translator, MyMemory or a self-hosted LibreTranslate) for selected text.
 - **Progress sync** (the core feature):
-  - The position is an **EPUB CFI** for ebooks (exact even when font size or screen changes) and `page:N` for PDFs.
+  - The position is an **EPUB CFI** for ebooks (exact even when font size or screen changes), `page:N` for PDFs, and the page for comics.
   - Positions are saved with a 1.5 s delay, kept in a local outbox while offline, and sent immediately when the app goes to the background or the tab closes.
   - The server keeps the **newest** position, judged by when the page was actually reached. A device that comes back online late can't overwrite newer progress.
-  - Live updates over **Server-Sent Events**: if you read ahead on another device, the open reader shows *"You reached 56% on Android phone. Jump there?"*. The same check runs when you return to the app.
-  - Reader settings also sync across devices.
+  - Live updates over **Server-Sent Events**: if you read ahead on another device, the open reader offers to jump there. Reader settings sync too.
+- **Sharing:** share a book by link, publish it to the **Public Library** (everyone on the server can read or download it), request books there and vote on requests, and read together in **book clubs** (members see each other's progress and discuss passages).
+- **Other apps:** an **OPDS** catalog and a **KOReader** progress-sync server, with per-device app passwords.
+- **Offline:** the web app opens without a connection and shows your saved library; books you opened (or saved for offline) can be read.
+- **Administration:** accounts (storage limits, blocking, temporary passwords, deletion) and content reports on public books (dismiss, unpublish, block the file or delete it everywhere).
 
 ## Stack
 
@@ -33,7 +29,8 @@ Self-hosted reader for PDF and ebooks (EPUB, MOBI, AZW3, FB2, CBZ) that saves yo
 | Android | Capacitor 8 (same codebase; bearer-token auth) |
 | API | Node 22, Fastify 5, Better Auth (email + Google, bearer plugin) |
 | Database | PostgreSQL 16 (`pg` + plain SQL migrations) |
-| Files | Local disk, content-addressed (`data/books/ab/cd/<sha256>`), behind a `storage.ts` module that can be swapped for S3/Garage |
+| Files | Content-addressed (`books/ab/cd/<sha256>`) on local disk or any S3-compatible bucket (Garage, MinIO, AWS, R2) |
+| Tests | Vitest (API integration tests against PostgreSQL, web unit tests), GitHub Actions CI |
 | Realtime | SSE (`GET /api/events`) |
 | Proxy / TLS | Caddy (automatic HTTPS) |
 
@@ -123,25 +120,49 @@ pnpm android:open                      # opens Android Studio → Run / Build AP
 - The API already allows the Capacitor origins (`https://localhost`, `capacitor://localhost`) for CORS.
 - **Google sign-in on Android:** Google blocks OAuth inside embedded WebViews, so the app hides the Google button for now and you sign in with email + password. Adding it later means a native Google Sign-In plugin that returns an ID token, which you then pass to `authClient.signIn.social({ provider: "google", idToken: { token } })`.
 
+## Other reading apps (OPDS and KOReader)
+
+Create an **app password** in *Profile → Other apps* for each device; the account password is never accepted by these endpoints.
+
+- **OPDS catalog:** `https://<your server>/opds` (KOReader, Moon+ Reader, Thorium, Calibre…). Username: your email, password: the app password. Browse your library, collections and the Public Library, search, and download.
+- **KOReader progress sync:** in KOReader, *Tools → Progress sync → Custom sync server* `https://<your server>/kosync`, then *Login* with your email and the app password, and choose *Binary* document matching. Books are matched by KOReader's partial MD5. PDFs and comics sync page by page in both directions. For ebooks, KOReader positions can't be converted to CFIs: ReadSync offers to jump to KOReader's percentage, and KOReader devices keep exact positions among themselves.
+
+## Tests
+
+```bash
+createdb -U readsync readsync_test   # once; the tests reset this database on every run
+pnpm test                            # API integration tests + web unit tests
+```
+
+CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build on every push.
+
 ## API overview
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/config` | public: Google enabled, sign-up open, max upload |
-| * | `/api/auth/*` | Better Auth (sign-up/in/out, Google callback, session) |
-| GET | `/api/books` | library with each book's latest progress |
-| POST | `/api/books` | multipart: `title`, `author`, `cover`, `file` |
-| GET/PATCH/DELETE | `/api/books/:id` | |
-| GET | `/api/books/:id/file` | Range requests, ETag |
-| GET | `/api/books/:id/cover` | |
-| GET/PUT | `/api/books/:id/progress` | PUT `{locator, percentage, label, deviceId, deviceName, clientUpdatedAt}`; newest wins |
+| GET | `/api/config` | public: Google enabled, sign-up open, max upload, password reset / dictionary / translation available |
+| * | `/api/auth/*` | Better Auth (sign-up/in/out, Google callback, session, change/reset password) |
+| GET | `/api/me` | role and storage use |
+| GET/POST | `/api/books` | library; multipart upload `title`, `author`, `cover`, `file` |
+| GET/PATCH/DELETE | `/api/books/:id` | PATCH: title, author, collection, tags, favorite, public |
+| GET | `/api/books/:id/file`, `/cover` | Range requests, ETag (`?download=1` to save) |
+| GET/PUT | `/api/books/:id/progress` | newest wins |
+| * | `/api/books/:id/highlights`, `/api/highlights/:id` | highlights and notes |
+| * | `/api/folders`, `/api/books/:id/share`, `/api/shares/:token` | collections, share links |
+| * | `/api/public/*`, `/api/requests/*` | public library (download, add, report) and book requests |
+| * | `/api/clubs/*` | book clubs, invites, messages |
+| GET/POST | `/api/dictionary`, `/api/translate` | lookups for selected text |
+| * | `/api/app-passwords` | passwords for OPDS / KOReader |
+| * | `/api/admin/*` | administrators: stats, accounts, reports, blocked files |
 | GET/PUT | `/api/settings` | reader preferences (JSON) |
-| GET | `/api/events` | SSE: `progress.updated`, `settings.updated`, `book.*` |
+| GET | `/api/events` | SSE: progress, settings, books, public library, requests, clubs |
+| * | `/opds/*`, `/kosync/*` | OPDS catalog and KOReader sync (app-password auth) |
 
 ## Known limitations / next steps
 
 - DRM-protected books (bought on Kindle, Kobo, …) can't be opened. Only DRM-free files work.
-- EPUB, PDF and the sync flow were tested end-to-end in a browser. MOBI/AZW3/FB2/CBZ rely on foliate-js and were only covered by format-detection checks. Try a few of your own files.
-- Offline mode is partial. Opened ebooks are cached in Cache Storage and progress is queued while offline, but the library list and PDFs still need the network. Full offline support is the next step.
-- Not built yet: bookmarks, highlights and notes, search inside a book, volume-key page turning on Android, reading stats.
+- The Android app has not been rebuilt and tested with the latest web changes; run `pnpm android:sync` and try downloads (saved to *Documents/ReadSync*) on a device.
+- **Google sign-in on Android** still needs a native Google Sign-In plugin and an Android OAuth client in Google Cloud (see *Android app* above).
+- Comics: CBR support relies on 7-Zip's RAR decoder; password-protected archives can't be opened.
+- KOReader can't receive ReadSync positions for reflowable ebooks (only PDFs and comics), see above.
 - SSE runs in memory, which is fine for one API instance. To run several, send events through Postgres `LISTEN/NOTIFY`.
