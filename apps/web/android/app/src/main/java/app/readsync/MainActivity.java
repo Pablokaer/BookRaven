@@ -1,4 +1,4 @@
-package com.finperiti.readsync;
+package app.readsync;
 
 import com.getcapacitor.BridgeActivity;
 

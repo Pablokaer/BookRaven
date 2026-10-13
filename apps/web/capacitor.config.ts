@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.finperiti.readsync",
+  appId: "app.readsync",
   appName: "ReadSync",
   webDir: "dist",
   android: {

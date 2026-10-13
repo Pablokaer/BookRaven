@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.finperiti.readsync"
+    namespace = "app.readsync"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.finperiti.readsync"
+        applicationId "app.readsync"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
