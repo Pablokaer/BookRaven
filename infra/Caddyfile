@@ -1,0 +1,28 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# API (auth, books, files, progress, SSE)
+	handle /api/* {
+		reverse_proxy api:3000 {
+			# Server-Sent Events must not be buffered
+			flush_interval -1
+		}
+	}
+
+	# Static frontend (SPA)
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

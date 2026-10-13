@@ -1,0 +1,15 @@
+# Local development: only Postgres. Run the api and web with `pnpm dev`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: readsync
+      POSTGRES_PASSWORD: readsync
+      POSTGRES_DB: readsync
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+
+volumes:
+  pgdata_dev:

@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+/* ---- Design tokens (dark teal library theme) ---- */
+@theme {
+  --color-app: #071315;
+  --color-sidebar: #09191c;
+  --color-card: #102327;
+  --color-elevated: #173137;
+  --color-accent: #16c9b2;
+  --color-accent-hover: #20dfca;
+  --color-primary: #087f78;
+  --color-primary-hover: #0a968e;
+  --color-fg: #f3f7f6;
+  --color-muted: #9baeb2;
+  --color-line: #244045;
+
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 10px 30px -18px rgb(0 0 0 / 0.8);
+  --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(36 64 69 / 0.9);
+
+  --animate-pop: pop 140ms ease-out;
+  --animate-fade: fade 160ms ease-out;
+  --animate-rise: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-slide-in: slide-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-app font-sans text-fg antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-card/60 px-4 py-2.5 text-sm font-medium text-fg transition hover:border-accent/40 hover:bg-elevated active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-elevated hover:text-fg active:scale-[0.98];
+  }
+  .icon-btn {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted transition hover:bg-elevated hover:text-fg active:scale-95;
+  }
+  .surface {
+    @apply rounded-2xl border border-line/80 bg-card/70 shadow-card;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-sm text-muted transition hover:border-accent/40 hover:text-fg;
+  }
+  .pill-on {
+    @apply border-accent/50 bg-accent/12 text-accent hover:text-accent;
+  }
+  .btn-icon {
+    @apply inline-flex h-10 min-w-10 items-center justify-center rounded-full px-2 text-lg hover:bg-black/10 dark:hover:bg-white/10;
+  }
+  .input {
+    @apply rounded-xl border border-line bg-card px-3 py-2 text-sm text-fg outline-none transition placeholder:text-muted/70 focus:border-accent/70 focus:ring-2 focus:ring-accent/20;
+  }
+  .chip {
+    @apply rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700;
+  }
+  .chip-on {
+    @apply border-teal-600 bg-teal-50 text-teal-900 dark:bg-teal-950 dark:text-teal-100;
+  }
+  .panel {
+    @apply absolute top-0 bottom-0 z-40 space-y-5 overflow-y-auto bg-white p-5 pt-[calc(env(safe-area-inset-top)+20px)] text-neutral-900 shadow-2xl dark:bg-neutral-900 dark:text-neutral-100;
+  }
+  .reader-bar {
+    @apply absolute inset-x-0 z-20 bg-neutral-900/90 text-white backdrop-blur transition duration-200;
+  }
+}
+
+/* EPUB reader: the page (or two-page spread) is centered; the host paints the area around it. */
+.epub-host {
+  container-type: size;
+}
+.epub-host > foliate-view {
+  width: 100%;
+  max-width: calc(var(--page-width, 720px) * var(--page-count, 1));
+  margin-inline: auto;
+}
+/* foliate-js shows a single page in portrait, so the page is never wider than one column. */
+@container (orientation: portrait) {
+  .epub-host > foliate-view {
+    max-width: var(--page-width, 720px);
+  }
+}
