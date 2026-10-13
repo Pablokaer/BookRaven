@@ -1,10 +1,11 @@
 import type { FoliateView, RelocateDetail } from "foliate-js/view.js";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Overlayer } from "foliate-js/overlayer.js";
 import { downloadBook } from "../lib/books";
-import { isComicFormat, makeComicBook, openComicArchive, type ComicArchive } from "../lib/comics";
+import { cachedWidePages, getComicArchive, isComicFormat, makeComicBook, scanWidePages } from "../lib/comics";
 import { fontFaceCss, fontFamily } from "../lib/fonts";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
+import { attachLens } from "../lib/lens";
 import { THEMES, type ReaderSettings } from "../lib/settings";
 import { USER_NAV_WINDOW_MS, zoneFromX, type ReaderHandle, type ReaderProps } from "./types";
 
@@ -104,11 +105,13 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   const selectionShown = useRef(false);
   /** Last position, so the book can be reopened in place when the comic layout changes. */
   const lastLocator = useRef<{ bookId: string; cfi: string } | null>(null);
-  /** Extracted comic archive, kept across reopenings (RAR/7z extraction is not free). */
-  const comicArchive = useRef<{ bookId: string; archive: ComicArchive } | null>(null);
   const comic = isComicFormat(props.book.format);
-  // Spreads and reading direction are fixed when foliate opens a book, so changing them reopens it.
-  const comicLayout = comic ? `${props.settings.comicSpreads}-${props.settings.comicDirection}` : "";
+  /** Comic pages that are double-page scans (null until known); they get a spread of their own. */
+  const [wide, setWide] = useState<number[] | null>(() => (comic ? cachedWidePages(props.book.id) : null));
+  const wideRef = useRef(wide);
+  wideRef.current = wide;
+  // Spreads, reading direction and wide pages are fixed when foliate opens a book, so changing them reopens it.
+  const comicLayout = comic ? `${props.settings.comicSpreads}-${props.settings.comicDirection}-${wide?.join(",") ?? ""}` : "";
   // Keep latest props without re-running the open effect.
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -176,19 +179,24 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   useEffect(() => {
     let cancelled = false;
     let view: FoliateView | null = null;
+    const scanAbort = new AbortController();
 
     (async () => {
       await import("foliate-js/view.js");
       const { book, settings } = propsRef.current;
       let source: File | object;
+      let scan: (() => void) | null = null;
       if (isComicFormat(book.format)) {
-        if (comicArchive.current?.bookId !== book.id) {
-          const archive = await openComicArchive(await downloadBook(book), book.format);
-          comicArchive.current = { bookId: book.id, archive };
-        }
-        const { archive } = comicArchive.current!;
+        const archive = await getComicArchive(book, () => downloadBook(book));
         const rtl = settings.comicDirection === "auto" ? !!archive.info?.rtl : settings.comicDirection === "rtl";
-        source = makeComicBook(archive, { book, spreads: settings.comicSpreads, rtl });
+        source = makeComicBook(archive, { book, spreads: settings.comicSpreads, rtl, wide: wideRef.current ?? [] });
+        // First time in two-page mode: look for double-page scans in the background.
+        if (settings.comicSpreads && wideRef.current === null) {
+          scan = () =>
+            void scanWidePages(book.id, archive, scanAbort.signal).then((found) => {
+              if (found && !cancelled) setWide(found);
+            });
+        }
       } else {
         source = await downloadBook(book);
       }
@@ -261,13 +269,15 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
 
         doc.addEventListener("keydown", (ev) => propsRef.current.onKeyDown(ev));
         if (isComicFormat(propsRef.current.book.format)) {
+          attachLens(doc, { isActive: () => !!propsRef.current.magnifier });
+          doc.body.style.cursor = propsRef.current.magnifier ? "zoom-in" : "";
           // The fixed-layout renderer has no swipe support: swipe left/right turns the page
           // (the direction follows the finger, so it also feels right for manga).
           let start: { x: number; y: number } | null = null;
           doc.addEventListener("touchstart", (ev) => (start = { x: ev.touches[0]!.clientX, y: ev.touches[0]!.clientY }), { passive: true });
           doc.addEventListener("touchend", (ev) => {
             const t = ev.changedTouches[0];
-            if (!start || !t) return;
+            if (!start || !t || propsRef.current.magnifier) return;
             const dx = t.clientX - start.x;
             const dy = t.clientY - start.y;
             start = null;
@@ -280,6 +290,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
         doc.addEventListener("wheel", mark, { passive: true });
         doc.addEventListener("click", (ev) => {
           if ((ev.target as Element | null)?.closest?.("a")) return;
+          if (propsRef.current.magnifier) return; // taps move the lens
           const sel = doc.getSelection();
           if (sel && !sel.isCollapsed) return;
           const frame = doc.defaultView?.frameElement as HTMLElement | null;
@@ -301,6 +312,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       await view.init({ lastLocation: resumeAt });
       ready.current = true;
       syncHighlights(view);
+      scan?.();
       const lang = view.book.metadata?.language;
       propsRef.current.onReady({
         toc: view.book.toc,
@@ -313,6 +325,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
 
     return () => {
       cancelled = true;
+      scanAbort.abort();
       ready.current = false;
       viewRef.current = null;
       drawn.current.clear();
@@ -332,6 +345,14 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   useEffect(() => {
     if (viewRef.current && ready.current) syncHighlights(viewRef.current);
   }, [props.highlights]);
+
+  // Magnifier on/off: zoom cursor and no scrolling gestures on the pages while it is on.
+  useEffect(() => {
+    for (const { doc } of viewRef.current?.renderer.getContents?.() ?? []) {
+      doc.body.style.cursor = props.magnifier ? "zoom-in" : "";
+      doc.body.style.touchAction = props.magnifier ? "none" : "";
+    }
+  }, [props.magnifier]);
 
   const onHostClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // Clicks inside the book's iframe never reach here; these are on the page margins or around the page.

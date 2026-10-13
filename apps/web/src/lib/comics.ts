@@ -94,6 +94,21 @@ export async function openComicArchive(file: Blob, format: ComicFormat): Promise
   return archive;
 }
 
+/**
+ * The last opened comic stays extracted, so switching between paged and scrolling
+ * modes (or reopening after a layout change) does not unpack a RAR/7z again.
+ */
+let current: { bookId: string; archive: Promise<ComicArchive> } | null = null;
+
+export function getComicArchive(book: Book, file: () => Promise<Blob>): Promise<ComicArchive> {
+  if (current?.bookId !== book.id) {
+    const archive = file().then((f) => openComicArchive(f, book.format as ComicFormat));
+    archive.catch(() => current?.archive === archive && (current = null));
+    current = { bookId: book.id, archive };
+  }
+  return current.archive;
+}
+
 /** Guesses the format of a local file by extension (uploads, before the server checks it). */
 export function comicFormatOfName(name: string): ComicFormat | null {
   const ext = name.toLowerCase().split(".").pop() ?? "";
@@ -102,10 +117,84 @@ export function comicFormatOfName(name: string): ComicFormat | null {
 }
 
 /**
+ * Position of page `index` in the same format foliate-js uses for comic pages
+ * ("epubcfi(/6/<2·(index+1)>)"), so paged and scrolling modes share progress.
+ */
+export const comicLocator = (index: number) => `epubcfi(/6/${(index + 1) * 2})`;
+
+export function comicIndexFromLocator(locator: string | null) {
+  const m = locator ? /^epubcfi\(\/6\/(\d+)/.exec(locator) : null;
+  return m ? Math.max(0, Number(m[1]) / 2 - 1) : 0;
+}
+
+/** Width and height from an image file's header (PNG, JPEG, GIF, WebP), without decoding it. */
+export async function imageSize(blob: Blob): Promise<{ width: number; height: number } | null> {
+  const buf = new Uint8Array(await blob.slice(0, 256 * 1024).arrayBuffer());
+  const view = new DataView(buf.buffer);
+  const ascii = (at: number, len: number) => String.fromCharCode(...buf.subarray(at, at + len));
+  if (buf.length > 24 && ascii(1, 3) === "PNG") return { width: view.getUint32(16), height: view.getUint32(20) };
+  if (ascii(0, 3) === "GIF") return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
+  if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") {
+    const kind = ascii(12, 4);
+    if (kind === "VP8 ") return { width: view.getUint16(26, true) & 0x3fff, height: view.getUint16(28, true) & 0x3fff };
+    if (kind === "VP8L") {
+      const b = view.getUint32(21, true);
+      return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1 };
+    }
+    if (kind === "VP8X") return { width: 1 + (buf[24]! | (buf[25]! << 8) | (buf[26]! << 16)), height: 1 + (buf[27]! | (buf[28]! << 8) | (buf[29]! << 16)) };
+  }
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    // Walk the JPEG segments up to a start-of-frame marker.
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) return null;
+      const marker = buf[i + 1]!;
+      const len = view.getUint16(i + 2);
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) return { width: view.getUint16(i + 7), height: view.getUint16(i + 5) };
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+
+const WIDE_KEY = (bookId: string) => `readsync.comicWide.${bookId}`;
+
+/** Pages already known to be double-page scans (landscape), or null if not scanned yet. */
+export function cachedWidePages(bookId: string): number[] | null {
+  try {
+    const raw = localStorage.getItem(WIDE_KEY(bookId));
+    return raw ? (JSON.parse(raw) as number[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Finds double-page scans (images wider than tall). They are shown on their own in
+ * two-page mode instead of squeezed next to another page. Reads only image headers.
+ */
+export async function scanWidePages(bookId: string, archive: ComicArchive, signal: AbortSignal) {
+  const wide: number[] = [];
+  for (let i = 0; i < archive.pages.length; i++) {
+    if (signal.aborted) return null;
+    const size = await imageSize(await archive.loadPage(archive.pages[i]!.name)).catch(() => null);
+    if (size && size.width > size.height * 1.15) wide.push(i);
+    if (i % 8 === 7) await new Promise((r) => setTimeout(r)); // stay responsive
+  }
+  try {
+    localStorage.setItem(WIDE_KEY(bookId), JSON.stringify(wide));
+  } catch {
+    /* ignore */
+  }
+  return wide;
+}
+
+/**
  * A foliate-js book object for a comic: one fixed-layout section per page image,
  * shown alone or as two-page spreads, left-to-right or right-to-left (manga).
+ * `wide` pages (double-page scans) always get a spread of their own.
  */
-export function makeComicBook(archive: ComicArchive, opts: { book: Book; spreads: boolean; rtl: boolean }) {
+export function makeComicBook(archive: ComicArchive, opts: { book: Book; spreads: boolean; rtl: boolean; wide?: number[] }) {
   const urls = new Map<string, string[]>();
   const load = async (name: string) => {
     const existing = urls.get(name);
@@ -121,7 +210,14 @@ export function makeComicBook(archive: ComicArchive, opts: { book: Book; spreads
     urls.delete(name);
   };
 
-  const sections = archive.pages.map((p) => ({ id: p.name, load: () => load(p.name), unload: () => unload(p.name), size: p.size }));
+  const wide = new Set(opts.wide ?? []);
+  const sections = archive.pages.map((p, i) => ({
+    id: p.name,
+    load: () => load(p.name),
+    unload: () => unload(p.name),
+    size: p.size,
+    ...(wide.has(i) ? { pageSpread: "center" as const } : {}),
+  }));
   return {
     metadata: { title: opts.book.title, author: opts.book.author ?? undefined },
     dir: opts.rtl ? "rtl" : "ltr",

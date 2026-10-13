@@ -2,7 +2,7 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Search } from "lucide-react";
+import { Search, ZoomIn } from "lucide-react";
 import { apiJson, type Book, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { getBook } from "../lib/books";
 import { isComicFormat } from "../lib/comics";
@@ -12,6 +12,7 @@ import { percent, timeAgo } from "../lib/format";
 import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, listHighlights, updateHighlight } from "../lib/highlights";
 import { fetchProgress, flushProgress, getLocalPending, lastLocalUpdate, saveProgress, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
+import { ComicScroller } from "../reader/ComicScroller";
 import { EpubReader } from "../reader/EpubReader";
 import { HighlightMenu } from "../reader/HighlightMenu";
 import { HighlightsPanel } from "../reader/HighlightsPanel";
@@ -69,6 +70,7 @@ export function ReaderPage() {
   const [lookup, setLookup] = useState<{ mode: "define" | "translate"; text: string; rect: DOMRect } | null>(null);
   const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
   const [bookLanguage, setBookLanguage] = useState<string | null>(null);
+  const [magnifier, setMagnifier] = useState(false);
   const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selection, setSelection] = useState<TextSelection | null>(null);
@@ -306,7 +308,8 @@ export function ReaderPage() {
   const isComic = !!book && isComicFormat(book.format);
   // Highlights, notes and search work on text: ebooks and PDFs (not comic images).
   const canAnnotate = !isComic;
-  const ReaderComponent = isPdf ? PdfReader : EpubReader;
+  // Comics read as pages (foliate) or as one vertical strip (webtoons).
+  const ReaderComponent = isPdf ? PdfReader : isComic && settings.comicScroll ? ComicScroller : EpubReader;
 
   return (
     <div className="relative h-dvh w-full overflow-hidden" style={{ background: theme.surround, color: theme.fg }}>
@@ -315,7 +318,8 @@ export function ReaderPage() {
           <ReaderComponent
             ref={reader}
             book={book}
-            initialLocator={startLocator}
+            // Switching reader (e.g. comic pages <-> vertical scroll) starts where you are now.
+            initialLocator={position?.locator ?? startLocator}
             settings={settings}
             onRelocate={onRelocate}
             onTap={onTap}
@@ -325,6 +329,7 @@ export function ReaderPage() {
             highlights={canAnnotate ? highlights : undefined}
             onSelection={onSelection}
             onHighlightClick={onHighlightClick}
+            magnifier={isComic && magnifier}
           />
         )}
       </div>
@@ -365,6 +370,17 @@ export function ReaderPage() {
               onClick={() => setPanel(panel === "highlights" ? null : "highlights")}
             >
               🖍{highlights.length > 0 && <span className="ml-0.5 text-xs tabular-nums opacity-70">{highlights.length}</span>}
+            </button>
+          )}
+          {isComic && (
+            <button
+              className={`btn-icon ${magnifier ? "bg-white/20 text-teal-300" : ""}`}
+              aria-label="Magnifier"
+              aria-pressed={magnifier}
+              title={magnifier ? "Magnifier on: move over the page (tap here to turn off)" : "Magnifier"}
+              onClick={() => setMagnifier((m) => !m)}
+            >
+              <ZoomIn className="h-[18px] w-[18px]" />
             </button>
           )}
           {!isPdf && (

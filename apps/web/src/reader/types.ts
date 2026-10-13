@@ -39,6 +39,8 @@ export type ReaderProps = {
   onError(message: string): void;
   /** Text books and PDFs (not comics). */
   highlights?: Highlight[];
+  /** Comics: the magnifying glass is on (taps and swipes then move the lens instead of turning pages). */
+  magnifier?: boolean;
   onSelection?(selection: TextSelection | null): void;
   onHighlightClick?(highlight: Highlight, rect: DOMRect): void;
 };

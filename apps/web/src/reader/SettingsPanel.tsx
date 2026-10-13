@@ -87,6 +87,16 @@ export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic
 
       {kind === "comic" ? (
         <>
+          <Row label="Layout">
+            <div className="grid grid-cols-2 gap-2">
+              {([false, true] as const).map((scroll) => (
+                <button key={String(scroll)} onClick={() => update({ comicScroll: scroll })} className={`chip ${s.comicScroll === scroll ? "chip-on" : ""}`}>
+                  {scroll ? "Vertical scroll" : "Pages"}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-neutral-500">Vertical scroll shows the pages as one continuous strip, for webtoons and manhwa.</p>
+          </Row>
           <Row label="Page fit">
             <div className="grid grid-cols-2 gap-2">
               {(["page", "width"] as const).map((fit) => (
@@ -96,30 +106,34 @@ export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic
               ))}
             </div>
           </Row>
-          <Row label="Pages on screen">
-            <div className="grid grid-cols-2 gap-2">
-              {([false, true] as const).map((spreads) => (
-                <button
-                  key={String(spreads)}
-                  onClick={() => update({ comicSpreads: spreads })}
-                  className={`chip ${s.comicSpreads === spreads ? "chip-on" : ""}`}
-                >
-                  {spreads ? "Two pages" : "One page"}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-neutral-500">Two pages are shown side by side on wide screens, with the cover on its own.</p>
-          </Row>
-          <Row label="Reading direction">
-            <div className="grid grid-cols-3 gap-2">
-              {(["auto", "ltr", "rtl"] as const).map((dir) => (
-                <button key={dir} onClick={() => update({ comicDirection: dir })} className={`chip ${s.comicDirection === dir ? "chip-on" : ""}`}>
-                  {dir === "auto" ? "Auto" : dir === "ltr" ? "Left → right" : "Manga ←"}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-neutral-500">Auto reads right to left when the comic says it is manga.</p>
-          </Row>
+          {!s.comicScroll && (
+            <>
+              <Row label="Pages on screen">
+                <div className="grid grid-cols-2 gap-2">
+                  {([false, true] as const).map((spreads) => (
+                    <button
+                      key={String(spreads)}
+                      onClick={() => update({ comicSpreads: spreads })}
+                      className={`chip ${s.comicSpreads === spreads ? "chip-on" : ""}`}
+                    >
+                      {spreads ? "Two pages" : "One page"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-neutral-500">Two pages are shown side by side on wide screens, with the cover on its own.</p>
+              </Row>
+              <Row label="Reading direction">
+                <div className="grid grid-cols-3 gap-2">
+                  {(["auto", "ltr", "rtl"] as const).map((dir) => (
+                    <button key={dir} onClick={() => update({ comicDirection: dir })} className={`chip ${s.comicDirection === dir ? "chip-on" : ""}`}>
+                      {dir === "auto" ? "Auto" : dir === "ltr" ? "Left → right" : "Manga ←"}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-neutral-500">Auto reads right to left when the comic says it is manga.</p>
+              </Row>
+            </>
+          )}
         </>
       ) : kind === "pdf" ? (
         <Row label="Page fit">
