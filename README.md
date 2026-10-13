@@ -51,6 +51,7 @@ apps/
     src/lib/          api client, auth, progress sync/outbox, SSE client, settings, fonts
     android/          Capacitor Android project
 infra/Caddyfile
+infra/deploy.sh          update the VPS to a commit and restart (used by the Deploy workflow)
 docker-compose.yml       production: postgres + api + caddy
 docker-compose.dev.yml   development: postgres only
 ```
@@ -70,8 +71,10 @@ The API has development defaults for every setting. To change them, create `.env
 ## Deploy to your VPS
 
 1. Point a DNS record (e.g. `books.example.com`) at the VPS. Open ports 80 and 443.
-2. Copy the repo to the server and create `.env`:
+2. Clone the repo on the server and create `.env`:
    ```bash
+   git clone https://github.com/Pablokaer/MicoLivrao.git /opt/mico-livrao
+   cd /opt/mico-livrao
    cp .env.example .env
    # set DOMAIN, PUBLIC_URL, POSTGRES_PASSWORD (also inside DATABASE_URL),
    # BETTER_AUTH_SECRET (openssl rand -base64 32), optional Google keys
@@ -82,6 +85,39 @@ The API has development defaults for every setting. To change them, create `.env
    ```
    Caddy gets the TLS certificate automatically. Database migrations run when the API starts.
 4. Create your account. Then set `ALLOW_SIGNUP=false` and run `docker compose up -d` again if you don't want other people signing up.
+
+### Automatic deploys (GitHub Actions → VPS)
+
+Every push to `main` that passes CI is deployed by `.github/workflows/deploy.yml`: it connects to the VPS over SSH and runs `infra/deploy.sh`, which moves the clone in `/opt/mico-livrao` to the tested commit, rebuilds the images with `docker compose up -d --build` and waits for the API to answer (the job fails, with the API log, if it doesn't). `.env`, `data/` and `backups/` are ignored by git and never touched. *Actions → Deploy → Run workflow* deploys the current `main` by hand, and `bash infra/deploy.sh` on the server does the same.
+
+One-time setup (tested on a Hostinger KVM VPS with Ubuntu; the *Ubuntu with Docker* template already has Docker):
+
+1. Do steps 1–3 above, with the clone in `/opt/mico-livrao`. In hPanel's VPS firewall, allow ports 22, 80 and 443.
+2. Create a user for deploys that may run Docker and owns the clone:
+   ```bash
+   adduser --disabled-password --gecos "" deploy
+   usermod -aG docker deploy
+   chown -R deploy:deploy /opt/mico-livrao
+   chown -R 1000:1000 /opt/mico-livrao/data   # the API container writes books as uid 1000
+   ```
+3. On your computer, create a key used only for deploys and install its public half:
+   ```bash
+   ssh-keygen -t ed25519 -N "" -C "mico-livrao-deploy" -f mico-deploy
+   ssh-copy-id -i mico-deploy.pub deploy@<vps ip>
+   ssh-keyscan -p 22 <vps ip>          # output goes into VPS_KNOWN_HOSTS
+   ```
+4. In GitHub, *Settings → Environments*, create the environment `production` (optionally with required reviewers) and add these secrets:
+
+   | Secret | Value |
+   |---|---|
+   | `VPS_HOST` | IP or hostname of the VPS |
+   | `VPS_USER` | `deploy` |
+   | `VPS_SSH_KEY` | contents of the private key `mico-deploy` |
+   | `VPS_KNOWN_HOSTS` | output of `ssh-keyscan` (pins the server's host key) |
+
+   Optional variables: `VPS_SSH_PORT` (default `22`) and `VPS_APP_DIR` (default `/opt/mico-livrao`).
+
+The VPS builds the images itself, so it needs about 2 GB of free RAM during a deploy (any Hostinger KVM plan has enough). Deploys run one at a time; a short pause in service while the containers restart is expected.
 
 **Backups.** The `backup` service writes a database dump and the book files to `./backups/<date>/` every day (`BACKUP_INTERVAL_HOURS`) and deletes backups older than `BACKUP_KEEP_DAYS`. Copy `./backups` off the server too, for example with `restic backup ./backups` to B2 / R2 / another machine. Take one right now with:
 
@@ -157,7 +193,7 @@ createdb -U readsync readsync_test   # once; the tests reset this database on ev
 pnpm test                            # API integration tests + web unit tests
 ```
 
-CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build on every push.
+CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build on every push; when it passes on `main`, the Deploy workflow ships that commit to the VPS (see *Automatic deploys*).
 
 ## API overview
 
