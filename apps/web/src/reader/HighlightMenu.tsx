@@ -1,4 +1,4 @@
-import { BookA, Copy, Languages, StickyNote, Trash2 } from "lucide-react";
+import { BookA, Copy, Languages, MessageSquareQuote, StickyNote, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { HighlightColor } from "../lib/api";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
@@ -16,6 +16,7 @@ export function HighlightMenu({
   onNote,
   onDefine,
   onTranslate,
+  onDiscuss,
 }: {
   rect: DOMRect;
   /** Color of the highlight being edited; undefined for a new selection. */
@@ -27,11 +28,14 @@ export function HighlightMenu({
   /** Shown for a single word only. */
   onDefine?: () => void;
   onTranslate?: () => void;
+  /** Shown when the book is read in a book club. */
+  onDiscuss?: () => void;
 }) {
   const actions: { label: string; icon: ReactNode; onClick: () => void; danger?: boolean }[] = [
     ...(onNote ? [{ label: "Note", icon: <StickyNote />, onClick: onNote }] : []),
     ...(onDefine ? [{ label: "Define", icon: <BookA />, onClick: onDefine }] : []),
     ...(onTranslate ? [{ label: "Translate", icon: <Languages />, onClick: onTranslate }] : []),
+    ...(onDiscuss ? [{ label: "Discuss in club", icon: <MessageSquareQuote />, onClick: onDiscuss }] : []),
     { label: "Copy", icon: <Copy />, onClick: onCopy },
     ...(onDelete ? [{ label: "Remove highlight", icon: <Trash2 />, onClick: onDelete, danger: true }] : []),
   ];

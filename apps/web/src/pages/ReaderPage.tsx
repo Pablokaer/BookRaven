@@ -1,10 +1,11 @@
 import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Search, ZoomIn } from "lucide-react";
 import { apiJson, type Book, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { getBook } from "../lib/books";
+import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comics";
 import { deviceId } from "../lib/device";
 import { onServerEvent } from "../lib/events";
@@ -13,6 +14,7 @@ import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, l
 import { fetchProgress, flushProgress, getLocalPending, lastLocalUpdate, saveProgress, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
 import { ComicScroller } from "../reader/ComicScroller";
+import { DiscussDialog } from "../reader/DiscussDialog";
 import { EpubReader } from "../reader/EpubReader";
 import { HighlightMenu } from "../reader/HighlightMenu";
 import { HighlightsPanel } from "../reader/HighlightsPanel";
@@ -71,6 +73,12 @@ export function ReaderPage() {
   const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
   const [bookLanguage, setBookLanguage] = useState<string | null>(null);
   const [magnifier, setMagnifier] = useState(false);
+  /** Book clubs reading this book (for "Discuss in club"). */
+  const [clubs, setClubs] = useState<ClubSummary[]>([]);
+  const [discuss, setDiscuss] = useState<{ quote: string; locator: string } | null>(null);
+  // "?at=<locator>" (from a club message) opens the book at that passage.
+  const [params] = useSearchParams();
+  const jumpTo = useRef(params.get("at"));
   const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selection, setSelection] = useState<TextSelection | null>(null);
@@ -93,6 +101,12 @@ export function ReaderPage() {
       cancelled = true;
       flushProgress();
     };
+  }, [id]);
+
+  useEffect(() => {
+    listClubs(id)
+      .then(setClubs)
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -290,6 +304,11 @@ export function ReaderPage() {
   const onReady = useCallback((info: { toc?: TocItem[]; language?: string | null }) => {
     setToc(info.toc ?? null);
     setBookLanguage(info.language ?? null);
+    if (jumpTo.current) {
+      const at = jumpTo.current;
+      jumpTo.current = null;
+      setTimeout(() => reader.current?.goToHref?.(at), 50);
+    }
   }, []);
 
   if (error) {
@@ -457,13 +476,21 @@ export function ReaderPage() {
         </div>
       )}
 
-      {selection && !panel && !lookup && !noteFor && (
+      {selection && !panel && !lookup && !noteFor && !discuss && (
         <HighlightMenu
           rect={selection.rect}
           onColor={(c) => void addHighlight(c)}
           onNote={() => setNoteFor({ selection })}
           onDefine={features?.dictionaryEnabled && isWord(selection.text) ? () => setLookup({ mode: "define", text: selection.text, rect: selection.rect }) : undefined}
           onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: selection.text, rect: selection.rect }) : undefined}
+          onDiscuss={
+            clubs.length
+              ? () => {
+                  setDiscuss({ quote: selection.text, locator: selection.cfi });
+                  reader.current?.clearSelection?.();
+                }
+              : undefined
+          }
           onCopy={() => {
             copyText(selection.text);
             reader.current?.clearSelection?.();
@@ -485,6 +512,14 @@ export function ReaderPage() {
               : undefined
           }
           onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: activeHighlight.highlight.text, rect: activeHighlight.rect }) : undefined}
+          onDiscuss={
+            clubs.length
+              ? () => {
+                  setDiscuss({ quote: activeHighlight.highlight.text, locator: activeHighlight.highlight.cfi });
+                  setActiveHighlight(null);
+                }
+              : undefined
+          }
           onCopy={() => {
             copyText(activeHighlight.highlight.text);
             setActiveHighlight(null);
@@ -492,6 +527,7 @@ export function ReaderPage() {
           onDelete={() => void removeHighlight(activeHighlight.highlight)}
         />
       )}
+      {discuss && clubs.length > 0 && <DiscussDialog clubs={clubs} quote={discuss.quote} locator={discuss.locator} onClose={() => setDiscuss(null)} />}
       {lookup && <LookupCard mode={lookup.mode} text={lookup.text} bookLanguage={bookLanguage} rect={lookup.rect} onClose={() => setLookup(null)} />}
       {noteFor && (
         <NoteDialog

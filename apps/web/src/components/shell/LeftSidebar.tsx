@@ -1,4 +1,4 @@
-import { BookOpen, Compass, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Share2, ShieldCheck, Upload, User } from "lucide-react";
+import { BookOpen, Compass, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Share2, ShieldCheck, Upload, User, UsersRound } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { collectionColor, isInProgress } from "../../lib/bookStats";
@@ -30,6 +30,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
     { to: "/discover", label: "Discover", icon: <Compass /> },
     { to: "/shared", label: "Shared", icon: <Share2 />, count: counts.sharedWithMe },
     { to: "/reading", label: "Reading Now", icon: <BookOpen />, count: counts.reading },
+    { to: "/clubs", label: "Book Clubs", icon: <UsersRound /> },
     { to: "/uploads", label: "Uploads", icon: <Upload /> },
     { to: "/collections", label: "Collections", icon: <Layers />, end: true },
     { to: "/favorites", label: "Favorites", icon: <Heart />, count: counts.favorites },

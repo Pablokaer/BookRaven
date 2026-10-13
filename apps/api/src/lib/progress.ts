@@ -1,4 +1,5 @@
 import { query } from "../db.js";
+import { notifyClubProgress } from "./clubs.js";
 import { publish } from "./events.js";
 
 export type ProgressRow = {
@@ -43,6 +44,10 @@ export async function saveReadingProgress(
      RETURNING *`,
     [userId, bookId, p.locator, p.percentage, p.label, p.deviceId, p.deviceName, ts],
   );
-  if (rows[0]) publish(userId, "progress.updated", progressDto(bookId, rows[0]));
+  if (rows[0]) {
+    publish(userId, "progress.updated", progressDto(bookId, rows[0]));
+    // Fellow book-club members see each other's progress live.
+    await notifyClubProgress(userId, bookId).catch(() => {});
+  }
   return rows[0] ?? null;
 }

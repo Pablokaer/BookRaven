@@ -12,6 +12,7 @@ import { eventRoutes } from "./routes/events.js";
 import { progressRoutes } from "./routes/progress.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { adminRoutes } from "./routes/admin.js";
+import { clubRoutes } from "./routes/clubs.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { folderRoutes } from "./routes/folders.js";
 import { kosyncRoutes } from "./routes/kosync.js";
@@ -71,6 +72,7 @@ export async function buildServer() {
   await app.register(requestRoutes);
   await app.register(lookupRoutes);
   await app.register(deviceRoutes);
+  await app.register(clubRoutes);
   // Other reading apps: OPDS catalog and KOReader progress sync (app-password auth).
   await app.register(opdsRoutes);
   await app.register(kosyncRoutes);

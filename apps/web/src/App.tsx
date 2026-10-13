@@ -9,6 +9,7 @@ import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
 import { AdminPage } from "./pages/AdminPage";
+import { ClubInvitePage, ClubPage, ClubsPage } from "./pages/ClubPages";
 import { CollectionPage, CollectionsPage } from "./pages/CollectionPages";
 import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage, UploadsPage } from "./pages/LibraryViews";
 import { LoginPage } from "./pages/LoginPage";
@@ -71,7 +72,7 @@ export function App() {
 
   return (
     <SettingsProvider enabled={signedIn}>
-      <LibraryProvider>
+      <LibraryProvider userId={session!.user.id}>
         <BrowserRouter>
           <NativeBackButton />
           <Routes>
@@ -96,6 +97,9 @@ export function App() {
               <Route path="favorites" element={<FavoritesPage />} />
               <Route path="profile" element={<ProfilePage user={user} />} />
               <Route path="admin" element={<AdminPage />} />
+              <Route path="clubs" element={<ClubsPage />} />
+              <Route path="clubs/join/:token" element={<ClubInvitePage />} />
+              <Route path="clubs/:id" element={<ClubPage />} />
               <Route path="share/:token" element={<SharePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

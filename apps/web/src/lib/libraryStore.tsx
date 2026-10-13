@@ -39,6 +39,8 @@ type LibraryCtx = {
   publicVersion: number;
   /** Same for book requests. */
   requestsVersion: number;
+  /** Bumped when anything changes in one of the user's book clubs. */
+  clubsVersion: number;
   /** False until the collections list has loaded once. */
   foldersReady: boolean;
   uploads: UploadItem[];
@@ -68,13 +70,14 @@ type LibraryCtx = {
 
 const Ctx = createContext<LibraryCtx | null>(null);
 
-export function LibraryProvider({ children }: { children: ReactNode }) {
+export function LibraryProvider({ children, userId }: { children: ReactNode; userId: string }) {
   const [books, setBooks] = useState<Book[] | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [foldersReady, setFoldersReady] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
   const [publicVersion, setPublicVersion] = useState(0);
   const [requestsVersion, setRequestsVersion] = useState(0);
+  const [clubsVersion, setClubsVersion] = useState(0);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [readAt, setReadAt] = useState(() => Date.now());
@@ -83,6 +86,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [organizing, setOrganizing] = useState<Book | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const booksRef = useRef<Book[] | null>(null);
+  /** The signed-in user's id, to skip notifications about their own actions. */
+  const meIdRef = useRef(userId);
+  meIdRef.current = userId;
   booksRef.current = books;
 
   const log = useCallback((text: string, bookId?: string) => {
@@ -123,6 +129,15 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
         case "request.fulfilled":
           log(`Your request “${data.title}” was answered: it is in the Public Library now`);
           setRequestsVersion((v) => v + 1);
+          return;
+        case "club.message":
+          if (data.author && data.fromId !== meIdRef.current) log(`${data.author} wrote in “${data.clubName}”`);
+          setClubsVersion((v) => v + 1);
+          return;
+        case "club.progress":
+        case "club.member":
+        case "club.deleted":
+          setClubsVersion((v) => v + 1);
           return;
         case "admin.report":
           log(`New report about “${data.title}” is waiting in the admin panel`);
@@ -266,6 +281,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       refreshMe,
       publicVersion,
       requestsVersion,
+      clubsVersion,
       foldersReady,
       uploads,
       activity,
@@ -286,7 +302,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       openShare: setSharing,
       openOrganize: setOrganizing,
     }),
-    [books, folders, me, refreshMe, publicVersion, requestsVersion, foldersReady, uploads, activity, readAt, query, upload, removeBook, toggleFavorite, replaceBook, addFolder, renameFolderPrompt, removeFolder, sharing, organizing],
+    [books, folders, me, refreshMe, publicVersion, requestsVersion, clubsVersion, foldersReady, uploads, activity, readAt, query, upload, removeBook, toggleFavorite, replaceBook, addFolder, renameFolderPrompt, removeFolder, sharing, organizing],
   );
 
   return (
