@@ -8,7 +8,7 @@ import { config } from "../config.js";
 
 export class LookupUnavailableError extends Error {}
 
-const UA = "ReadSync/1.0 (self-hosted ebook reader)";
+const UA = "Mico-livrao/1.0 (self-hosted ebook reader)"; // header values must be ASCII
 const TIMEOUT = 8000;
 
 /** Small in-memory cache: the same words get looked up again and again. */

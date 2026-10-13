@@ -1,6 +1,8 @@
-# ReadSync
+# Mico-livrão
 
 Self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT) that saves your exact reading position and lets you continue on any device: web browser, Android app, or e-ink readers through KOReader.
+
+The app is called **Mico-livrão**. Internal identifiers (package names, the database, storage and cache keys, the `readsync.local` example domain) still use `readsync`, so existing data and installs keep working.
 
 ## Features
 
@@ -126,7 +128,7 @@ pnpm android:open                      # opens Android Studio → Run / Build AP
 Create an **app password** in *Profile → Other apps* for each device; the account password is never accepted by these endpoints.
 
 - **OPDS catalog:** `https://<your server>/opds` (KOReader, Moon+ Reader, Thorium, Calibre…). Username: your email, password: the app password. Browse your library, collections and the Public Library, search, and download.
-- **KOReader progress sync:** in KOReader, *Tools → Progress sync → Custom sync server* `https://<your server>/kosync`, then *Login* with your email and the app password, and choose *Binary* document matching. Books are matched by KOReader's partial MD5. PDFs and comics sync page by page in both directions. For ebooks, KOReader positions can't be converted to CFIs: ReadSync offers to jump to KOReader's percentage, and KOReader devices keep exact positions among themselves.
+- **KOReader progress sync:** in KOReader, *Tools → Progress sync → Custom sync server* `https://<your server>/kosync`, then *Login* with your email and the app password, and choose *Binary* document matching. Books are matched by KOReader's partial MD5. PDFs and comics sync page by page in both directions. For ebooks, KOReader positions can't be converted to CFIs: Mico-livrão offers to jump to KOReader's percentage, and KOReader devices keep exact positions among themselves.
 
 ## Tests
 
@@ -162,8 +164,8 @@ CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build 
 ## Known limitations / next steps
 
 - DRM-protected books (bought on Kindle, Kobo, …) can't be opened. Only DRM-free files work.
-- The Android app has not been rebuilt and tested with the latest web changes; run `pnpm android:sync` and try downloads (saved to *Documents/ReadSync*) on a device.
+- The Android app has not been rebuilt and tested with the latest web changes; run `pnpm android:sync` and try downloads (saved to *Documents/Mico-livrão*) on a device.
 - **Google sign-in on Android** still needs a native Google Sign-In plugin and an Android OAuth client in Google Cloud (see *Android app* above).
 - Comics: CBR support relies on 7-Zip's RAR decoder; password-protected archives can't be opened.
-- KOReader can't receive ReadSync positions for reflowable ebooks (only PDFs and comics), see above.
+- KOReader can't receive Mico-livrão positions for reflowable ebooks (only PDFs and comics), see above.
 - SSE runs in memory, which is fine for one API instance. To run several, send events through Postgres `LISTEN/NOTIFY`.

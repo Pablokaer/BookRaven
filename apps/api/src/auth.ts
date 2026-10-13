@@ -9,7 +9,7 @@ import { sendMail } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
 
 export const auth = betterAuth({
-  appName: "ReadSync",
+  appName: "Mico-livrão",
   baseURL: config.publicUrl,
   basePath: "/api/auth",
   secret: config.authSecret,
@@ -25,8 +25,8 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user, url }) => {
       await sendMail({
         to: user.email,
-        subject: "Reset your ReadSync password",
-        text: `Hi ${user.name || ""},\n\nSomeone (hopefully you) asked to reset the password of your ReadSync account.\nOpen this link within an hour to choose a new one:\n\n${url}\n\nIf you did not ask for this, ignore this email; your password stays the same.`,
+        subject: "Reset your Mico-livrão password",
+        text: `Hi ${user.name || ""},\n\nSomeone (hopefully you) asked to reset the password of your Mico-livrão account.\nOpen this link within an hour to choose a new one:\n\n${url}\n\nIf you did not ask for this, ignore this email; your password stays the same.`,
       });
     },
   },

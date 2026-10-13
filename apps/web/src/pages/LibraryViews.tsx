@@ -123,7 +123,7 @@ export function SharedPage() {
         title="Shared with you"
         empty={
           <EmptyState icon={<Share2 />} title="Nothing shared with you yet">
-            When someone sends you a ReadSync share link, open it and choose “Add to my library”.
+            When someone sends you a Mico-livrão share link, open it and choose “Add to my library”.
           </EmptyState>
         }
       />
@@ -175,7 +175,7 @@ export function DiscoverPage() {
         </div>
         <div className="text-sm">
           <div className="font-medium">Personal recommendations are not available yet</div>
-          <p className="mt-1 text-muted">ReadSync only knows the books in your own library, so for now Discover suggests the ones you haven’t started.</p>
+          <p className="mt-1 text-muted">Mico-livrão only knows the books in your own library, so for now Discover suggests the ones you haven’t started.</p>
         </div>
       </div>
       <BookBrowser

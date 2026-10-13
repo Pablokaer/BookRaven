@@ -31,7 +31,7 @@ async function basicAuth(request: FastifyRequest, reply: FastifyReply) {
       }
     }
   }
-  reply.header("WWW-Authenticate", 'Basic realm="ReadSync", charset="UTF-8"');
+  reply.header("WWW-Authenticate", 'Basic realm="Mico-livrao", charset="UTF-8"'); // ASCII-only header
   return reply.code(401).type("text/plain").send("Use your account email and an app password (Profile → Other apps).");
 }
 
@@ -42,7 +42,7 @@ function feed(opts: { id: string; title: string; self: string; kind: string; ent
   <id>${esc(opts.id)}</id>
   <title>${esc(opts.title)}</title>
   <updated>${now}</updated>
-  <author><name>ReadSync</name></author>
+  <author><name>Mico-livrão</name></author>
   <link rel="self" href="${esc(opts.self)}" type="${opts.kind}"/>
   <link rel="start" href="/opds" type="${NAV}"/>
   <link rel="search" href="/opds/search.xml" type="application/opensearchdescription+xml"/>
@@ -95,7 +95,7 @@ export async function opdsRoutes(app: FastifyInstance) {
       ...folders.map((f) => navEntry(`readsync:folder:${f.id}`, `Collection: ${f.name}`, `/opds/collections/${f.id}`, `Books in ${f.name}`)),
       navEntry("readsync:public", "Public Library", "/opds/public", `Books shared with everyone on ${config.publicUrl}`),
     ];
-    return reply.type(NAV).send(feed({ id: "readsync:root", title: "ReadSync", self: "/opds", kind: NAV, entries }));
+    return reply.type(NAV).send(feed({ id: "readsync:root", title: "Mico-livrão", self: "/opds", kind: NAV, entries }));
   });
 
   async function libraryFeed(request: FastifyRequest, reply: FastifyReply, opts: { where: string; params: unknown[]; title: string; self: string }) {
@@ -141,8 +141,8 @@ export async function opdsRoutes(app: FastifyInstance) {
   app.get("/opds/search.xml", async (_request, reply) =>
     reply.type("application/opensearchdescription+xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
-  <ShortName>ReadSync</ShortName>
-  <Description>Search your ReadSync library</Description>
+  <ShortName>Mico-livrão</ShortName>
+  <Description>Search your Mico-livrão library</Description>
   <InputEncoding>UTF-8</InputEncoding>
   <OutputEncoding>UTF-8</OutputEncoding>
   <Url type="${ACQ}" template="/opds/search?q={searchTerms}"/>

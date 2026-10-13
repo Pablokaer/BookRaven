@@ -1,4 +1,4 @@
-# ReadSync
+# Mico-livrão
 
 Self-hosted reader (ebooks, PDFs, comics) with cross-device progress sync. pnpm monorepo:
 `apps/api` (Fastify + PostgreSQL + Better Auth) and `apps/web` (React + Vite, also the Capacitor Android app).

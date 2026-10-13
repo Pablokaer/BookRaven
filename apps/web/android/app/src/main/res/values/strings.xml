@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">ReadSync</string>
-    <string name="title_activity_main">ReadSync</string>
+    <string name="app_name">Mico-livrão</string>
+    <string name="title_activity_main">Mico-livrão</string>
     <string name="package_name">app.readsync</string>
     <string name="custom_url_scheme">app.readsync</string>
 </resources>

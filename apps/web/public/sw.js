@@ -1,5 +1,5 @@
 /*
- * ReadSync service worker: the app opens and shows your library without a connection.
+ * Mico-livrão service worker: the app opens and shows your library without a connection.
  * - the app shell and its hashed assets are cached as they load;
  * - library data (books list, collections, settings, highlights, covers, session) is
  *   network-first with the last good copy as the offline fallback;

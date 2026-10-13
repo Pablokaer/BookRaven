@@ -3,7 +3,7 @@
 # Runs as the "backup" service in docker-compose.yml (postgres image: has pg_dump and tar).
 #
 #   BACKUP_DIR             where backups go (default /backups)
-#   DATA_DIR               ReadSync storage folder (default /data); skipped when empty
+#   DATA_DIR               Mico-livrão storage folder (default /data); skipped when empty
 #                          (with STORAGE_DRIVER=s3, back up the bucket with its own tools)
 #   BACKUP_KEEP_DAYS       how long to keep backups (default 14)
 #   BACKUP_INTERVAL_HOURS  time between backups (default 24)

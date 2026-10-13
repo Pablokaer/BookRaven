@@ -52,7 +52,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-app shadow-[0_6px_20px_-6px_rgb(22_201_178/0.6)]">
           <BookOpen className="h-5 w-5" strokeWidth={2.4} />
         </span>
-        <span className={`font-display text-xl font-bold tracking-tight ${hide}`}>ReadSync</span>
+        <span className={`font-display text-xl font-bold tracking-tight ${hide}`}>Mico-livrão</span>
       </NavLink>
 
       <ul className="space-y-1">
