@@ -11,6 +11,9 @@ See README.md for setup, features and the API overview.
   address) anywhere in this project: code, identifiers (Android app id, package names), comments,
   docs, test data, commit messages, or accounts created for testing or administration. Use neutral
   names such as `app.readsync`, `example.com` or `readsync.local`.
+- **Keep README.md current, in English.** Every relevant change (features, settings and
+  environment variables, endpoints, setup or deploy steps, limitations) updates README.md in the
+  same commit. README.md is always written in English, whatever language the conversation is in.
 - Never commit secrets, `.env` files, the `data/` and `backups/` folders, or real user books.
 - Run `pnpm typecheck` and `pnpm test` before committing (API tests need the `readsync_test`
   database, see README → Tests).

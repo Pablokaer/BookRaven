@@ -116,6 +116,7 @@ pnpm android:sync                      # builds the web app and copies it into a
 pnpm android:open                      # opens Android Studio → Run / Build APK
 ```
 
+- The Android app id is `app.readsync`. Builds made before this id was set used a different one, so they install as a separate app: uninstall the old one and sign in again.
 - The app loads its interface from inside the APK and talks to your VPS over HTTPS. It stores a bearer token in Capacitor Preferences.
 - The API already allows the Capacitor origins (`https://localhost`, `capacitor://localhost`) for CORS.
 - **Google sign-in on Android:** Google blocks OAuth inside embedded WebViews, so the app hides the Google button for now and you sign in with email + password. Adding it later means a native Google Sign-In plugin that returns an ID token, which you then pass to `authClient.signIn.social({ provider: "google", idToken: { token } })`.
