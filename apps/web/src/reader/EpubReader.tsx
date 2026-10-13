@@ -136,6 +136,21 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       lastInteraction.current = 0;
       void viewRef.current?.goTo(locator);
     },
+    search: async (query, onResult, signal) => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.clearSearch();
+      for await (const item of view.search({ query, matchCase: false, matchDiacritics: false })) {
+        if (signal.aborted) break;
+        if (item === "done") break;
+        if ("subitems" in item) {
+          for (const s of item.subitems) onResult({ locator: s.cfi, label: item.label, excerpt: s.excerpt });
+        } else if ("cfi" in item) {
+          onResult({ locator: item.cfi, label: "", excerpt: item.excerpt });
+        }
+      }
+    },
+    clearSearch: () => viewRef.current?.clearSearch(),
     clearSelection: () => {
       for (const { doc } of viewRef.current?.renderer.getContents?.() ?? []) doc.getSelection()?.removeAllRanges();
       selectionShown.current = false;
@@ -286,7 +301,11 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       await view.init({ lastLocation: resumeAt });
       ready.current = true;
       syncHighlights(view);
-      propsRef.current.onReady({ toc: view.book.toc });
+      const lang = view.book.metadata?.language;
+      propsRef.current.onReady({
+        toc: view.book.toc,
+        language: typeof lang === "string" ? lang : Array.isArray(lang) && typeof lang[0] === "string" ? lang[0] : null,
+      });
     })().catch((err) => {
       console.error(err);
       if (!cancelled) propsRef.current.onError(err?.message ?? "Could not open this book");

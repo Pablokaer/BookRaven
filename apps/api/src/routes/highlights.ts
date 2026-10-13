@@ -14,6 +14,7 @@ type HighlightRow = {
   text: string;
   color: string;
   label: string | null;
+  note: string | null;
   created_at: Date;
 };
 
@@ -24,6 +25,7 @@ const toDto = (r: HighlightRow) => ({
   text: r.text,
   color: r.color,
   label: r.label,
+  note: r.note,
   createdAt: r.created_at.toISOString(),
 });
 
@@ -39,7 +41,7 @@ export async function highlightRoutes(app: FastifyInstance) {
     return rows.map(toDto);
   });
 
-  app.post<{ Params: { id: string }; Body: { cfi: string; text: string; color: string; label?: string | null } }>(
+  app.post<{ Params: { id: string }; Body: { cfi: string; text: string; color: string; label?: string | null; note?: string | null } }>(
     "/api/books/:id/highlights",
     {
       schema: {
@@ -52,6 +54,7 @@ export async function highlightRoutes(app: FastifyInstance) {
             text: { type: "string", minLength: 1, maxLength: 10000 },
             color: { type: "string", enum: COLORS },
             label: { type: ["string", "null"], maxLength: 500 },
+            note: { type: ["string", "null"], maxLength: 5000 },
           },
         },
       },
@@ -59,13 +62,13 @@ export async function highlightRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const book = await loadOwnedBook(request, reply);
       if (!book) return;
-      const { cfi, text, color, label } = request.body;
-      // Highlighting the exact same passage again just changes its color.
+      const { cfi, text, color, label, note } = request.body;
+      // Highlighting the exact same passage again just updates it.
       const { rows } = await query<HighlightRow>(
-        `INSERT INTO highlight (user_id, book_id, cfi, text, color, label) VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (book_id, cfi) DO UPDATE SET color = EXCLUDED.color
+        `INSERT INTO highlight (user_id, book_id, cfi, text, color, label, note) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (book_id, cfi) DO UPDATE SET color = EXCLUDED.color, note = COALESCE(EXCLUDED.note, highlight.note)
          RETURNING *`,
-        [request.user.id, book.id, cfi, text, color, label ?? null],
+        [request.user.id, book.id, cfi, text, color, label ?? null, note?.trim() || null],
       );
       const dto = toDto(rows[0]!);
       publish(request.user.id, "highlight.saved", dto);
@@ -73,23 +76,31 @@ export async function highlightRoutes(app: FastifyInstance) {
     },
   );
 
-  app.patch<{ Params: { id: string }; Body: { color: string } }>(
+  /** Changes the color and/or the note (an empty note removes it). */
+  app.patch<{ Params: { id: string }; Body: { color?: string; note?: string | null } }>(
     "/api/highlights/:id",
     {
       schema: {
         body: {
           type: "object",
-          required: ["color"],
+          minProperties: 1,
           additionalProperties: false,
-          properties: { color: { type: "string", enum: COLORS } },
+          properties: { color: { type: "string", enum: COLORS }, note: { type: ["string", "null"], maxLength: 5000 } },
         },
       },
     },
     async (request, reply) => {
       if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
       const { rows } = await query<HighlightRow>(
-        "UPDATE highlight SET color = $1 WHERE id = $2 AND user_id = $3 RETURNING *",
-        [request.body.color, request.params.id, request.user.id],
+        `UPDATE highlight SET color = COALESCE($1, color), note = CASE WHEN $4 THEN $5 ELSE note END
+         WHERE id = $2 AND user_id = $3 RETURNING *`,
+        [
+          request.body.color ?? null,
+          request.params.id,
+          request.user.id,
+          request.body.note !== undefined,
+          request.body.note?.trim() || null,
+        ],
       );
       if (!rows[0]) return reply.code(404).send({ error: "not_found" });
       const dto = toDto(rows[0]);

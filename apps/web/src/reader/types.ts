@@ -15,7 +15,14 @@ export type ReaderHandle = {
   restore(locator: string): void;
   /** Drops the current text selection in the book. */
   clearSelection?(): void;
+  /** Full-text search; calls `onResult` as matches are found, resolves when done. */
+  search?(query: string, onResult: (r: SearchResult) => void, signal: AbortSignal): Promise<void>;
+  /** Removes search marks from the pages. */
+  clearSearch?(): void;
 };
+
+/** One search match: `locator` is passed back to goToHref to show it. */
+export type SearchResult = { locator: string; label: string; excerpt: { pre: string; match: string; post: string } };
 
 /** Text the reader selected, with its on-screen box (viewport coordinates). */
 export type TextSelection = { cfi: string; text: string; rect: DOMRect };
@@ -28,9 +35,9 @@ export type ReaderProps = {
   onRelocate(pos: Position, byUser: boolean): void;
   onTap(zone: TapZone): void;
   onKeyDown(e: KeyboardEvent): void;
-  onReady(info: { toc?: TocItem[]; totalPages?: number }): void;
+  onReady(info: { toc?: TocItem[]; totalPages?: number; language?: string | null }): void;
   onError(message: string): void;
-  /** Reflowable books only. */
+  /** Text books and PDFs (not comics). */
   highlights?: Highlight[];
   onSelection?(selection: TextSelection | null): void;
   onHighlightClick?(highlight: Highlight, rect: DOMRect): void;

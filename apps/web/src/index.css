@@ -142,3 +142,74 @@ body {
     max-width: var(--page-width, 720px);
   }
 }
+
+/* ---- PDF text layer (from pdf.js's pdf_viewer.css): invisible, selectable text over the canvas ---- */
+.textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+
+  :is(span, br) {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+    user-select: text;
+  }
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  > :not(.markedContent),
+  .markedContent span:not(.markedContent) {
+    z-index: 1;
+    --font-height: 0;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    --scale-x: 1;
+    --rotate: 0deg;
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+  .markedContent {
+    display: contents;
+  }
+  span[role="img"] {
+    user-select: none;
+    cursor: default;
+  }
+  ::selection {
+    background: rgb(22 201 178 / 0.35);
+  }
+}
+
+/* Highlights and the current search match, drawn under the text layer. */
+.pdf-highlights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.pdf-hl,
+.pdf-search-hit {
+  position: absolute;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+.pdf-hl {
+  opacity: 0.45;
+}
+.pdf-search-hit {
+  background: rgb(250 204 21 / 0.25);
+  outline: 2px solid rgb(234 88 12);
+}

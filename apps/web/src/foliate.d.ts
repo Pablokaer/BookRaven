@@ -37,6 +37,14 @@ declare module "foliate-js/view.js" {
     addAnnotation(annotation: { value: string }): Promise<unknown>;
     deleteAnnotation(annotation: { value: string }): Promise<unknown>;
     getCFI(index: number, range: Range): string;
+    /** Yields per-section results ({ label, subitems }), progress objects, then "done". */
+    search(opts: { query: string; matchCase?: boolean; matchDiacritics?: boolean; matchWholeWords?: boolean }): AsyncGenerator<
+      | "done"
+      | { progress: number }
+      | { label: string; subitems: { cfi: string; excerpt: { pre: string; match: string; post: string } }[] }
+      | { cfi: string; excerpt: { pre: string; match: string; post: string } }
+    >;
+    clearSearch(): void;
   }
   export function makeBook(file: File | string): Promise<FoliateBook>;
 }

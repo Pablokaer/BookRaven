@@ -43,6 +43,15 @@ export const config = {
   /** SMTP connection URL for outgoing email, e.g. smtps://user:pass@smtp.example.com:465 */
   smtpUrl: process.env.SMTP_URL ?? "",
   mailFrom: process.env.MAIL_FROM ?? "ReadSync <no-reply@localhost>",
+  /** Dictionary lookups: "wiktionary" (default) or "none". */
+  dictionaryProvider: (process.env.DICTIONARY_PROVIDER ?? "wiktionary") === "none" ? ("none" as const) : ("wiktionary" as const),
+  /** Translation of selected text: "mymemory" (default, free), "libretranslate" or "none". */
+  translateProvider: (["mymemory", "libretranslate", "none"].includes(process.env.TRANSLATE_PROVIDER ?? "")
+    ? process.env.TRANSLATE_PROVIDER
+    : "mymemory") as "mymemory" | "libretranslate" | "none",
+  libreTranslate: { url: process.env.LIBRETRANSLATE_URL ?? "", apiKey: process.env.LIBRETRANSLATE_API_KEY ?? "" },
+  /** Optional: MyMemory allows more translations per day to requests that include an email. */
+  myMemoryEmail: process.env.MYMEMORY_EMAIL ?? "",
   /** Total size of the books each account may keep. Administrators have no limit. */
   quotaBytes: Number(process.env.UPLOAD_QUOTA_MB ?? 2048) * 1024 * 1024,
   /** Emails of administrator accounts (comma-separated): unlimited storage, can moderate the public library. */

@@ -2,28 +2,41 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import type { Book, Highlight, HighlightColor, Progress } from "../lib/api";
+import { Search } from "lucide-react";
+import { apiJson, type Book, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { getBook } from "../lib/books";
 import { isComicFormat } from "../lib/comics";
 import { deviceId } from "../lib/device";
 import { onServerEvent } from "../lib/events";
 import { percent, timeAgo } from "../lib/format";
-import { createHighlight, deleteHighlight, listHighlights, recolorHighlight } from "../lib/highlights";
+import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, listHighlights, updateHighlight } from "../lib/highlights";
 import { fetchProgress, flushProgress, getLocalPending, lastLocalUpdate, saveProgress, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
 import { EpubReader } from "../reader/EpubReader";
 import { HighlightMenu } from "../reader/HighlightMenu";
 import { HighlightsPanel } from "../reader/HighlightsPanel";
+import { LookupCard } from "../reader/LookupCard";
+import { NoteDialog } from "../reader/NoteDialog";
 import { PdfReader } from "../reader/PdfReader";
+import { SearchPanel } from "../reader/SearchPanel";
 import { SettingsPanel } from "../reader/SettingsPanel";
 import { TocPanel } from "../reader/TocPanel";
 import type { ReaderHandle, TapZone, TextSelection } from "../reader/types";
 
 type Remote = Pick<Progress, "locator" | "percentage" | "label" | "deviceName" | "updatedAt">;
 
+/** PDF highlight positions: "pdf:<page>:<start>-<end>". */
+const pdfPos = (cfi: string) => {
+  const m = /^pdf:(\d+):(\d+)-/.exec(cfi);
+  return m ? [Number(m[1]), Number(m[2])] : null;
+};
+
 /** Book order (by position in the text), falling back to creation order. */
 function sortHighlights(list: Highlight[]) {
   return [...list].sort((a, b) => {
+    const pa = pdfPos(a.cfi);
+    const pb = pdfPos(b.cfi);
+    if (pa && pb) return pa[0]! - pb[0]! || pa[1]! - pb[1]!;
     try {
       return compareCfi(a.cfi, b.cfi);
     } catch {
@@ -31,6 +44,9 @@ function sortHighlights(list: Highlight[]) {
     }
   });
 }
+
+/** A single word (or a short hyphenated one): what the dictionary can look up. */
+const isWord = (text: string) => /^[\p{L}\p{M}'’-]{1,40}$/u.test(text.trim());
 
 /** Picks the newest of the server position and a not-yet-synced local one. */
 function initialLocator(book: Book): string | null {
@@ -49,7 +65,11 @@ export function ReaderPage() {
   const [position, setPosition] = useState<Position | null>(null);
   const [toc, setToc] = useState<TocItem[] | null>(null);
   const [chrome, setChrome] = useState(true);
-  const [panel, setPanel] = useState<"settings" | "toc" | "highlights" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "toc" | "highlights" | "search" | null>(null);
+  const [lookup, setLookup] = useState<{ mode: "define" | "translate"; text: string; rect: DOMRect } | null>(null);
+  const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
+  const [bookLanguage, setBookLanguage] = useState<string | null>(null);
+  const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [activeHighlight, setActiveHighlight] = useState<{ highlight: Highlight; rect: DOMRect } | null>(null);
@@ -73,6 +93,12 @@ export function ReaderPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    apiJson<ServerConfig>("/api/config")
+      .then(setFeatures)
+      .catch(() => {});
+  }, []);
+
   // Hide the chrome a few seconds after opening, like most readers.
   useEffect(() => {
     if (!book) return;
@@ -80,10 +106,9 @@ export function ReaderPage() {
     return () => clearTimeout(t);
   }, [book]);
 
-  // Highlights (ebooks only), kept in sync with other devices.
+  // Highlights (text books and PDFs; comics are images), kept in sync with other devices.
   useEffect(() => {
-    // Only reflowable text can be highlighted (not PDF pages or comic images).
-    if (!book || book.format === "pdf" || isComicFormat(book.format)) return;
+    if (!book || isComicFormat(book.format)) return;
     let cancelled = false;
     listHighlights(book.id)
       .then((list) => !cancelled && setHighlights(sortHighlights(list)))
@@ -103,9 +128,8 @@ export function ReaderPage() {
   }, [book]);
 
   const addHighlight = useCallback(
-    async (color: HighlightColor) => {
-      if (!selection || !book) return;
-      const sel = selection;
+    async (color: HighlightColor, sel: TextSelection | null = selection, note?: string) => {
+      if (!sel || !book) return;
       reader.current?.clearSelection?.();
       setSelection(null);
       try {
@@ -114,6 +138,7 @@ export function ReaderPage() {
           text: sel.text.slice(0, 10000),
           color,
           label: positionRef.current?.label ?? null,
+          note: note || null,
         });
         setHighlights((prev) => sortHighlights([...prev.filter((h) => h.id !== saved.id), saved]));
       } catch {
@@ -123,14 +148,28 @@ export function ReaderPage() {
     [selection, book],
   );
 
-  const changeHighlight = useCallback(async (h: Highlight, color: HighlightColor) => {
+  const changeHighlight = useCallback(async (h: Highlight, patch: { color?: HighlightColor; note?: string | null }) => {
     setActiveHighlight(null);
-    if (h.color === color) return;
-    setHighlights((prev) => prev.map((x) => (x.id === h.id ? { ...x, color } : x)));
-    await recolorHighlight(h.id, color).catch(() => {
+    if (patch.color === h.color && patch.note === undefined) return;
+    setHighlights((prev) => prev.map((x) => (x.id === h.id ? { ...x, ...patch } : x)));
+    await updateHighlight(h.id, patch).catch(() => {
       setHighlights((prev) => prev.map((x) => (x.id === h.id ? h : x)));
     });
   }, []);
+
+  const saveNote = (note: string) => {
+    if (!noteFor) return;
+    if ("highlight" in noteFor) void changeHighlight(noteFor.highlight, { note: note || null });
+    else if (note) void addHighlight("yellow", noteFor.selection, note);
+    else reader.current?.clearSelection?.();
+    setNoteFor(null);
+  };
+
+  const exportHighlights = () => {
+    if (!book) return;
+    const name = `${book.title.replace(/[\\/:*?"<>|]+/g, " ").trim() || "highlights"} - highlights.md`;
+    downloadText(name, highlightsToMarkdown(book, highlights));
+  };
 
   const removeHighlight = useCallback(async (h: Highlight) => {
     setActiveHighlight(null);
@@ -237,15 +276,19 @@ export function ReaderPage() {
   const onTap = useCallback(
     (zone: TapZone) => {
       if (panel) return setPanel(null);
+      if (lookup) return setLookup(null);
       if (activeHighlight) return setActiveHighlight(null);
       if (zone === "left") reader.current?.prev();
       else if (zone === "right") reader.current?.next();
       else setChrome((c) => !c);
     },
-    [panel, activeHighlight],
+    [panel, activeHighlight, lookup],
   );
 
-  const onReady = useCallback((info: { toc?: TocItem[] }) => setToc(info.toc ?? null), []);
+  const onReady = useCallback((info: { toc?: TocItem[]; language?: string | null }) => {
+    setToc(info.toc ?? null);
+    setBookLanguage(info.language ?? null);
+  }, []);
 
   if (error) {
     return (
@@ -261,7 +304,8 @@ export function ReaderPage() {
   const theme = THEMES[settings.theme];
   const isPdf = book?.format === "pdf";
   const isComic = !!book && isComicFormat(book.format);
-  const hasText = !isPdf && !isComic;
+  // Highlights, notes and search work on text: ebooks and PDFs (not comic images).
+  const canAnnotate = !isComic;
   const ReaderComponent = isPdf ? PdfReader : EpubReader;
 
   return (
@@ -278,7 +322,7 @@ export function ReaderPage() {
             onKeyDown={onKeyDown}
             onReady={onReady}
             onError={setError}
-            highlights={hasText ? highlights : undefined}
+            highlights={canAnnotate ? highlights : undefined}
             onSelection={onSelection}
             onHighlightClick={onHighlightClick}
           />
@@ -308,7 +352,12 @@ export function ReaderPage() {
             <div className="truncate font-medium">{book?.title}</div>
             {book?.author && <div className="truncate text-xs opacity-70">{book.author}</div>}
           </div>
-          {hasText && (
+          {canAnnotate && (
+            <button className="btn-icon" aria-label="Search in book" title="Search" onClick={() => setPanel(panel === "search" ? null : "search")}>
+              <Search className="h-[18px] w-[18px]" />
+            </button>
+          )}
+          {canAnnotate && (
             <button
               className="btn-icon text-base"
               aria-label="Highlights"
@@ -392,26 +441,59 @@ export function ReaderPage() {
         </div>
       )}
 
-      {selection && !panel && (
+      {selection && !panel && !lookup && !noteFor && (
         <HighlightMenu
           rect={selection.rect}
           onColor={(c) => void addHighlight(c)}
+          onNote={() => setNoteFor({ selection })}
+          onDefine={features?.dictionaryEnabled && isWord(selection.text) ? () => setLookup({ mode: "define", text: selection.text, rect: selection.rect }) : undefined}
+          onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: selection.text, rect: selection.rect }) : undefined}
           onCopy={() => {
             copyText(selection.text);
             reader.current?.clearSelection?.();
           }}
         />
       )}
-      {activeHighlight && !panel && (
+      {activeHighlight && !panel && !lookup && !noteFor && (
         <HighlightMenu
           rect={activeHighlight.rect}
           current={activeHighlight.highlight.color}
-          onColor={(c) => void changeHighlight(activeHighlight.highlight, c)}
+          onColor={(c) => void changeHighlight(activeHighlight.highlight, { color: c })}
+          onNote={() => {
+            setNoteFor({ highlight: activeHighlight.highlight });
+            setActiveHighlight(null);
+          }}
+          onDefine={
+            features?.dictionaryEnabled && isWord(activeHighlight.highlight.text)
+              ? () => setLookup({ mode: "define", text: activeHighlight.highlight.text, rect: activeHighlight.rect })
+              : undefined
+          }
+          onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: activeHighlight.highlight.text, rect: activeHighlight.rect }) : undefined}
           onCopy={() => {
             copyText(activeHighlight.highlight.text);
             setActiveHighlight(null);
           }}
           onDelete={() => void removeHighlight(activeHighlight.highlight)}
+        />
+      )}
+      {lookup && <LookupCard mode={lookup.mode} text={lookup.text} bookLanguage={bookLanguage} rect={lookup.rect} onClose={() => setLookup(null)} />}
+      {noteFor && (
+        <NoteDialog
+          quote={"highlight" in noteFor ? noteFor.highlight.text : noteFor.selection.text}
+          initial={"highlight" in noteFor ? (noteFor.highlight.note ?? "") : ""}
+          onSave={saveNote}
+          onClose={() => setNoteFor(null)}
+        />
+      )}
+      {panel === "search" && (
+        <SearchPanel
+          reader={reader.current}
+          onClose={() => setPanel(null)}
+          onSelect={(r) => {
+            reader.current?.goToHref?.(r.locator);
+            // Small screens: get the panel out of the way to show the match.
+            if (window.innerWidth < 768) setPanel(null);
+          }}
         />
       )}
 
@@ -420,6 +502,8 @@ export function ReaderPage() {
           highlights={highlights}
           onClose={() => setPanel(null)}
           onDelete={(h) => void removeHighlight(h)}
+          onEditNote={(h) => setNoteFor({ highlight: h })}
+          onExport={exportHighlights}
           onSelect={(h) => {
             reader.current?.goToHref?.(h.cfi);
             setPanel(null);

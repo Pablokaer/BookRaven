@@ -125,7 +125,16 @@ export type Highlight = {
   color: HighlightColor;
   /** Chapter title, when known. */
   label: string | null;
+  /** The reader's own note on the passage. */
+  note: string | null;
   createdAt: string;
 };
 
-export type ServerConfig = { googleEnabled: boolean; allowSignup: boolean; maxUploadMb: number; passwordResetEnabled: boolean };
+export type ServerConfig = {
+  googleEnabled: boolean;
+  allowSignup: boolean;
+  maxUploadMb: number;
+  passwordResetEnabled: boolean;
+  dictionaryEnabled: boolean;
+  translateEnabled: boolean;
+};

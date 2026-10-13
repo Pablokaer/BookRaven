@@ -36,6 +36,10 @@ export type ReaderSettings = {
   comicSpreads: boolean;
   /** Comics: reading direction; "auto" follows the archive's ComicInfo (manga = right to left). */
   comicDirection: "auto" | "ltr" | "rtl";
+  /** Comics: show pages in one continuous vertical strip (webtoons) instead of page by page. */
+  comicScroll: boolean;
+  /** Language selected text is translated into. */
+  translateTo: string;
 };
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -56,6 +60,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   comicFit: "page",
   comicSpreads: true,
   comicDirection: "auto",
+  comicScroll: false,
+  translateTo: navigator.language?.startsWith("pt") ? (navigator.language === "pt-PT" ? "pt-PT" : "pt-BR") : (navigator.language?.split("-")[0] ?? "en"),
 };
 
 /** `surround` is the area outside the page: a shade darker than `bg`. */

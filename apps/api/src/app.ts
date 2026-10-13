@@ -16,6 +16,7 @@ import { folderRoutes } from "./routes/folders.js";
 import { highlightRoutes } from "./routes/highlights.js";
 import { meRoutes } from "./routes/me.js";
 import { publicRoutes } from "./routes/public.js";
+import { lookupRoutes } from "./routes/lookup.js";
 import { requestRoutes } from "./routes/requests.js";
 import { shareRoutes } from "./routes/shares.js";
 
@@ -50,6 +51,8 @@ export async function buildServer() {
     maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),
     // Without SMTP in production nobody would receive the link, so the option is hidden.
     passwordResetEnabled: mailEnabled || !config.isProd,
+    dictionaryEnabled: config.dictionaryProvider !== "none",
+    translateEnabled: config.translateProvider !== "none",
   }));
 
   await app.register(authRoutes);
@@ -63,6 +66,7 @@ export async function buildServer() {
   await app.register(meRoutes);
   await app.register(adminRoutes);
   await app.register(requestRoutes);
+  await app.register(lookupRoutes);
   await app.register(eventRoutes);
 
   return app;

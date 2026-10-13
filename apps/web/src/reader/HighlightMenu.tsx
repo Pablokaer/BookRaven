@@ -1,9 +1,11 @@
+import { BookA, Copy, Languages, StickyNote, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
 import type { HighlightColor } from "../lib/api";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
 
 /**
- * Floating bar above selected text (pick a color to highlight it) or above an
- * existing highlight (change its color, copy or remove it).
+ * Floating bar above selected text (highlight it, add a note, look it up) or above an
+ * existing highlight (change its color or note, copy, look up, remove).
  */
 export function HighlightMenu({
   rect,
@@ -11,6 +13,9 @@ export function HighlightMenu({
   onColor,
   onCopy,
   onDelete,
+  onNote,
+  onDefine,
+  onTranslate,
 }: {
   rect: DOMRect;
   /** Color of the highlight being edited; undefined for a new selection. */
@@ -18,16 +23,27 @@ export function HighlightMenu({
   onColor: (color: HighlightColor) => void;
   onCopy: () => void;
   onDelete?: () => void;
+  onNote?: () => void;
+  /** Shown for a single word only. */
+  onDefine?: () => void;
+  onTranslate?: () => void;
 }) {
+  const actions: { label: string; icon: ReactNode; onClick: () => void; danger?: boolean }[] = [
+    ...(onNote ? [{ label: "Note", icon: <StickyNote />, onClick: onNote }] : []),
+    ...(onDefine ? [{ label: "Define", icon: <BookA />, onClick: onDefine }] : []),
+    ...(onTranslate ? [{ label: "Translate", icon: <Languages />, onClick: onTranslate }] : []),
+    { label: "Copy", icon: <Copy />, onClick: onCopy },
+    ...(onDelete ? [{ label: "Remove highlight", icon: <Trash2 />, onClick: onDelete, danger: true }] : []),
+  ];
   // Approximate width, only used to keep the bar on screen.
-  const width = onDelete ? 290 : 220;
+  const width = 4 * 34 + actions.length * 34 + 24;
   const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8);
   // Above the text when there is room, otherwise below it.
   const top = rect.top > 64 ? rect.top - 52 : rect.bottom + 8;
 
   return (
     <div
-      className="fixed z-40 flex w-max items-center gap-1 rounded-full bg-neutral-900 px-2 py-1.5 text-white shadow-2xl"
+      className="fixed z-40 flex w-max animate-pop items-center gap-0.5 rounded-full bg-neutral-900 px-2 py-1.5 text-white shadow-2xl ring-1 ring-white/10"
       style={{ left, top }}
       role="toolbar"
       aria-label="Highlight"
@@ -45,14 +61,17 @@ export function HighlightMenu({
         </button>
       ))}
       <span className="mx-1 h-5 w-px bg-white/20" />
-      <button className="rounded-full px-2 py-1 text-sm hover:bg-white/10" onClick={onCopy}>
-        Copy
-      </button>
-      {onDelete && (
-        <button className="rounded-full px-2 py-1 text-sm text-red-300 hover:bg-white/10" onClick={onDelete}>
-          Remove
+      {actions.map((a) => (
+        <button
+          key={a.label}
+          className={`inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-white/10 [&>svg]:h-4 [&>svg]:w-4 ${a.danger ? "text-red-300" : ""}`}
+          aria-label={a.label}
+          title={a.label}
+          onClick={a.onClick}
+        >
+          {a.icon}
         </button>
-      )}
+      ))}
     </div>
   );
 }
