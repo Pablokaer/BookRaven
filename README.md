@@ -131,6 +131,7 @@ The Public Library can be filled with popular public-domain books from [Project 
 ```bash
 pnpm --filter api import:public-domain                                           # development: 220 English + 220 Portuguese
 pnpm --filter api import:public-domain -- --per-language 300 --max-pages 25        # more (and how deep to read each search)
+pnpm --filter api import:public-domain -- --skip-topics engineering,computer       # leave out some themed searches
 docker compose exec api node dist/scripts/import-public-domain.js --per-language 300   # production
 ```
 
