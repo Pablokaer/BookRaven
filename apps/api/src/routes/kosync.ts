@@ -5,14 +5,14 @@ import { saveReadingProgress } from "../lib/progress.js";
 
 /**
  * KOReader progress sync ("kosync" protocol), so KOReader on e-ink readers (Kobo,
- * PocketBook, Kindle…) shares reading positions with Mico-livrão.
+ * PocketBook, Kindle…) shares reading positions with BookRaven.
  *
  * In KOReader: Tools → Progress sync → Custom sync server: https://<your server>/kosync,
  * then Login with your email and an app password. Use "Binary" document matching.
  *
  * Positions are matched to books by KOReader's partial MD5. PDFs and comics sync both
  * ways by page; for ebooks KOReader positions (XPointers) can't be translated into our
- * CFIs, so Mico-livrão offers to jump to the same percentage, and KOReader devices keep
+ * CFIs, so BookRaven offers to jump to the same percentage, and KOReader devices keep
  * syncing exact positions among themselves.
  */
 
@@ -38,9 +38,9 @@ export async function kosyncRoutes(app: FastifyInstance) {
     }
   });
 
-  // Accounts are created in Mico-livrão, not from KOReader.
+  // Accounts are created in BookRaven, not from KOReader.
   app.post("/kosync/users/create", async (_request, reply) =>
-    reply.code(403).send({ code: 2005, message: "Create your account in Mico-livrão, then use an app password from your profile." }),
+    reply.code(403).send({ code: 2005, message: "Create your account in BookRaven, then use an app password from your profile." }),
   );
 
   app.register(async (authed) => {
@@ -77,7 +77,7 @@ export async function kosyncRoutes(app: FastifyInstance) {
           [request.user.id, b.document, b.progress, b.percentage, device, b.device_id || ""],
         );
 
-        // Mirror it into Mico-livrão's own progress for the matching book.
+        // Mirror it into BookRaven's own progress for the matching book.
         const book = await query<{ id: string; format: string }>("SELECT id, format FROM book WHERE user_id = $1 AND koreader_md5 = $2", [
           request.user.id,
           b.document,
@@ -105,7 +105,7 @@ export async function kosyncRoutes(app: FastifyInstance) {
       const { rows } = await query<KosyncRow>("SELECT * FROM kosync_progress WHERE user_id = $1 AND document = $2", [request.user.id, document]);
       const ko = rows[0];
 
-      // A newer position read in Mico-livrão is offered back when KOReader can use it (pages).
+      // A newer position read in BookRaven is offered back when KOReader can use it (pages).
       const ours = await query<{ format: string; locator: string; percentage: number; updated_at: Date; device_name: string | null }>(
         `SELECT b.format, p.locator, p.percentage, p.updated_at, p.device_name
          FROM book b JOIN reading_progress p ON p.book_id = b.id AND p.user_id = b.user_id
@@ -117,7 +117,7 @@ export async function kosyncRoutes(app: FastifyInstance) {
         const page =
           r.format === "pdf" ? /^page:(\d+)$/.exec(r.locator)?.[1] : COMIC.has(r.format) ? String(Number(/^epubcfi\(\/6\/(\d+)/.exec(r.locator)?.[1]) / 2) : null;
         if (page && page !== "NaN") {
-          return { document, progress: page, percentage: r.percentage, device: r.device_name ?? "Mico-livrão", device_id: "readsync", timestamp: Math.floor(r.updated_at.getTime() / 1000) };
+          return { document, progress: page, percentage: r.percentage, device: r.device_name ?? "BookRaven", device_id: "readsync", timestamp: Math.floor(r.updated_at.getTime() / 1000) };
         }
       }
       if (!ko) return {};

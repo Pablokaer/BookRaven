@@ -58,7 +58,7 @@ describe("KOReader sync", () => {
     expect(ours).toBe(ref.digest("hex"));
   });
 
-  it("syncs PDF pages both ways and mirrors positions into Mico-livrão", async () => {
+  it("syncs PDF pages both ways and mirrors positions into BookRaven", async () => {
     const u = await signUp();
     const file = fakePdf(100_000);
     const book = (await upload(u, "k.pdf", file)).json();
@@ -84,7 +84,7 @@ describe("KOReader sync", () => {
     expect(mirrored).toMatchObject({ locator: "page:5", percentage: 0.25, deviceName: "KOReader (Kobo Libra)" });
     expect((await ko("GET", `/kosync/syncs/progress/${doc}`)).json()).toMatchObject({ progress: "5", device: "Kobo Libra" });
 
-    // Reading further in Mico-livrão: KOReader gets that page back.
+    // Reading further in BookRaven: KOReader gets that page back.
     await new Promise((r) => setTimeout(r, 1100));
     await api(u, "PUT", `/api/books/${book.id}/progress`, { locator: "page:9", percentage: 0.45, deviceId: "web", deviceName: "Firefox", clientUpdatedAt: Date.now() });
     expect((await ko("GET", `/kosync/syncs/progress/${doc}`)).json()).toMatchObject({ progress: "9", percentage: 0.45, device: "Firefox" });

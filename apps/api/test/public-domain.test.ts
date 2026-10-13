@@ -102,7 +102,7 @@ describe("Gutenberg import", () => {
       popularity: number | null;
     }[];
     const dom = list.find((b) => b.title === "Dom Casmurro")!;
-    expect(dom).toMatchObject({ author: "Machado de Assis", language: "pt", publishedBy: "Mico-livrão Library", source: { url: "https://www.gutenberg.org/ebooks/101" } });
+    expect(dom).toMatchObject({ author: "Machado de Assis", language: "pt", publishedBy: "BookRaven Library", source: { url: "https://www.gutenberg.org/ebooks/101" } });
     expect(list.some((b) => b.title === "Book 102")).toBe(false);
     expect(dom.themes).toContain("literature"); // from "Category: Novels"
     expect(dom.popularity).toBe(899);

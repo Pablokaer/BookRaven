@@ -81,7 +81,7 @@ export function OtherApps({ email }: { email: string }) {
       </div>
       <p className="text-xs text-muted">
         In KOReader: Tools → Progress sync → Custom sync server, then Login. Choose “Binary” document matching. PDFs and comics sync page by
-        page in both directions; for ebooks Mico-livrão offers to jump to KOReader’s percentage.
+        page in both directions; for ebooks BookRaven offers to jump to KOReader’s percentage.
       </p>
 
       <div>

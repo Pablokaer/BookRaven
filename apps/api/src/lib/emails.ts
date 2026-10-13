@@ -3,7 +3,7 @@ import type { Mail } from "./mailer.js";
 
 /** The account emails (welcome, password reset): plain text plus HTML in the app's colours. */
 
-const APP = "Mico-livrão";
+const APP = "BookRaven";
 // Email clients ignore stylesheets and CSS variables: inline values from apps/web/src/index.css.
 const C = { page: "#eef3f2", card: "#ffffff", fg: "#102327", muted: "#5b6f73", line: "#d9e3e2", button: "#087f78", brand: "#071315", accent: "#16c9b2" };
 

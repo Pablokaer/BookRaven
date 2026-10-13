@@ -10,7 +10,7 @@ import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
 
 export const auth = betterAuth({
-  appName: "Mico-livrão",
+  appName: "BookRaven",
   baseURL: config.publicUrl,
   basePath: "/api/auth",
   secret: config.authSecret,

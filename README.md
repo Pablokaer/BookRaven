@@ -1,8 +1,8 @@
-# Mico-livrão
+# BookRaven
 
 Self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT) that saves your exact reading position and lets you continue on any device: web browser, Android app, or e-ink readers through KOReader.
 
-The app is called **Mico-livrão**. Internal identifiers (package names, the database, storage and cache keys, the `readsync.local` example domain) still use `readsync`, so existing data and installs keep working.
+The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (package names, the database, storage and cache keys, the `readsync.local` example domain) still use `readsync`, so existing data and installs keep working.
 
 ## Features
 
@@ -117,7 +117,7 @@ The port 80 virtual host just redirects to HTTPS. With nginx use `proxy_pass htt
 
 ### Email
 
-Mico-livrão sends two emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`):
+BookRaven sends two emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`):
 
 - **Welcome**, once, when an account is created (email form or Google).
 - **Password reset**, from *Forgot password?* on the sign-in screen: a link that works once, for one hour, and signs out the account's other sessions.
@@ -126,7 +126,7 @@ Both go through any SMTP service set in `.env`, for example [Resend](https://res
 
 ```bash
 SMTP_URL=smtps://resend:<api key>@smtp.resend.com:465
-MAIL_FROM=Mico-livrão <no-reply@books.example.com>
+MAIL_FROM=BookRaven <no-reply@books.example.com>
 ```
 
 The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work: …`. Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
@@ -221,7 +221,7 @@ docker compose exec api node dist/scripts/import-public-domain.js --per-language
 - **Themes first:** for each language the importer first runs themed searches (philosophy, politics, economics, technology/engineering, computing, science; quotas in `apps/api/src/lib/themes.ts`), then fills up to `--per-language` with the most popular books overall. Every book is classified into the library's sections from its Library of Congress subjects and Gutenberg bookshelves; books people publish get sections from their tags. Portuguese has far fewer public-domain books on Gutenberg (a few hundred in total), and programming books are practically absent from the public domain, so those sections stay small.
 - **Big files:** illustrated editions over 60 MB are replaced by the edition without images.
 - **Time:** downloads go one at a time with a pause, so a few hundred books take a couple of hours. Stop it any time; the next run continues.
-- **Where it goes:** the books belong to a system account, *Mico-livrão Library* (`library@readsync.local`), which has no password and cannot sign in. Each book is public, tagged with Gutenberg's categories, and links to its Gutenberg page. The import is recorded in the `catalog_book` table (source id, authors and translators with their dates, language, subjects, popularity).
+- **Where it goes:** the books belong to a system account, *BookRaven Library* (`library@readsync.local`), which has no password and cannot sign in. Each book is public, tagged with Gutenberg's categories, and links to its Gutenberg page. The import is recorded in the `catalog_book` table (source id, authors and translators with their dates, language, subjects, popularity).
 - **Running it again** only adds what is missing, so raising `--per-language` later imports the next most popular books. Administrators can still unpublish or block any of them like any other public book.
 
 ## Other reading apps (OPDS and KOReader)
@@ -229,7 +229,7 @@ docker compose exec api node dist/scripts/import-public-domain.js --per-language
 Create an **app password** in *Profile → Other apps* for each device; the account password is never accepted by these endpoints.
 
 - **OPDS catalog:** `https://<your server>/opds` (KOReader, Moon+ Reader, Thorium, Calibre…). Username: your email, password: the app password. Browse your library, collections and the Public Library, search, and download.
-- **KOReader progress sync:** in KOReader, *Tools → Progress sync → Custom sync server* `https://<your server>/kosync`, then *Login* with your email and the app password, and choose *Binary* document matching. Books are matched by KOReader's partial MD5. PDFs and comics sync page by page in both directions. For ebooks, KOReader positions can't be converted to CFIs: Mico-livrão offers to jump to KOReader's percentage, and KOReader devices keep exact positions among themselves.
+- **KOReader progress sync:** in KOReader, *Tools → Progress sync → Custom sync server* `https://<your server>/kosync`, then *Login* with your email and the app password, and choose *Binary* document matching. Books are matched by KOReader's partial MD5. PDFs and comics sync page by page in both directions. For ebooks, KOReader positions can't be converted to CFIs: BookRaven offers to jump to KOReader's percentage, and KOReader devices keep exact positions among themselves.
 
 ## Tests
 
@@ -265,8 +265,8 @@ CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build 
 ## Known limitations / next steps
 
 - DRM-protected books (bought on Kindle, Kobo, …) can't be opened. Only DRM-free files work.
-- The Android app has not been rebuilt and tested with the latest web changes; run `pnpm android:sync` and try downloads (saved to *Documents/Mico-livrão*) on a device.
+- The Android app has not been rebuilt and tested with the latest web changes; run `pnpm android:sync` and try downloads (saved to *Documents/BookRaven*) on a device.
 - **Google sign-in on Android** still needs a native Google Sign-In plugin and an Android OAuth client in Google Cloud (see *Android app* above).
 - Comics: CBR support relies on 7-Zip's RAR decoder; password-protected archives can't be opened.
-- KOReader can't receive Mico-livrão positions for reflowable ebooks (only PDFs and comics), see above.
+- KOReader can't receive BookRaven positions for reflowable ebooks (only PDFs and comics), see above.
 - SSE runs in memory, which is fine for one API instance. To run several, send events through Postgres `LISTEN/NOTIFY`.

@@ -16,7 +16,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             <BookOpen className="h-6 w-6" strokeWidth={2.4} />
           </span>
           <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">Mico-livrão</h1>
+            <h1 className="font-display text-2xl font-bold tracking-tight">BookRaven</h1>
             <p className="text-sm text-muted">Your books, on every device.</p>
           </div>
         </div>

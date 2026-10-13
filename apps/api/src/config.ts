@@ -42,7 +42,7 @@ export const config = {
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 200) * 1024 * 1024,
   /** SMTP connection URL for outgoing email, e.g. smtps://user:pass@smtp.example.com:465 */
   smtpUrl: process.env.SMTP_URL ?? "",
-  mailFrom: process.env.MAIL_FROM ?? "Mico-livrão <no-reply@localhost>",
+  mailFrom: process.env.MAIL_FROM ?? "BookRaven <no-reply@localhost>",
   /** Dictionary lookups: "wiktionary" (default) or "none". */
   dictionaryProvider: (process.env.DICTIONARY_PROVIDER ?? "wiktionary") === "none" ? ("none" as const) : ("wiktionary" as const),
   /** Translation of selected text: "mymemory" (default, free), "libretranslate" or "none". */

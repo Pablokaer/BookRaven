@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "app.readsync",
-  appName: "Mico-livrão",
+  appName: "BookRaven",
   webDir: "dist",
   android: {
     // The app talks to your VPS over HTTPS only.

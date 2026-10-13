@@ -20,7 +20,7 @@ import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./
 export const LIBRARY_EMAIL = "library@readsync.local";
 const GUTENDEX = "https://gutendex.com";
 const MIRROR = "https://gutenberg.pglaf.org";
-const UA = "Mico-livrao/1.0 (self-hosted reader; public-domain import)";
+const UA = "BookRaven/1.0 (self-hosted reader; public-domain import)";
 const MAX_BYTES = 60 * 1024 * 1024;
 
 export type ImportOptions = {
@@ -44,7 +44,7 @@ export async function ensureLibraryAccount() {
   const id = randomBytes(16).toString("hex");
   await query(`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES ($1, $2, $3, true, now(), now())`, [
     id,
-    "Mico-livrão Library",
+    "BookRaven Library",
     LIBRARY_EMAIL,
   ]);
   return id;
