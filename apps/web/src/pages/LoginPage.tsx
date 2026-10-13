@@ -4,14 +4,14 @@ import { Landscape } from "../components/dashboard/Landscape";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
 
-/** Centered card over the landscape, shared by the sign-in and password-reset screens. */
+/** Centered card over the landscape, shared by the sign-in and password-reset screens. Everything in it is centered, inputs included. */
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       <Landscape className="absolute inset-0 h-full w-full opacity-70" />
       <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
-      <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 shadow-pop backdrop-blur-xl">
-        <div className="mb-7 flex items-center gap-3">
+      <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl [&_input]:text-center">
+        <div className="mb-7 flex flex-col items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-app">
             <BookOpen className="h-6 w-6" strokeWidth={2.4} />
           </span>
@@ -136,7 +136,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
           autoComplete={mode === "signin" ? "current-password" : "new-password"}
         />
         {mode === "signin" && cfg?.passwordResetEnabled && (
-          <div className="-mt-1 text-right">
+          <div className="-mt-1">
             <button type="button" className="text-xs text-muted hover:text-accent" onClick={() => switchMode("forgot")}>
               Forgot password?
             </button>
