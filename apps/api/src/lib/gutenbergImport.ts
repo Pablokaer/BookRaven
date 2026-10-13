@@ -65,9 +65,10 @@ export async function importPublicDomain(opts: ImportOptions) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as { next: string | null; results: GutendexBook[] };
       } catch (err) {
-        if (attempt >= 3) throw err;
-        log(`  catalog request failed (${(err as Error).message}), retrying…`);
-        await delay(5000 * attempt);
+        // Gutendex is a free service that is sometimes overloaded: back off and retry.
+        if (attempt >= 6) throw err;
+        log(`  catalog request failed (${(err as Error).message}), retrying in ${15 * attempt}s…`);
+        await delay(15_000 * attempt);
       }
     }
   }
@@ -186,7 +187,15 @@ export async function importPublicDomain(opts: ImportOptions) {
     );
     let pages = 0;
     while (url && !(await enough()) && pages < (opts.maxPages ?? 10)) {
-      const page = await getJson(url);
+      let page: Awaited<ReturnType<typeof getJson>>;
+      try {
+        page = await getJson(url);
+      } catch (err) {
+        // Keep what was imported and go on with the next search; a later run fills the gap.
+        log(`  ! ${label}: catalog unavailable (${(err as Error).message}), skipping the rest of this search`);
+        summary.failed++;
+        return;
+      }
       pages++;
       for (const b of page.results) {
         if (await enough()) break;
