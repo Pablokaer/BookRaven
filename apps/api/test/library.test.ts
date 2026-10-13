@@ -79,4 +79,38 @@ describe("sharing and the public library", () => {
     expect((await api(owner, "DELETE", `/api/public/${book.id}`)).statusCode).toBe(204);
     expect((await api(stranger, "GET", "/api/public")).json().map((b: { id: string }) => b.id)).not.toContain(book.id);
   });
+
+  it("shares a whole collection by link", async () => {
+    const owner = await signUp(undefined, "Owner");
+    const reader = await signUp();
+    const folder = (await api(owner, "POST", "/api/folders", { name: "Mysteries" })).json();
+    const a = (await upload(owner, "a.pdf", fakePdf(), { title: "A" })).json();
+    const b = (await upload(owner, "b.pdf", fakePdf(), { title: "B" })).json();
+    await api(owner, "PATCH", `/api/books/${a.id}`, { folderId: folder.id });
+
+    expect((await api(reader, "POST", `/api/folders/${folder.id}/share`)).statusCode).toBe(404);
+    const { token } = (await api(owner, "POST", `/api/folders/${folder.id}/share`)).json();
+    expect((await api(owner, "GET", `/api/folders/${folder.id}/share`)).json().token).toBe(token);
+
+    const preview = (await api(reader, "GET", `/api/collection-shares/${token}`)).json();
+    expect(preview).toMatchObject({ name: "Mysteries", sharedBy: "Owner", isOwner: false });
+    expect(preview.books.map((x: { title: string }) => x.title)).toEqual(["A"]);
+
+    const first = await api(reader, "POST", `/api/collection-shares/${token}/accept`);
+    expect(first.statusCode).toBe(201);
+    expect(first.json()).toMatchObject({ added: 1 });
+    const mine = (await api(reader, "GET", "/api/books")).json();
+    expect(mine).toEqual([expect.objectContaining({ title: "A", folderId: first.json().folderId, sharedBy: "Owner" })]);
+
+    // Books added to the collection later reach the link; accepting again adds only those.
+    await api(owner, "PATCH", `/api/books/${b.id}`, { folderId: folder.id });
+    const again = await api(reader, "POST", `/api/collection-shares/${token}/accept`);
+    expect(again.json()).toMatchObject({ added: 1, folderId: first.json().folderId });
+    expect((await api(reader, "GET", "/api/books")).json()).toHaveLength(2);
+    expect((await api(reader, "POST", `/api/collection-shares/${token}/accept`)).statusCode).toBe(200);
+    expect((await api(owner, "POST", `/api/collection-shares/${token}/accept`)).statusCode).toBe(409);
+
+    expect((await api(owner, "DELETE", `/api/folders/${folder.id}/share`)).statusCode).toBe(204);
+    expect((await api(reader, "GET", `/api/collection-shares/${token}`)).statusCode).toBe(404);
+  });
 });

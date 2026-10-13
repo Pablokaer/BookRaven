@@ -16,7 +16,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { PublicLibraryPage } from "./pages/PublicLibraryPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { SharePage } from "./pages/SharePage";
+import { SharedCollectionPage, SharePage } from "./pages/SharePage";
 
 // The reader (pdf.js, foliate-js) is loaded only when a book is opened.
 const ReaderPage = lazy(() => import("./pages/ReaderPage").then((m) => ({ default: m.ReaderPage })));
@@ -101,6 +101,7 @@ export function App() {
               <Route path="clubs/join/:token" element={<ClubInvitePage />} />
               <Route path="clubs/:id" element={<ClubPage />} />
               <Route path="share/:token" element={<SharePage />} />
+              <Route path="share/collection/:token" element={<SharedCollectionPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

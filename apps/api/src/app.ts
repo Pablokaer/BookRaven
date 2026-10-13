@@ -22,6 +22,7 @@ import { publicRoutes } from "./routes/public.js";
 import { lookupRoutes } from "./routes/lookup.js";
 import { opdsRoutes } from "./routes/opds.js";
 import { requestRoutes } from "./routes/requests.js";
+import { collectionShareRoutes } from "./routes/collectionShares.js";
 import { shareRoutes } from "./routes/shares.js";
 
 /** The Fastify app with every route registered (no listening, no migrations): used by index.ts and the tests. */
@@ -64,6 +65,7 @@ export async function buildServer() {
   await app.register(progressRoutes);
   await app.register(settingsRoutes);
   await app.register(shareRoutes);
+  await app.register(collectionShareRoutes);
   await app.register(folderRoutes);
   await app.register(highlightRoutes);
   await app.register(publicRoutes);

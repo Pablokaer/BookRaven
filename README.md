@@ -17,7 +17,7 @@ The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (p
   - Positions are saved with a 1.5 s delay, kept in a local outbox while offline, and sent immediately when the app goes to the background or the tab closes.
   - The server keeps the **newest** position, judged by when the page was actually reached. A device that comes back online late can't overwrite newer progress.
   - Live updates over **Server-Sent Events**: if you read ahead on another device, the open reader offers to jump there. Reader settings sync too.
-- **Sharing:** share a book by link, publish it to the **Public Library** (everyone on the server can read or download it), request books there and vote on requests, and read together in **book clubs** (members see each other's progress and discuss passages).
+- **Sharing:** share a book or a whole collection by link (a collection link always shows the collection's current books; accepting adds copies of all of them to a collection of the same name, and accepting again adds only the new ones), publish it to the **Public Library** (everyone on the server can read or download it), request books there and vote on requests, and read together in **book clubs** (members see each other's progress and discuss passages).
 - **Public-domain collection:** an importer fills the Public Library with hundreds of popular public-domain books in English and Portuguese from Project Gutenberg (see below). The Public Library is organised in **sections by theme** (philosophy, politics, economics, technology, computing, science, history, literature, poetry, religion, children), with a language filter, popularity ranking and a link back to the source.
 - **Other apps:** an **OPDS** catalog and a **KOReader** progress-sync server, with per-device app passwords.
 - **Offline:** the web app opens without a connection and shows your saved library; books you opened (or saved for offline) can be read.
@@ -254,6 +254,7 @@ CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build 
 | GET/PUT | `/api/books/:id/progress` | newest wins |
 | * | `/api/books/:id/highlights`, `/api/highlights/:id` | highlights and notes |
 | * | `/api/folders`, `/api/books/:id/share`, `/api/shares/:token` | collections, share links |
+| * | `/api/folders/:id/share`, `/api/collection-shares/:token` | collection share links: create/revoke, preview, `POST …/accept` copies every book |
 | * | `/api/public/*`, `/api/requests/*` | public library (download, add, report) and book requests |
 | * | `/api/clubs/*` | book clubs, invites, messages |
 | GET/POST | `/api/dictionary`, `/api/translate` | lookups for selected text |

@@ -36,3 +36,40 @@ export function getSharedBook(token: string) {
 export function acceptShare(token: string) {
   return apiJson<Book>(`/api/shares/${token}/accept`, { method: "POST" });
 }
+
+// ---- Collections ----
+
+export type SharedCollection = {
+  name: string;
+  sharedBy: string | null;
+  /** The caller owns the collection (opened their own link). */
+  isOwner: boolean;
+  books: (Omit<SharedBook, "sharedBy"> & { id: string })[];
+};
+
+export type CollectionAccept = { folderId: string; added: number; blocked: number };
+
+export async function getCollectionShareToken(folderId: string) {
+  return (await apiJson<{ token: string | null }>(`/api/folders/${folderId}/share`)).token;
+}
+
+export async function createCollectionShareToken(folderId: string) {
+  return (await apiJson<{ token: string }>(`/api/folders/${folderId}/share`, { method: "POST" })).token;
+}
+
+export async function revokeCollectionShare(folderId: string) {
+  const res = await apiFetch(`/api/folders/${folderId}/share`, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new ApiError(res.status, null);
+}
+
+export function collectionShareUrl(token: string) {
+  return `${isNative ? API_BASE : window.location.origin}/share/collection/${token}`;
+}
+
+export function getSharedCollection(token: string) {
+  return apiJson<SharedCollection>(`/api/collection-shares/${token}`);
+}
+
+export function acceptCollectionShare(token: string) {
+  return apiJson<CollectionAccept>(`/api/collection-shares/${token}/accept`, { method: "POST" });
+}

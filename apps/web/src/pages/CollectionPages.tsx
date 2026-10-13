@@ -1,8 +1,9 @@
-import { Folder, FolderPlus, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
-import { useMemo } from "react";
+import { Folder, FolderPlus, MoreHorizontal, Pencil, Share2, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { BookBrowser, EmptyState } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
+import { CollectionShareDialog } from "../components/ShareDialog";
 import { Menu } from "../components/ui/Menu";
 import { collectionColor } from "../lib/bookStats";
 import { useLibrary } from "../lib/libraryStore";
@@ -95,6 +96,7 @@ export function CollectionPage() {
   const navigate = useNavigate();
   const folder = folders.find((f) => f.id === id);
   const list = useMemo(() => books && books.filter((b) => b.folderId === id), [books, id]);
+  const [sharing, setSharing] = useState(false);
 
   if (foldersReady && !folder) return <Navigate to="/collections" replace />;
 
@@ -104,10 +106,16 @@ export function CollectionPage() {
         {folder && <span className="h-3 w-3 rounded-full" style={{ background: collectionColor(folder) }} />}
         <h1 className="mr-auto truncate font-display text-3xl font-bold tracking-tight">{folder?.name ?? "Collection"}</h1>
         {folder && (
+          <button className="icon-btn" aria-label={`Share ${folder.name}`} title="Share" onClick={() => setSharing(true)}>
+            <Share2 className="h-4 w-4" />
+          </button>
+        )}
+        {folder && (
           <Menu
             label="Collection actions"
             trigger={<MoreHorizontal className="h-4 w-4" />}
             items={[
+              { label: "Share…", icon: <Share2 />, onSelect: () => setSharing(true) },
               { label: "Rename", icon: <Pencil />, onSelect: () => void renameFolderPrompt(folder) },
               {
                 label: "Delete collection",
@@ -121,6 +129,7 @@ export function CollectionPage() {
           />
         )}
       </header>
+      {sharing && folder && <CollectionShareDialog folder={folder} onClose={() => setSharing(false)} />}
       <BookBrowser
         books={list}
         title="Books"
