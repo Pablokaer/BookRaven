@@ -95,12 +95,22 @@ export type Book = {
   sharedAt: string | null;
   /** Published in the public library. */
   isPublic: boolean;
+  /** ISO 639-1 code, when known. */
+  language: string | null;
   createdAt: string;
   progress: Progress | null;
 };
 
 /** A book in the public library, as other accounts see it. */
 export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "filename" | "sizeBytes" | "hasCover"> & {
+  /** ISO 639-1 code, when known. */
+  language: string | null;
+  /** Set for public-domain books imported from a catalog such as Project Gutenberg. */
+  source: { name: string; url: string } | null;
+  /** Library sections, e.g. "philosophy", "economics". */
+  themes: string[];
+  /** Downloads at the source (a popularity signal); null for books people published. */
+  popularity: number | null;
   publishedBy: string | null;
   publishedAt: string;
   /** The viewer's own copy of this file, if any. */

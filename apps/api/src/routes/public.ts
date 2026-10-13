@@ -6,13 +6,21 @@ import { copyBookToUser } from "../lib/copies.js";
 import { broadcast, publish } from "../lib/events.js";
 import { BlockedFileError } from "../lib/moderation.js";
 import { QuotaExceededError } from "../lib/quota.js";
+import { themesFor } from "../lib/themes.js";
 import { bookKey } from "../lib/storage.js";
 import { adminUserIds } from "./admin.js";
 import { SELECT_BOOK, sendCover, sendFile, toBookDto, type BookRow } from "./books.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type PublicRow = BookRow & { user_id: string; owner_name: string | null };
+type PublicRow = BookRow & {
+  user_id: string;
+  owner_name: string | null;
+  language?: string | null;
+  source_url?: string | null;
+  themes?: string[];
+  download_count?: number | null;
+};
 
 const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id: string; email: string }) => ({
   id: r.id,
@@ -22,6 +30,13 @@ const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id
   filename: r.original_filename,
   sizeBytes: Number(r.size_bytes),
   hasCover: r.has_cover,
+  language: r.language ?? null,
+  /** Where an imported public-domain book comes from. */
+  source: r.source_url ? { name: "Project Gutenberg", url: r.source_url } : null,
+  /** Library sections: from the catalog for imported books, from tags for the others. */
+  themes: [...new Set([...(r.themes ?? []), ...themesFor(r.tags ?? [])])],
+  /** Downloads at the source (Gutenberg), a popularity signal; null for books people published. */
+  popularity: r.download_count ?? null,
   publishedBy: r.owner_name,
   publishedAt: (r.published_at ?? r.created_at).toISOString(),
   /** The viewer's own copy of this file, if they have one. */
@@ -60,9 +75,10 @@ export async function publicRoutes(app: FastifyInstance) {
     // The same file published by several people is listed once (earliest publication).
     const { rows } = await query<PublicRow & { own_book_id: string | null }>(
       `SELECT * FROM (
-         SELECT DISTINCT ON (b.sha256) b.*, u.name AS owner_name,
+         SELECT DISTINCT ON (b.sha256) b.*, u.name AS owner_name, cb.source_url, cb.download_count,
                 (SELECT m.id FROM book m WHERE m.user_id = $1 AND m.sha256 = b.sha256) AS own_book_id
          FROM book b JOIN "user" u ON u.id = b.user_id
+         LEFT JOIN catalog_book cb ON cb.book_id = b.id
          WHERE b.is_public
          ORDER BY b.sha256, b.published_at
        ) t

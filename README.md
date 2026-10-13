@@ -18,6 +18,7 @@ The app is called **Mico-livrão**. Internal identifiers (package names, the dat
   - The server keeps the **newest** position, judged by when the page was actually reached. A device that comes back online late can't overwrite newer progress.
   - Live updates over **Server-Sent Events**: if you read ahead on another device, the open reader offers to jump there. Reader settings sync too.
 - **Sharing:** share a book by link, publish it to the **Public Library** (everyone on the server can read or download it), request books there and vote on requests, and read together in **book clubs** (members see each other's progress and discuss passages).
+- **Public-domain collection:** an importer fills the Public Library with hundreds of popular public-domain books in English and Portuguese from Project Gutenberg (see below). The Public Library is organised in **sections by theme** (philosophy, politics, economics, technology, computing, science, history, literature, poetry, religion, children), with a language filter, popularity ranking and a link back to the source.
 - **Other apps:** an **OPDS** catalog and a **KOReader** progress-sync server, with per-device app passwords.
 - **Offline:** the web app opens without a connection and shows your saved library; books you opened (or saved for offline) can be read.
 - **Administration:** accounts (storage limits, blocking, temporary passwords, deletion) and content reports on public books (dismiss, unpublish, block the file or delete it everywhere).
@@ -122,6 +123,24 @@ pnpm android:open                      # opens Android Studio → Run / Build AP
 - The app loads its interface from inside the APK and talks to your VPS over HTTPS. It stores a bearer token in Capacitor Preferences.
 - The API already allows the Capacitor origins (`https://localhost`, `capacitor://localhost`) for CORS.
 - **Google sign-in on Android:** Google blocks OAuth inside embedded WebViews, so the app hides the Google button for now and you sign in with email + password. Adding it later means a native Google Sign-In plugin that returns an ID token, which you then pass to `authClient.signIn.social({ provider: "google", idToken: { token } })`.
+
+## Public-domain books
+
+The Public Library can be filled with popular public-domain books from [Project Gutenberg](https://www.gutenberg.org):
+
+```bash
+pnpm --filter api import:public-domain                                           # development: 220 English + 220 Portuguese
+pnpm --filter api import:public-domain -- --per-language 300 --max-pages 25        # more (and how deep to read each search)
+docker compose exec api node dist/scripts/import-public-domain.js --per-language 300   # production
+```
+
+- **What gets imported:** books Gutenberg marks as public domain, **and** whose every author and translator died more than 70 full years ago. Gutenberg's own mark covers the USA; "life + 70" is the rule in Brazil, Portugal and most other countries. Works with no known author, or without death dates, are skipped.
+- **Where it comes from:** the list (most downloaded first) from [Gutendex](https://gutendex.com), an open API over Gutenberg's catalog; the EPUB files (with images) and covers from Gutenberg's official mirror, one at a time with a pause, as Gutenberg asks of automated downloads.
+- **Themes first:** for each language the importer first runs themed searches (philosophy, politics, economics, technology/engineering, computing, science; quotas in `apps/api/src/lib/themes.ts`), then fills up to `--per-language` with the most popular books overall. Every book is classified into the library's sections from its Library of Congress subjects and Gutenberg bookshelves; books people publish get sections from their tags. Portuguese has far fewer public-domain books on Gutenberg (a few hundred in total), and programming books are practically absent from the public domain, so those sections stay small.
+- **Big files:** illustrated editions over 60 MB are replaced by the edition without images.
+- **Time:** downloads go one at a time with a pause, so a few hundred books take a couple of hours. Stop it any time; the next run continues.
+- **Where it goes:** the books belong to a system account, *Mico-livrão Library* (`library@readsync.local`), which has no password and cannot sign in. Each book is public, tagged with Gutenberg's categories, and links to its Gutenberg page. The import is recorded in the `catalog_book` table (source id, authors and translators with their dates, language, subjects, popularity).
+- **Running it again** only adds what is missing, so raising `--per-language` later imports the next most popular books. Administrators can still unpublish or block any of them like any other public book.
 
 ## Other reading apps (OPDS and KOReader)
 

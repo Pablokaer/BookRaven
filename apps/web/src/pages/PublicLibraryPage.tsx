@@ -1,4 +1,4 @@
-import { BookOpen, Download, Flag, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowRight, BookOpen, Download, ExternalLink, Flag, Flame, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { EmptyState, BookGridSkeleton } from "../components/books/BookBrowser";
@@ -7,14 +7,29 @@ import { ReportDialog } from "../components/ReportDialog";
 import { RequestsTab } from "../components/RequestsTab";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { Menu } from "../components/ui/Menu";
+import { Modal } from "../components/ui/Modal";
 import { ApiError, type PublicBook } from "../lib/api";
 import { isComicFormat } from "../lib/comics";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { addPublicBook, downloadPublicBook, listPublicBooks, removePublicBook } from "../lib/publicLibrary";
 import { shortDate } from "../lib/bookStats";
+import { THEME_INFO, THEME_ORDER } from "../lib/themes";
 
-type Sort = "newest" | "title" | "author";
+type Sort = "popular" | "newest" | "title" | "author";
+
+const SHELF_SIZE = 18;
+const PAGE_SIZE = 60;
+
+/** "pt" → "Português", in the language itself. */
+function languageName(code: string) {
+  try {
+    const name = new Intl.DisplayNames([code], { type: "language" }).of(code) ?? code;
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch {
+    return code.toUpperCase();
+  }
+}
 
 function PublicBookCard({ book, onChanged, focused }: { book: PublicBook; onChanged: () => void; focused: boolean }) {
   const { replaceBook, refreshMe, me } = useLibrary();
@@ -82,6 +97,17 @@ function PublicBookCard({ book, onChanged, focused }: { book: PublicBook; onChan
         <p className="mt-2 truncate text-[11px] text-muted" title={`Published ${shortDate(book.publishedAt)}`}>
           {book.isMine ? "Published by you" : `Shared by ${book.publishedBy ?? "someone"}`} · {fileSize(book.sizeBytes)}
         </p>
+        {book.source && (
+          <a
+            href={book.source.url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/25 hover:bg-accent/20"
+            title={`Public domain, from ${book.source.name}`}
+          >
+            Public domain · {book.source.name} <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+        )}
         {error && <p className="mt-1.5 text-[11px] text-rose-300">{error}</p>}
         <div className="mt-3 flex items-center gap-1">
           {book.ownBookId ? (
@@ -118,17 +144,82 @@ function PublicBookCard({ book, onChanged, focused }: { book: PublicBook; onChan
   );
 }
 
-/** "/public" — books shared with every account on this server. */
+/** A horizontal row of covers; a click opens the book's card with all its actions. */
+function Shelf({
+  title,
+  icon,
+  blurb,
+  books,
+  total,
+  onSeeAll,
+  onOpen,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  blurb?: string;
+  books: PublicBook[];
+  total: number;
+  onSeeAll?: () => void;
+  onOpen: (b: PublicBook) => void;
+}) {
+  return (
+    <section className="animate-rise" aria-label={title}>
+      <div className="mb-3 flex items-end gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+            <span className="text-accent [&>svg]:h-5 [&>svg]:w-5">{icon}</span> {title}
+            <span className="font-sans text-sm font-normal text-muted">{total}</span>
+          </h2>
+          {blurb && <p className="text-xs text-muted">{blurb}</p>}
+        </div>
+        {onSeeAll && total > books.length && (
+          <button className="btn-ghost ml-auto shrink-0 py-1.5 text-xs" onClick={onSeeAll}>
+            See all <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      <ul className="-mx-1 flex snap-x gap-4 overflow-x-auto px-1 pb-3 [scrollbar-width:thin]">
+        {books.map((b) => (
+          <li key={b.id} className="w-28 shrink-0 snap-start sm:w-32">
+            <button className="group block w-full text-left" onClick={() => onOpen(b)} title={b.title}>
+              <BookCover book={b} coverPath={`/api/public/${b.id}/cover`} className="w-full transition duration-300 group-hover:-translate-y-1" />
+              <span className="mt-2 line-clamp-2 block text-xs font-medium leading-snug">{b.title}</span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted">{b.author ?? "Unknown author"}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const byPopularity = (a: PublicBook, b: PublicBook) => (b.popularity ?? -1) - (a.popularity ?? -1);
+
+/** "/public" — books shared with every account on this server, by theme. */
 export function PublicLibraryPage() {
   const { query, publicVersion, me } = useLibrary();
   const [books, setBooks] = useState<PublicBook[] | null>(null);
   const [error, setError] = useState(false);
   const [format, setFormat] = useState<string>("all");
-  const [sort, setSort] = useState<Sort>("newest");
+  const [language, setLanguage] = useState<string>("all");
+  const [sort, setSort] = useState<Sort>("popular");
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const [opened, setOpened] = useState<PublicBook | null>(null);
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "requests" ? "requests" : "books";
+  const theme = params.get("theme") ?? "all";
+  const showAll = params.get("all") === "1";
   // "?book=<id>" (from an answered request) scrolls to that book and outlines it.
   const focusId = params.get("book");
+
+  const setParam = (key: string, value: string | null) =>
+    setParams((p) => {
+      const next = new URLSearchParams(p);
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+      next.delete("book");
+      return next;
+    });
 
   const load = useCallback(() => {
     listPublicBooks()
@@ -140,25 +231,57 @@ export function PublicLibraryPage() {
   }, []);
 
   useEffect(load, [load, publicVersion]);
+  useEffect(() => setShown(PAGE_SIZE), [theme, format, language, sort, query]);
 
   useEffect(() => {
     if (focusId && books) document.getElementById(`pub-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusId, books]);
 
   const formats = useMemo(() => [...new Set(books?.map((b) => b.format))].sort(), [books]);
+  const languages = useMemo(() => [...new Set(books?.map((b) => b.language).filter((l): l is string => !!l))].sort(), [books]);
+
+  /** Books after the language/format filters (themes and search come on top). */
+  const pool = useMemo(
+    () =>
+      books?.filter(
+        (b) => (format === "all" || (format === "comics" ? isComicFormat(b.format) : b.format === format)) && (language === "all" || b.language === language),
+      ) ?? null,
+    [books, format, language],
+  );
+
+  const themeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of pool ?? []) for (const t of b.themes) counts.set(t, (counts.get(t) ?? 0) + 1);
+    return counts;
+  }, [pool]);
+
   const visible = useMemo(() => {
-    if (!books) return null;
+    if (!pool) return null;
     const q = query.trim().toLowerCase();
-    const list = books.filter(
-      (b) =>
-        (format === "all" || (format === "comics" ? isComicFormat(b.format) : b.format === format)) &&
-        (!q || `${b.title} ${b.author ?? ""} ${b.publishedBy ?? ""}`.toLowerCase().includes(q)),
-    );
-    const text = (a: string | null, b: string | null) => (a ?? "￿").localeCompare(b ?? "￿", undefined, { sensitivity: "base", numeric: true });
-    if (sort === "title") list.sort((a, b) => text(a.title, b.title));
+    const list = pool.filter((b) => (theme === "all" || b.themes.includes(theme)) && (!q || `${b.title} ${b.author ?? ""} ${b.publishedBy ?? ""}`.toLowerCase().includes(q)));
+    const text = (a: string | null, b: string | null) => (a ?? "\uffff").localeCompare(b ?? "\uffff", undefined, { sensitivity: "base", numeric: true });
+    if (sort === "popular") list.sort(byPopularity);
+    else if (sort === "title") list.sort((a, b) => text(a.title, b.title));
     else if (sort === "author") list.sort((a, b) => text(a.author, b.author) || text(a.title, b.title));
     return list;
-  }, [books, format, sort, query]);
+  }, [pool, theme, sort, query]);
+
+  // Without a theme, a search or "see everything", the library is shown as shelves.
+  const browsing = theme === "all" && !query.trim() && !showAll && !focusId;
+  const shelves = useMemo(() => {
+    if (!pool) return [];
+    const popular = [...pool].filter((b) => b.popularity !== null).sort(byPopularity);
+    const readers = pool.filter((b) => b.popularity === null);
+    return [
+      ...(popular.length ? [{ id: "popular", title: "Most popular", icon: <Flame />, books: popular }] : []),
+      ...THEME_ORDER.filter((t) => themeCounts.get(t)).map((t) => {
+        const info = THEME_INFO[t]!;
+        const Icon = info.icon;
+        return { id: t, title: info.label, blurb: info.blurb, icon: <Icon />, books: pool.filter((b) => b.themes.includes(t)).sort(byPopularity) };
+      }),
+      ...(readers.length ? [{ id: "readers", title: "Shared by readers", icon: <Users />, books: readers }] : []),
+    ];
+  }, [pool, themeCounts]);
 
   return (
     <>
@@ -168,8 +291,8 @@ export function PublicLibraryPage() {
             <Globe className="h-7 w-7 text-accent" /> Public Library
           </h1>
           <p className="mt-1.5 text-sm text-muted">
-            Books shared with everyone on this server. Add a copy to your library to read it with synced progress, or download the file.
-            Publish your own books from a book’s ⋯ menu.
+            {books ? `${books.length} books` : "Books"} shared with everyone on this server, including public-domain classics in English and Portuguese.
+            Add a copy to your library to read it with synced progress, or download the file. Publish your own books from a book’s ⋯ menu.
           </p>
         </div>
         {me?.isAdmin && (
@@ -179,27 +302,20 @@ export function PublicLibraryPage() {
         )}
       </header>
 
-      <div className="surface mb-8 max-w-md p-4">
-        <StorageMeter />
-      </div>
-
-      <div className="mb-8 flex gap-2" role="tablist">
+      <div className="mb-8 flex flex-wrap items-center gap-2" role="tablist">
         {(
           [
             ["books", "Books", <Library key="i" className="h-4 w-4" />],
             ["requests", "Requests", <HandHelping key="i" className="h-4 w-4" />],
           ] as const
         ).map(([id, label, icon]) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            className={`pill ${tab === id ? "pill-on" : ""}`}
-            onClick={() => setParams(id === "requests" ? { tab: "requests" } : {})}
-          >
+          <button key={id} role="tab" aria-selected={tab === id} className={`pill ${tab === id ? "pill-on" : ""}`} onClick={() => setParams(id === "requests" ? { tab: "requests" } : {})}>
             {icon} {label}
           </button>
         ))}
+        <div className="ml-auto w-full max-w-xs sm:w-72">
+          <StorageMeter />
+        </div>
       </div>
 
       {tab === "requests" ? (
@@ -207,20 +323,52 @@ export function PublicLibraryPage() {
       ) : (
         <>
           {books && books.length > 0 && (
-            <div className="mb-6 flex flex-wrap items-center gap-2">
-              {["all", ...formats, ...(formats.some(isComicFormat) ? ["comics"] : [])].map((f) => (
-                <button key={f} className={`pill ${format === f ? "pill-on" : ""}`} aria-pressed={format === f} onClick={() => setFormat(f)}>
-                  {f === "all" ? "All Books" : f === "comics" ? "Comics" : f.toUpperCase()}
+            <div className="mb-6 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {languages.length > 0 && (
+                  <select className="input py-1.5" aria-label="Language" value={language} onChange={(e) => setLanguage(e.target.value)}>
+                    <option value="all">All languages</option>
+                    {languages.map((l) => (
+                      <option key={l} value={l}>
+                        {languageName(l)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {formats.length > 1 &&
+                  ["all", ...formats, ...(formats.some(isComicFormat) ? ["comics"] : [])].map((f) => (
+                    <button key={f} className={`pill py-1 ${format === f ? "pill-on" : ""}`} aria-pressed={format === f} onClick={() => setFormat(f)}>
+                      {f === "all" ? "All formats" : f === "comics" ? "Comics" : f.toUpperCase()}
+                    </button>
+                  ))}
+                {!browsing && (
+                  <label className="ml-auto flex items-center gap-2 text-sm text-muted">
+                    <span className="hidden sm:inline">Sort by</span>
+                    <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+                      <option value="popular">Most popular</option>
+                      <option value="newest">Newest</option>
+                      <option value="title">Title</option>
+                      <option value="author">Author</option>
+                    </select>
+                  </label>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Themes">
+                <button className={`pill py-1 ${theme === "all" && !showAll ? "pill-on" : ""}`} onClick={() => setParams({})}>
+                  Browse
                 </button>
-              ))}
-              <label className="ml-auto flex items-center gap-2 text-sm text-muted">
-                <span className="hidden sm:inline">Sort by</span>
-                <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-                  <option value="newest">Newest</option>
-                  <option value="title">Title</option>
-                  <option value="author">Author</option>
-                </select>
-              </label>
+                <button className={`pill py-1 ${theme === "all" && showAll ? "pill-on" : ""}`} onClick={() => setParams({ all: "1" })}>
+                  All books <span className="opacity-60">{pool?.length}</span>
+                </button>
+                {THEME_ORDER.filter((t) => themeCounts.get(t)).map((t) => {
+                  const Icon = THEME_INFO[t]!.icon;
+                  return (
+                    <button key={t} className={`pill py-1 ${theme === t ? "pill-on" : ""}`} aria-pressed={theme === t} onClick={() => setParams({ theme: t })}>
+                      <Icon className="h-3.5 w-3.5" /> {THEME_INFO[t]!.label} <span className="opacity-60">{themeCounts.get(t)}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -237,16 +385,56 @@ export function PublicLibraryPage() {
               <EmptyState icon={<Globe />} title="Nothing here yet">
                 Be the first: open a book’s ⋯ menu in your library and choose “Publish to Public Library”.
               </EmptyState>
+            ) : browsing ? (
+              <div className="space-y-10">
+                {shelves.map((s) => (
+                  <Shelf
+                    key={s.id}
+                    title={s.title}
+                    icon={s.icon}
+                    blurb={"blurb" in s ? s.blurb : undefined}
+                    books={s.books.slice(0, SHELF_SIZE)}
+                    total={s.books.length}
+                    onSeeAll={s.id === "popular" || s.id === "readers" ? () => setParams({ all: "1" }) : () => setParams({ theme: s.id })}
+                    onOpen={setOpened}
+                  />
+                ))}
+              </div>
             ) : visible.length === 0 ? (
               <p className="py-14 text-center text-sm text-muted">No public books match {query.trim() ? `“${query.trim()}”` : "this filter"}.</p>
             ) : (
-              <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
-                {visible.map((b) => (
-                  <PublicBookCard key={b.id} book={b} onChanged={load} focused={b.id === focusId} />
-                ))}
-              </div>
+              <>
+                {theme !== "all" && THEME_INFO[theme] && <p className="-mt-2 mb-6 text-sm text-muted">{THEME_INFO[theme]!.blurb}.</p>}
+                <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
+                  {visible.slice(0, Math.max(shown, focusId ? visible.length : 0)).map((b) => (
+                    <PublicBookCard key={b.id} book={b} onChanged={load} focused={b.id === focusId} />
+                  ))}
+                </div>
+                {visible.length > shown && !focusId && (
+                  <div className="mt-10 text-center">
+                    <button className="btn-outline" onClick={() => setShown((n) => n + PAGE_SIZE)}>
+                      Show more <span className="text-muted">({visible.length - shown} left)</span>
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </section>
+
+          {opened && (
+            <Modal title={opened.title} onClose={() => setOpened(null)}>
+              <div className="mx-auto w-48">
+                <PublicBookCard
+                  book={books?.find((b) => b.id === opened.id) ?? opened}
+                  onChanged={() => {
+                    setOpened(null);
+                    load();
+                  }}
+                  focused={false}
+                />
+              </div>
+            </Modal>
+          )}
         </>
       )}
     </>

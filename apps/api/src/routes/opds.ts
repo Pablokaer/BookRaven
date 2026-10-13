@@ -61,6 +61,7 @@ function bookEntry(b: BookRow & { owner_name?: string | null }, base: "books" | 
     <id>urn:uuid:${b.id}</id>
     <title>${esc(b.title)}</title>
     ${b.author ? `<author><name>${esc(b.author)}</name></author>` : ""}
+    ${b.language ? `<dc:language>${esc(b.language)}</dc:language>` : ""}
     <updated>${updated}</updated>
     ${b.tags?.length ? b.tags.map((t) => `<category term="${esc(t)}" label="${esc(t)}"/>`).join("") : ""}
     ${b.owner_name ? `<content type="text">Shared by ${esc(b.owner_name)}</content>` : ""}

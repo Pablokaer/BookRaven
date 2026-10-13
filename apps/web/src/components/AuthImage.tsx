@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 
 /**
@@ -22,17 +22,33 @@ function load(path: string) {
   return p;
 }
 
-/** <img> for authenticated URLs (works with cookies on web and bearer tokens in the app). */
+/**
+ * <img> for authenticated URLs (works with cookies on web and bearer tokens in the app).
+ * The image is only fetched when it comes near the screen, so long lists stay light.
+ */
 export function AuthImage({ path, alt, className }: { path: string; alt: string; className?: string }) {
   const [src, setSrc] = useState<string | null>(null);
+  const [near, setNear] = useState(false);
+  const holder = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    if (near) return;
+    const el = holder.current;
+    if (!el || typeof IntersectionObserver === "undefined") return setNear(true);
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setNear(true), { rootMargin: "400px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+
+  useEffect(() => {
+    if (!near) return;
     let cancelled = false;
     void load(path).then((url) => !cancelled && setSrc(url));
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, near]);
 
-  return src ? <img src={src} alt={alt} className={className} loading="lazy" decoding="async" /> : null;
+  if (!src) return <span ref={holder} className={className} aria-hidden="true" />;
+  return <img src={src} alt={alt} className={className} loading="lazy" decoding="async" />;
 }

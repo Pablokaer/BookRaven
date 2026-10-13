@@ -43,6 +43,7 @@ export type BookRow = {
   is_shared: boolean;
   is_public: boolean;
   published_at: Date | null;
+  language: string | null;
   created_at: Date;
   p_locator: string | null;
   p_percentage: number | null;
@@ -78,6 +79,7 @@ export function toBookDto(r: BookRow) {
     sharedAt: r.shared_at?.toISOString() ?? null,
     /** Published in the public library. */
     isPublic: r.is_public,
+    language: r.language,
     createdAt: r.created_at.toISOString(),
     progress: r.p_locator
       ? {
