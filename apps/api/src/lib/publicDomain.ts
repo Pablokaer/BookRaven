@@ -31,6 +31,18 @@ export function isPublicDomainEverywhere(b: Pick<GutendexBook, "authors" | "tran
   return [...b.authors, ...b.translators].every((p) => p.death_year !== null && p.death_year <= cutoff);
 }
 
+/**
+ * Gutenberg titles sometimes keep library-catalog (MARC) subfield markers:
+ * "Peter Pan : $b [Peter and Wendy]" → "Peter Pan: [Peter and Wendy]".
+ */
+export function cleanTitle(title: string) {
+  return title
+    .replace(/\s*:\s*\$[a-z]\s*/g, ": ")
+    .replace(/\s*\$[a-z]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** "Assis, Machado de" → "Machado de Assis"; keeps names without a comma as they are. */
 export function displayName(name: string) {
   const clean = name.replace(/\s*\([^)]*\)\s*/g, " ").trim();

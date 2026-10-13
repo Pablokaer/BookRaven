@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { importPublicDomain } from "../src/lib/gutenbergImport.js";
-import { deathYearCutoff, displayName, isPublicDomainEverywhere, tagsFrom, type GutendexBook } from "../src/lib/publicDomain.js";
+import { cleanTitle, deathYearCutoff, displayName, isPublicDomainEverywhere, tagsFrom, type GutendexBook } from "../src/lib/publicDomain.js";
 import { themesFor } from "../src/lib/themes.js";
 import { api, signUp } from "./helpers.js";
 
@@ -51,6 +51,9 @@ describe("public-domain rules", () => {
     expect(displayName("Homer")).toBe("Homer");
     expect(displayName("Twain, Mark (Samuel Clemens)")).toBe("Mark Twain");
     expect(tagsFrom(book(1))).toEqual(["Novels"]);
+    expect(cleanTitle("Peter Pan : $b [Peter and Wendy]")).toBe("Peter Pan: [Peter and Wendy]");
+    expect(cleanTitle("The book of wonders : $b gives plain answers")).toBe("The book of wonders: gives plain answers");
+    expect(cleanTitle("Plain  title ")).toBe("Plain title");
   });
 
   it("classifies books into library sections", () => {

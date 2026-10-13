@@ -6,7 +6,7 @@ import { query } from "../db.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
 import { partialMd5OfFile } from "./koreader.js";
 import { isFileBlocked } from "./moderation.js";
-import { displayName, isPublicDomainEverywhere, tagsFrom, type GutendexBook } from "./publicDomain.js";
+import { cleanTitle, displayName, isPublicDomainEverywhere, tagsFrom, type GutendexBook } from "./publicDomain.js";
 import { IMPORT_PLAN, themesFor, type Theme } from "./themes.js";
 import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./storage.js";
 
@@ -106,7 +106,7 @@ export async function importPublicDomain(opts: ImportOptions) {
       if (epub.size > MAX_BYTES || detectFormat(epub.head, "book.epub") !== "epub") throw new Error("not an EPUB");
       if (await isFileBlocked(epub.sha256)) throw new Error("blocked by an administrator");
 
-      const title = b.title.replace(/\s+/g, " ").trim().slice(0, 500);
+      const title = cleanTitle(b.title).slice(0, 500);
       const author = b.authors.map((a) => displayName(a.name)).join(", ").slice(0, 500) || null;
       const filename = `${title.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120).trim() || `gutenberg-${b.id}`}.epub`;
 
