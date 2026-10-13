@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError, type Book, type Folder } from "./api";
+import { apiFetch, apiJson, ApiError, isNative, type Book, type Folder } from "./api";
 
 export function listFolders() {
   return apiJson<Folder[]>("/api/folders");
@@ -22,6 +22,20 @@ export function updateBook(id: string, patch: { folderId?: string | null; tags?:
   return apiJson<Book>(`/api/books/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 }
 
+/** Android app: WebViews ignore download links, so write the file to Documents/ReadSync. */
+async function saveFileNative(blob: Blob, filename: string) {
+  const { Directory, Filesystem } = await import("@capacitor/filesystem");
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  const path = `ReadSync/${filename.replace(/[\\/:*?"<>|]+/g, " ").trim() || "book"}`;
+  await Filesystem.writeFile({ path, data, directory: Directory.Documents, recursive: true });
+  window.alert(`Saved to Documents/${path}`);
+}
+
 /**
  * Saves a file from an authenticated URL to the device (the browser's download).
  * The whole file is fetched first, since a plain link cannot carry the bearer token.
@@ -29,7 +43,9 @@ export function updateBook(id: string, patch: { folderId?: string | null; tags?:
 export async function saveFile(path: string, filename: string) {
   const res = await apiFetch(path);
   if (!res.ok) throw new ApiError(res.status, null);
-  const url = URL.createObjectURL(await res.blob());
+  const blob = await res.blob();
+  if (isNative) return saveFileNative(blob, filename);
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;

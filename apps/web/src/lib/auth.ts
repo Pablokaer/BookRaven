@@ -24,5 +24,8 @@ export async function signOut() {
     await authClient.signOut();
   } finally {
     await setToken(null);
+    // Forget the library data kept for offline use, and the downloaded books.
+    navigator.serviceWorker?.controller?.postMessage("signed-out");
+    if ("caches" in window) await caches.delete("readsync-books-v1").catch(() => {});
   }
 }

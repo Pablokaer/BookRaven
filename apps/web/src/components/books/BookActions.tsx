@@ -1,6 +1,7 @@
-import { BookOpen, Download, FolderInput, Globe, Heart, MoreHorizontal, Share2, Trash2 } from "lucide-react";
+import { BookOpen, CloudDownload, Download, FolderInput, Globe, Heart, MoreHorizontal, Share2, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { Book } from "../../lib/api";
+import { downloadBook } from "../../lib/books";
 import { downloadOwnBook, updateBook } from "../../lib/library";
 import { useLibrary } from "../../lib/libraryStore";
 import { Menu } from "../ui/Menu";
@@ -72,6 +73,14 @@ export function BookMenu({ book, className }: { book: Book; className?: string }
         book.isPublic
           ? { label: "Remove from Public Library", icon: <Globe />, onSelect: () => void setPublic(false) }
           : { label: "Publish to Public Library", icon: <Globe />, onSelect: () => void setPublic(true) },
+        {
+          label: "Save for offline reading",
+          icon: <CloudDownload />,
+          onSelect: () =>
+            void downloadBook(book)
+              .then(() => window.alert(`“${book.title}” is saved on this device and opens without internet.`))
+              .catch(() => window.alert("Could not save it, try again.")),
+        },
         { label: "Download file", icon: <Download />, onSelect: () => void downloadOwnBook(book).catch(() => window.alert("Download failed, try again.")) },
         {
           label: book.favorite ? "Remove from favorites" : "Add to favorites",

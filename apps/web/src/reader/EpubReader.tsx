@@ -9,6 +9,12 @@ import { attachLens } from "../lib/lens";
 import { THEMES, type ReaderSettings } from "../lib/settings";
 import { USER_NAV_WINDOW_MS, zoneFromX, type ReaderHandle, type ReaderProps } from "./types";
 
+/** Percentage positions ("fraction:0.42") reported by other apps such as KOReader. */
+function fractionOf(locator: string | null) {
+  const m = locator ? /^fraction:([\d.]+)$/.exec(locator) : null;
+  return m ? Math.min(1, Math.max(0, Number(m[1]))) : null;
+}
+
 /** A range's box in the app's viewport (ranges live inside the book's iframes). */
 function viewportRect(range: Range) {
   const r = range.getBoundingClientRect();
@@ -137,7 +143,8 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
     },
     restore: (locator) => {
       lastInteraction.current = 0;
-      void viewRef.current?.goTo(locator);
+      const fraction = fractionOf(locator);
+      void (fraction !== null ? viewRef.current?.goToFraction(fraction) : viewRef.current?.goTo(locator));
     },
     search: async (query, onResult, signal) => {
       const view = viewRef.current;
@@ -309,7 +316,10 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
 
       applySettings(view, propsRef.current.settings, isComicFormat(book.format));
       const resumeAt = lastLocator.current?.bookId === book.id ? lastLocator.current.cfi : propsRef.current.initialLocator;
-      await view.init({ lastLocation: resumeAt });
+      // "fraction:0.42" comes from KOReader, whose positions can't be turned into a CFI.
+      const fraction = fractionOf(resumeAt);
+      await view.init({ lastLocation: fraction === null ? resumeAt : null });
+      if (fraction !== null) await view.goToFraction(fraction);
       ready.current = true;
       syncHighlights(view);
       scan?.();

@@ -1,4 +1,5 @@
 import { KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { useMemo, useState } from "react";
 import { initials } from "../components/shell/TopBar";
@@ -143,6 +144,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       </section>
 
       <ChangePassword />
+
+      <OtherApps email={user.email} />
 
       <section className="surface p-6">
         <form onSubmit={saveGoal} className="flex flex-wrap items-end gap-4">

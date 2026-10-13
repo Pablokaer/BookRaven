@@ -9,6 +9,8 @@ export default defineConfig({
     proxy: {
       // The API runs on :3000 in development; Caddy does the same job in production.
       "/api": { target: "http://localhost:3000", changeOrigin: false },
+      "/opds": { target: "http://localhost:3000", changeOrigin: false },
+      "/kosync": { target: "http://localhost:3000", changeOrigin: false },
     },
   },
   // foliate-js is plain ES modules with relative dynamic imports; let Vite bundle it as-is.

@@ -42,6 +42,14 @@ export async function downloadBook(book: Book): Promise<File> {
   return new File([blob], book.filename, { type: blob.type });
 }
 
+/** The book's file if it was saved on this device (opened before, or kept for offline). */
+export async function cachedBookFile(id: string): Promise<Blob | null> {
+  if (!("caches" in window)) return null;
+  const cache = await caches.open(CACHE).catch(() => null);
+  const hit = await cache?.match(`/books/${id}`);
+  return hit ? hit.blob() : null;
+}
+
 export async function forgetCachedBook(id: string) {
   if (!("caches" in window)) return;
   const cache = await caches.open(CACHE).catch(() => null);

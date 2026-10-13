@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { authHeaders, type Highlight } from "../lib/api";
-import { bookFileUrl } from "../lib/books";
+import { bookFileUrl, cachedBookFile } from "../lib/books";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
 import { pdfjs, type PDFDocumentProxy } from "../lib/pdf";
 import { THEMES, type ReaderSettings } from "../lib/settings";
@@ -153,17 +153,26 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     },
   }));
 
-  // Open the document with HTTP range requests (large PDFs start fast).
+  // Open the copy saved on this device if there is one (works offline), otherwise
+  // stream it with HTTP range requests (large PDFs start fast).
   useEffect(() => {
     let cancelled = false;
-    const task = pdfjs.getDocument({
-      url: bookFileUrl(props.book.id),
-      httpHeaders: authHeaders(),
-      withCredentials: true,
-      disableAutoFetch: true,
-      rangeChunkSize: 256 * 1024,
-    });
-    task.promise
+    let task: ReturnType<typeof pdfjs.getDocument> | null = null;
+    const open = async () => {
+      const saved = await cachedBookFile(props.book.id).catch(() => null);
+      if (cancelled) throw new Error("cancelled");
+      task = saved
+        ? pdfjs.getDocument({ data: new Uint8Array(await saved.arrayBuffer()) })
+        : pdfjs.getDocument({
+            url: bookFileUrl(props.book.id),
+            httpHeaders: authHeaders(),
+            withCredentials: true,
+            disableAutoFetch: true,
+            rangeChunkSize: 256 * 1024,
+          });
+      return task.promise;
+    };
+    open()
       .then(async (d) => {
         if (cancelled) return void d.loadingTask.destroy();
         setDoc(d);
@@ -173,11 +182,11 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         propsRef.current.onReady({ totalPages: d.numPages, language: lang });
       })
       .catch((err) => {
-        if (!cancelled) propsRef.current.onError(err?.message ?? "Could not open this PDF");
+        if (!cancelled) propsRef.current.onError(navigator.onLine ? (err?.message ?? "Could not open this PDF") : "This PDF is not saved on this device. Connect to the internet to open it.");
       });
     return () => {
       cancelled = true;
-      void task.destroy();
+      void task?.destroy();
     };
   }, [props.book.id]);
 

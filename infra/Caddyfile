@@ -1,8 +1,9 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# API (auth, books, files, progress, SSE)
-	handle /api/* {
+	# API (auth, books, files, progress, SSE), OPDS catalog and KOReader sync
+	@api path /api/* /opds /opds/* /kosync/*
+	handle @api {
 		reverse_proxy api:3000 {
 			# Server-Sent Events must not be buffered
 			flush_interval -1

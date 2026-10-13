@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleAlert, Loader2, UploadCloud, X } from "lucide-react";
+import { CheckCircle2, CircleAlert, CloudOff, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import { useLibrary } from "../../lib/libraryStore";
@@ -43,6 +43,21 @@ function UploadToasts() {
   );
 }
 
+function useOnline() {
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+  return online;
+}
+
 /** Library layout: left navigation, top bar, page content and the contextual right sidebar. */
 export function AppShell({ user }: { user: { name: string; email: string } }) {
   const lib = useLibrary();
@@ -51,6 +66,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
   const [dragging, setDragging] = useState(false);
   const location = useLocation();
 
+  const online = useOnline();
   const isDesktop = useMediaQuery("(min-width: 1024px)"); // lg: full sidebar possible
   const isWide = useMediaQuery("(min-width: 1280px)"); // xl: room for the right column
 
@@ -116,6 +132,14 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
           showRightToggle={isWide}
           rightOpen={layout.rightOpen}
         />
+
+        {!online && (
+          <div className="flex items-center gap-2 border-b border-amber-400/30 bg-amber-400/10 px-6 py-2 text-xs text-amber-200" role="status">
+            <CloudOff className="h-4 w-4 shrink-0" />
+            You are offline. Your saved library is shown; books you opened before (or saved for offline) can still be read, and your progress
+            syncs when you are back online.
+          </div>
+        )}
 
         <div className="flex flex-1">
           <main className="min-w-0 flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">

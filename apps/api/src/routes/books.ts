@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { broadcast, publish } from "../lib/events.js";
+import { partialMd5OfFile } from "../lib/koreader.js";
 import { isFileBlocked } from "../lib/moderation.js";
 import { QuotaExceededError, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "../lib/formats.js";
@@ -269,14 +270,15 @@ export async function bookRoutes(app: FastifyInstance) {
       const fallbackTitle = book.filename.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim() || "Untitled";
 
       const upload = book;
+      const koreaderMd5 = await partialMd5OfFile(upload.tmpPath, upload.size);
       let id: string;
       try {
         // Exact check with the real size; the insert happens under the same per-user lock.
         id = await withQuota(request.user, upload.size, async (client) => {
           await commitBookFile(upload);
           const { rows } = await client.query<{ id: string }>(
-            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
             [
               request.user.id,
               fields.title?.trim() || fallbackTitle,
@@ -287,6 +289,7 @@ export async function bookRoutes(app: FastifyInstance) {
               upload.size,
               upload.sha256,
               Boolean(coverOk),
+              koreaderMd5,
             ],
           );
           return rows[0]!.id;

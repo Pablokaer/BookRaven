@@ -1,0 +1,39 @@
+import type { FastifyInstance } from "fastify";
+import { requireUser } from "../auth.js";
+import { query } from "../db.js";
+import { createAppPassword } from "../lib/devices.js";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** App passwords for OPDS readers and KOReader (managed from the profile page). */
+export async function deviceRoutes(app: FastifyInstance) {
+  app.addHook("preHandler", requireUser);
+
+  app.get("/api/app-passwords", async (request) => {
+    const { rows } = await query<{ id: string; name: string; created_at: Date; last_used_at: Date | null }>(
+      "SELECT id, name, created_at, last_used_at FROM app_password WHERE user_id = $1 ORDER BY created_at DESC",
+      [request.user.id],
+    );
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at.toISOString(), lastUsedAt: r.last_used_at?.toISOString() ?? null }));
+  });
+
+  /** The password is returned only here, once. */
+  app.post<{ Body: { name: string } }>(
+    "/api/app-passwords",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: { body: { type: "object", required: ["name"], additionalProperties: false, properties: { name: { type: "string", minLength: 1, maxLength: 60 } } } },
+    },
+    async (request, reply) => {
+      const count = await query("SELECT 1 FROM app_password WHERE user_id = $1", [request.user.id]);
+      if ((count.rowCount ?? 0) >= 20) return reply.code(400).send({ error: "too_many" });
+      return reply.code(201).send(await createAppPassword(request.user.id, request.body.name.trim()));
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>("/api/app-passwords/:id", async (request, reply) => {
+    if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
+    await query("DELETE FROM app_password WHERE id = $1 AND user_id = $2", [request.params.id, request.user.id]);
+    return reply.code(204).send();
+  });
+}
