@@ -6,11 +6,12 @@ See README.md for setup, features and the API overview.
 
 ## Rules
 
-- **No employer or company references.** Never put the name, domain or email address of the
-  developer's employer or any other company (for example the domain of the account owner's email
-  address) anywhere in this project: code, identifiers (Android app id, package names), comments,
-  docs, test data, commit messages, or accounts created for testing or administration. Use neutral
-  names such as `app.readsync`, `example.com` or `readsync.local`.
+- **No employer references.** Never put the name, domain or email address of the developer's
+  employer or own company (for example the domain of the account owner's email address) anywhere in
+  this project: code, identifiers (Android app id, package names), comments, docs, test data, commit
+  messages, or accounts created for testing or administration. Use neutral names such as
+  `app.readsync`, `example.com` or `readsync.local`. Naming third-party services the app uses or
+  supports (Google sign-in, GitHub, Hostinger, Project Gutenberg, S3 providers…) is fine.
 - **Keep README.md current, in English.** Every relevant change (features, settings and
   environment variables, endpoints, setup or deploy steps, limitations) updates README.md in the
   same commit. README.md is always written in English, whatever language the conversation is in.
