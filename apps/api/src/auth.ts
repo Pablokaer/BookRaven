@@ -5,7 +5,8 @@ import { bearer } from "better-auth/plugins";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
-import { sendMail } from "./lib/mailer.js";
+import { resetPasswordEmail, welcomeEmail } from "./lib/emails.js";
+import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
 
 export const auth = betterAuth({
@@ -22,12 +23,9 @@ export const auth = betterAuth({
     // "Forgot password": emails a one-hour link; using it signs out every other session.
     resetPasswordTokenExpiresIn: 60 * 60,
     revokeSessionsOnPasswordReset: true,
+    // Not awaited: the answer must not depend on SMTP (see sendMailInBackground).
     sendResetPassword: async ({ user, url }) => {
-      await sendMail({
-        to: user.email,
-        subject: "Reset your Mico-livrão password",
-        text: `Hi ${user.name || ""},\n\nSomeone (hopefully you) asked to reset the password of your Mico-livrão account.\nOpen this link within an hour to choose a new one:\n\n${url}\n\nIf you did not ask for this, ignore this email; your password stays the same.`,
-      });
+      sendMailInBackground(resetPasswordEmail(user, url));
     },
   },
   socialProviders: googleEnabled
@@ -43,8 +41,16 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 60, // 60 days: a reader app should not log you out often
     updateAge: 60 * 60 * 24,
   },
-  // Blocked accounts cannot sign in (blocking also deletes their existing sessions).
   databaseHooks: {
+    // Welcome email for every new account, from the email form or Google.
+    user: {
+      create: {
+        after: async (user) => {
+          sendMailInBackground(welcomeEmail(user));
+        },
+      },
+    },
+    // Blocked accounts cannot sign in (blocking also deletes their existing sessions).
     session: {
       create: {
         before: async (session) => {

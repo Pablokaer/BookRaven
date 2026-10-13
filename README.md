@@ -6,7 +6,7 @@ The app is called **Mico-livrão**. Internal identifiers (package names, the dat
 
 ## Features
 
-- **Accounts:** email + password (change it in the profile, or reset it by email), plus Google sign-in on the web. Sign-ups can be closed with `ALLOW_SIGNUP=false`.
+- **Accounts:** email + password (change it in the profile, or reset it by email), plus Google sign-in on the web. New accounts get a welcome email; "Forgot password?" emails a one-hour link (both need SMTP, see *Email*). Sign-ups can be closed with `ALLOW_SIGNUP=false`.
 - **Library dashboard:** upload by button or drag-and-drop (title, author and cover are read from the file; duplicates are detected by SHA-256). Collections, tags, favorites, filters by type, sorting, grid or list, a yearly reading goal, and a 2 GB storage limit per account (`UPLOAD_QUOTA_MB`; administrators are unlimited).
 - **Ebook reader** (foliate-js): 8 bundled fonts, size, line and letter spacing, margins, page width, one or two pages, themes (including inverted) and contrast; table of contents and full-text search.
 - **PDF reader** (pdf.js): streams large files with Range requests, fit page or width, color themes, and a selectable text layer so PDFs get highlights, notes and search too.
@@ -114,6 +114,22 @@ Apache example (`a2enmod proxy proxy_http headers rewrite ssl`; get the certific
 ```
 
 The port 80 virtual host just redirects to HTTPS. With nginx use `proxy_pass http://127.0.0.1:8090;`, `proxy_set_header Host $host;`, `proxy_buffering off;` and `client_max_body_size` at least `MAX_UPLOAD_MB`. Only ports 22, 80 and 443 need to be open.
+
+### Email
+
+Mico-livrão sends two emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`):
+
+- **Welcome**, once, when an account is created (email form or Google).
+- **Password reset**, from *Forgot password?* on the sign-in screen: a link that works once, for one hour, and signs out the account's other sessions.
+
+Both go through any SMTP service set in `.env`, for example [Resend](https://resend.com):
+
+```bash
+SMTP_URL=smtps://resend:<api key>@smtp.resend.com:465
+MAIL_FROM=Mico-livrão <no-reply@books.example.com>
+```
+
+The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work: …`. Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
 
 ### Automatic deploys (GitHub Actions → VPS)
 

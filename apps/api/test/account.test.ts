@@ -27,8 +27,9 @@ describe("passwords", () => {
     const req = await api(null, "POST", "/api/auth/request-password-reset", { email: u.email, redirectTo: `${ORIGIN}/reset-password` });
     expect(req.statusCode).toBe(200);
 
-    const mail = outbox.findLast((m) => m.to === u.email)!;
-    expect(mail.subject).toMatch(/reset/i);
+    const mail = outbox.findLast((m) => m.to === u.email && /reset/i.test(m.subject))!;
+    expect(mail).toBeTruthy();
+    expect(mail.html).toContain(mail.text.match(/https?:\/\/\S+/)![0].replace(/&/g, "&amp;"));
     const link = new URL(mail.text.match(/https?:\/\/\S+/)![0]);
 
     // The emailed link verifies the token and redirects to the app with it.
@@ -44,6 +45,15 @@ describe("passwords", () => {
     expect((await api(u, "GET", "/api/me")).statusCode).toBe(401);
     // A token works only once.
     expect((await api(null, "POST", "/api/auth/reset-password", { newPassword: "again12345", token })).statusCode).toBe(400);
+  });
+
+  it("sends a welcome email when an account is created, with the name escaped", async () => {
+    const u = await signUp(undefined, "<b>Ana</b> & co");
+    const mail = outbox.findLast((m) => m.to === u.email)!;
+    expect(mail.subject).toMatch(/welcome/i);
+    expect(mail.text).toContain("Hi <b>Ana</b> & co,");
+    expect(mail.html).toContain("Hi &lt;b&gt;Ana&lt;/b&gt; &amp; co,");
+    expect(mail.html).not.toContain("<b>Ana</b>");
   });
 
   it("does not reveal whether an email has an account", async () => {
