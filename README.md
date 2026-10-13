@@ -86,6 +86,35 @@ The API has development defaults for every setting. To change them, create `.env
    Caddy gets the TLS certificate automatically. Database migrations run when the API starts.
 4. Create your account. Then set `ALLOW_SIGNUP=false` and run `docker compose up -d` again if you don't want other people signing up.
 
+### Behind an existing web server
+
+If Apache or nginx already owns ports 80 and 443 on the VPS (other sites), let it terminate TLS and proxy to Caddy on a local port. In `.env`:
+
+```bash
+DOMAIN=http://books.example.com     # http:// → Caddy serves plain HTTP and asks for no certificate
+PUBLIC_URL=https://books.example.com
+HTTP_PORT=127.0.0.1:8090            # any free local ports
+HTTPS_PORT=127.0.0.1:8453
+TRUSTED_PROXIES=private_ranges      # believe the front server's X-Forwarded-For (real client IPs)
+```
+
+Apache example (`a2enmod proxy proxy_http headers rewrite ssl`; get the certificate with `certbot --apache -d books.example.com`):
+
+```apache
+<VirtualHost *:443>
+    ServerName books.example.com
+    ProxyPreserveHost On
+    ProxyTimeout 300
+    RequestHeader set X-Forwarded-Proto "https"
+    # flushpackets: Server-Sent Events (/api/events) must not be buffered
+    ProxyPass        / http://127.0.0.1:8090/ flushpackets=on
+    ProxyPassReverse / http://127.0.0.1:8090/
+    # SSLCertificateFile / SSLCertificateKeyFile from certbot
+</VirtualHost>
+```
+
+The port 80 virtual host just redirects to HTTPS. With nginx use `proxy_pass http://127.0.0.1:8090;`, `proxy_set_header Host $host;`, `proxy_buffering off;` and `client_max_body_size` at least `MAX_UPLOAD_MB`. Only ports 22, 80 and 443 need to be open.
+
 ### Automatic deploys (GitHub Actions → VPS)
 
 Every push to `main` that passes CI is deployed by `.github/workflows/deploy.yml`: it connects to the VPS over SSH and runs `infra/deploy.sh`, which moves the clone in `/opt/mico-livrao` to the tested commit, rebuilds the images with `docker compose up -d --build` and waits for the API to answer (the job fails, with the API log, if it doesn't). `.env`, `data/` and `backups/` are ignored by git and never touched. *Actions → Deploy → Run workflow* deploys the current `main` by hand, and `bash infra/deploy.sh` on the server does the same.
