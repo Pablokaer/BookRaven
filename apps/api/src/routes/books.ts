@@ -6,11 +6,13 @@ import { broadcast, publish } from "../lib/events.js";
 import { QuotaExceededError, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "../lib/formats.js";
 import {
-  bookFilePath,
+  bookKey,
   commitBookFile,
   commitCover,
-  coverFilePath,
-  openRange,
+  coverKey,
+  objectSize,
+  readHead,
+  readObject,
   removeBookFile,
   removeCover,
   removeTemp,
@@ -135,21 +137,16 @@ export async function loadOwnedBook(request: FastifyRequest<{ Params: { id: stri
   return rows[0];
 }
 
-/** Serves a file with HTTP Range support (needed by pdf.js for large PDFs). */
+/** Serves a stored object with HTTP Range support (needed by pdf.js for large PDFs). */
 export async function sendFile(
   request: FastifyRequest,
   reply: FastifyReply,
-  filePath: string,
+  key: string,
   mime: string,
   etag: string,
 ) {
-  let stat;
-  try {
-    stat = await fs.stat(filePath);
-  } catch {
-    return reply.code(404).send({ error: "file_missing" });
-  }
-  const size = stat.size;
+  const size = await objectSize(key);
+  if (size === null) return reply.code(404).send({ error: "file_missing" });
   reply.header("Accept-Ranges", "bytes");
   reply.header("ETag", `"${etag}"`);
   reply.header("Cache-Control", "private, max-age=31536000, immutable");
@@ -181,26 +178,20 @@ export async function sendFile(
     reply.code(206);
     reply.header("Content-Range", `bytes ${start}-${end}/${size}`);
     reply.header("Content-Length", end - start + 1);
-    return reply.send(openRange(filePath, start, end));
+    return reply.send(await readObject(key, start, end));
   }
 
   reply.header("Content-Length", size);
-  return reply.send(openRange(filePath));
+  return reply.send(await readObject(key));
 }
 
 /** Serves a book's stored cover image. */
 export async function sendCover(request: FastifyRequest, reply: FastifyReply, book: BookRow) {
   if (!book.has_cover) return reply.code(404).send({ error: "no_cover" });
-  const p = coverFilePath(book.id);
-  const head = Buffer.alloc(16);
-  try {
-    const fh = await fs.open(p, "r");
-    await fh.read(head, 0, 16, 0);
-    await fh.close();
-  } catch {
-    return reply.code(404).send({ error: "no_cover" });
-  }
-  return sendFile(request, reply, p, imageMime(head), `cover-${book.id}`);
+  const key = coverKey(book.id);
+  const head = await readHead(key, 16);
+  if (!head) return reply.code(404).send({ error: "no_cover" });
+  return sendFile(request, reply, key, imageMime(head), `cover-${book.id}`);
 }
 
 export async function bookRoutes(app: FastifyInstance) {
@@ -398,7 +389,7 @@ export async function bookRoutes(app: FastifyInstance) {
       "Content-Disposition",
       `${request.query.download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(book.original_filename)}`,
     );
-    return sendFile(request, reply, bookFilePath(book.sha256), book.mime_type, book.sha256);
+    return sendFile(request, reply, bookKey(book.sha256), book.mime_type, book.sha256);
   });
 
   app.get<{ Params: { id: string } }>("/api/books/:id/cover", async (request, reply) => {

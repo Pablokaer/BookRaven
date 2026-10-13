@@ -5,7 +5,7 @@ import { query } from "../db.js";
 import { copyBookToUser } from "../lib/copies.js";
 import { broadcast, publish } from "../lib/events.js";
 import { QuotaExceededError } from "../lib/quota.js";
-import { bookFilePath } from "../lib/storage.js";
+import { bookKey } from "../lib/storage.js";
 import { SELECT_BOOK, sendCover, sendFile, toBookDto, type BookRow } from "./books.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -84,7 +84,7 @@ export async function publicRoutes(app: FastifyInstance) {
       const book = await loadPublic(request, reply);
       if (!book) return;
       reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(book.original_filename)}`);
-      return sendFile(request, reply, bookFilePath(book.sha256), book.mime_type, book.sha256);
+      return sendFile(request, reply, bookKey(book.sha256), book.mime_type, book.sha256);
     },
   );
 

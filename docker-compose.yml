@@ -31,6 +31,26 @@ services:
       postgres:
         condition: service_healthy
 
+  # Daily database dump + book files into ./backups, kept for BACKUP_KEEP_DAYS (see infra/backup.sh).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+    volumes:
+      - ./infra/backup.sh:/backup.sh:ro
+      - ./data:/data:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   caddy:
     build:
       context: .

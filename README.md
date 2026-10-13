@@ -83,12 +83,24 @@ The API has development defaults for every setting. To change them, create `.env
    Caddy gets the TLS certificate automatically. Database migrations run when the API starts.
 4. Create your account. Then set `ALLOW_SIGNUP=false` and run `docker compose up -d` again if you don't want other people signing up.
 
-**Backups.** Everything that matters is in the `pgdata` volume and `./data`. For example:
+**Backups.** The `backup` service writes a database dump and the book files to `./backups/<date>/` every day (`BACKUP_INTERVAL_HOURS`) and deletes backups older than `BACKUP_KEEP_DAYS`. Copy `./backups` off the server too, for example with `restic backup ./backups` to B2 / R2 / another machine. Take one right now with:
 
 ```bash
-docker compose exec -T postgres pg_dump -U readsync readsync | gzip > backup-$(date +%F).sql.gz
-restic backup ./data backup-*.sql.gz   # to B2 / R2 / another server
+docker compose run --rm -e BACKUP_ONCE=1 backup
 ```
+
+Restore:
+
+```bash
+docker compose stop api
+docker compose exec -T postgres pg_restore -U readsync -d readsync --clean --if-exists < backups/<date>/database.dump
+tar -xzf backups/<date>/files.tar.gz -C ./data
+docker compose start api
+```
+
+With `STORAGE_DRIVER=s3` the book files live in the bucket, so only the database is dumped; turn on versioning or replication on the bucket.
+
+**Object storage.** Set `STORAGE_DRIVER=s3` and the `S3_*` variables to keep books in an S3-compatible bucket (Garage, MinIO, AWS, R2) instead of `./data`.
 
 ### Google sign-in
 

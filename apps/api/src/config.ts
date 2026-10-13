@@ -27,6 +27,17 @@ export const config = {
   },
   allowSignup: (process.env.ALLOW_SIGNUP ?? "true").toLowerCase() !== "false",
   storageDir: path.resolve(process.env.STORAGE_DIR ?? "./data"),
+  /** "local" keeps files in STORAGE_DIR; "s3" uses an S3-compatible bucket (STORAGE_DIR then only holds temp uploads). */
+  storageDriver: (process.env.STORAGE_DRIVER ?? "local") === "s3" ? ("s3" as const) : ("local" as const),
+  s3: {
+    endpoint: process.env.S3_ENDPOINT ?? "",
+    region: process.env.S3_REGION ?? "us-east-1",
+    bucket: process.env.S3_BUCKET ?? "readsync",
+    accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",
+    /** Garage and MinIO need path-style URLs (endpoint/bucket/key). */
+    forcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? "true").toLowerCase() !== "false",
+  },
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 200) * 1024 * 1024,
   /** Total size of the books each account may keep. Administrators have no limit. */
   quotaBytes: Number(process.env.UPLOAD_QUOTA_MB ?? 2048) * 1024 * 1024,
