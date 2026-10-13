@@ -1,5 +1,6 @@
 import type { SessionUser } from "../auth.js";
 import { query } from "../db.js";
+import { BlockedFileError, isFileBlocked } from "./moderation.js";
 import { withQuota } from "./quota.js";
 import { copyCover } from "./storage.js";
 
@@ -23,6 +24,7 @@ type SourceBook = {
 export async function copyBookToUser(src: SourceBook, user: SessionUser, sharedByName: string | null) {
   const existing = await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [user.id, src.sha256]);
   if (existing.rows[0]) return { id: existing.rows[0].id, created: false };
+  if (await isFileBlocked(src.sha256)) throw new BlockedFileError();
 
   const id = await withQuota(user, Number(src.size_bytes), async (client) => {
     const { rows } = await client.query<{ id: string }>(

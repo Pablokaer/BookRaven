@@ -32,6 +32,24 @@ export async function signUp(email = `u${randomBytes(4).toString("hex")}@test.lo
   return { id: res.json().user.id, email, cookie: cookies.map((c) => c.split(";")[0]).join("; ") };
 }
 
+export async function signIn(email: string, password = "password123"): Promise<TestUser> {
+  const a = await getApp();
+  const res = await a.inject({
+    method: "POST",
+    url: "/api/auth/sign-in/email",
+    headers: { origin: ORIGIN, "content-type": "application/json" },
+    payload: { email, password },
+  });
+  if (res.statusCode !== 200) throw new Error(`sign-in failed: ${res.statusCode} ${res.body}`);
+  const cookie = ([] as string[]).concat(res.headers["set-cookie"] ?? []).map((c) => c.split(";")[0]).join("; ");
+  return { id: res.json().user.id, email, cookie };
+}
+
+/** The administrator account (ADMIN_EMAILS in vitest.config.ts), shared by all test files. */
+export async function adminSession() {
+  return signUp("admin@test.local", "Admin").catch(() => signIn("admin@test.local"));
+}
+
 /** JSON request as `user` (or anonymous). */
 export async function api(user: TestUser | null, method: string, url: string, payload?: unknown) {
   const a = await getApp();

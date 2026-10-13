@@ -11,9 +11,14 @@ export class QuotaExceededError extends Error {
   }
 }
 
-/** Storage limit of an account in bytes, or null when unlimited (administrators). */
-export function quotaFor(user: { email: string }) {
-  return isAdmin(user) ? null : config.quotaBytes;
+/**
+ * Storage limit of an account in bytes, or null when unlimited (administrators).
+ * An administrator can set a different limit per account (account_admin.quota_bytes).
+ */
+export async function quotaFor(user: { id: string; email: string }, client: pg.PoolClient | pg.Pool = pool) {
+  if (isAdmin(user)) return null;
+  const { rows } = await client.query<{ quota_bytes: string | null }>("SELECT quota_bytes FROM account_admin WHERE user_id = $1", [user.id]);
+  return rows[0]?.quota_bytes != null ? Number(rows[0].quota_bytes) : config.quotaBytes;
 }
 
 export async function storageUsed(userId: string, client: pg.PoolClient | pg.Pool = pool) {
@@ -37,7 +42,7 @@ export async function withQuota<T>(
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`quota:${user.id}`]);
-    const quota = quotaFor(user);
+    const quota = await quotaFor(user, client);
     if (quota !== null) {
       const used = await storageUsed(user.id, client);
       if (used + addBytes > quota) throw new QuotaExceededError(used, quota);

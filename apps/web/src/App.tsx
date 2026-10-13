@@ -8,6 +8,7 @@ import { installProgressFlushers } from "./lib/progress";
 import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
+import { AdminPage } from "./pages/AdminPage";
 import { CollectionPage, CollectionsPage } from "./pages/CollectionPages";
 import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage, UploadsPage } from "./pages/LibraryViews";
 import { LoginPage } from "./pages/LoginPage";
@@ -94,6 +95,7 @@ export function App() {
               <Route path="collections/:id" element={<CollectionPage />} />
               <Route path="favorites" element={<FavoritesPage />} />
               <Route path="profile" element={<ProfilePage user={user} />} />
+              <Route path="admin" element={<AdminPage />} />
               <Route path="share/:token" element={<SharePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

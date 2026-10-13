@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { broadcast, publish } from "../lib/events.js";
+import { isFileBlocked } from "../lib/moderation.js";
 import { QuotaExceededError, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "../lib/formats.js";
 import {
@@ -218,7 +219,7 @@ export async function bookRoutes(app: FastifyInstance) {
   app.post("/api/books", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     // Refuse early, before streaming the file, when the account is already full or the
     // request is clearly larger than what is left (the cover adds at most a few MB).
-    const quota = quotaFor(request.user);
+    const quota = await quotaFor(request.user);
     if (quota !== null) {
       const used = await storageUsed(request.user.id);
       const incoming = Number(request.headers["content-length"] ?? 0);
@@ -253,6 +254,8 @@ export async function bookRoutes(app: FastifyInstance) {
 
       const format = detectFormat(book.head, book.filename);
       if (!format) return reply.code(415).send({ error: "unsupported_format" });
+
+      if (await isFileBlocked(book.sha256)) return reply.code(451).send({ error: "blocked_content" });
 
       const existing = await query<{ id: string }>(
         "SELECT id FROM book WHERE user_id = $1 AND sha256 = $2",
@@ -332,6 +335,7 @@ export async function bookRoutes(app: FastifyInstance) {
       const book = await loadOwnedBook(request, reply);
       if (!book) return;
       const { title, author, folderId, tags, favorite, isPublic } = request.body;
+      if (isPublic && (await isFileBlocked(book.sha256))) return reply.code(451).send({ error: "blocked_content" });
       if (folderId) {
         const folder = await query("SELECT 1 FROM folder WHERE id = $1 AND user_id = $2", [
           UUID_RE.test(folderId) ? folderId : null,

@@ -10,6 +10,6 @@ export async function meRoutes(app: FastifyInstance) {
   app.get("/api/me", async (request) => ({
     isAdmin: isAdmin(request.user),
     usedBytes: await storageUsed(request.user.id),
-    quotaBytes: quotaFor(request.user),
+    quotaBytes: await quotaFor(request.user),
   }));
 }

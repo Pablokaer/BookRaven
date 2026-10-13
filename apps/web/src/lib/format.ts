@@ -14,6 +14,7 @@ export function percent(p: number) {
 }
 
 export function fileSize(bytes: number) {
+  if (bytes <= 0) return "0 KB";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   const gb = bytes / 1024 / 1024 / 1024;

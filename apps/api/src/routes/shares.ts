@@ -4,6 +4,7 @@ import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
 import { copyBookToUser } from "../lib/copies.js";
+import { BlockedFileError } from "../lib/moderation.js";
 import { QuotaExceededError } from "../lib/quota.js";
 import { loadOwnedBook, SELECT_BOOK, sendCover, toBookDto, type BookRow } from "./books.js";
 
@@ -109,6 +110,7 @@ export async function shareRoutes(app: FastifyInstance) {
       try {
         result = await copyBookToUser(src, request.user, src.owner_name);
       } catch (err) {
+        if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
         if (err instanceof QuotaExceededError) {
           return reply.code(413).send({ error: "quota_exceeded", usedBytes: err.usedBytes, quotaBytes: err.quotaBytes });
         }

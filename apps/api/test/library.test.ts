@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectFormat } from "../src/lib/formats.js";
-import { api, fakePdf, signUp, upload } from "./helpers.js";
+import { adminSession, api, fakePdf, signUp, upload } from "./helpers.js";
 
 describe("format detection", () => {
   it("uses magic bytes, not just the extension", () => {
@@ -47,9 +47,11 @@ describe("library", () => {
     expect(over.json().error).toBe("quota_exceeded");
     expect((await api(u, "GET", "/api/me")).json()).toMatchObject({ isAdmin: false, quotaBytes: 1024 * 1024 });
 
-    const admin = await signUp("admin@test.local");
+    const admin = await adminSession();
+    const before = (await api(admin, "GET", "/api/me")).json().usedBytes;
     expect((await upload(admin, "a.pdf", fakePdf(600 * 1024))).statusCode).toBe(201);
     expect((await upload(admin, "b.pdf", fakePdf(600 * 1024))).statusCode).toBe(201);
+    expect((await api(admin, "GET", "/api/me")).json().usedBytes - before).toBeGreaterThan(1024 * 1024);
     expect((await api(admin, "GET", "/api/me")).json()).toMatchObject({ isAdmin: true, quotaBytes: null });
   });
 });
@@ -75,6 +77,6 @@ describe("sharing and the public library", () => {
     expect((await api(stranger, "DELETE", `/api/public/${book.id}`)).statusCode).toBe(403);
 
     expect((await api(owner, "DELETE", `/api/public/${book.id}`)).statusCode).toBe(204);
-    expect((await api(stranger, "GET", "/api/public")).json()).toHaveLength(0);
+    expect((await api(stranger, "GET", "/api/public")).json().map((b: { id: string }) => b.id)).not.toContain(book.id);
   });
 });

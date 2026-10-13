@@ -1,4 +1,4 @@
-import { BookOpen, Compass, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Share2, Upload, User } from "lucide-react";
+import { BookOpen, Compass, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Share2, ShieldCheck, Upload, User } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { collectionColor, isInProgress } from "../../lib/bookStats";
@@ -34,6 +34,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
     { to: "/collections", label: "Collections", icon: <Layers />, end: true },
     { to: "/favorites", label: "Favorites", icon: <Heart />, count: counts.favorites },
     { to: "/profile", label: "Profile", icon: <User /> },
+    ...(me?.isAdmin ? [{ to: "/admin", label: "Admin", icon: <ShieldCheck /> }] : []),
   ];
 
   // Labels are hidden when compact; `hide` is the class for that.

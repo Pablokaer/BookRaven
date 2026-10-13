@@ -1,8 +1,10 @@
-import { BookOpen, Download, Globe, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { BookOpen, Download, Flag, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { EmptyState, BookGridSkeleton } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
+import { ReportDialog } from "../components/ReportDialog";
+import { RequestsTab } from "../components/RequestsTab";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { Menu } from "../components/ui/Menu";
 import { ApiError, type PublicBook } from "../lib/api";
@@ -14,11 +16,12 @@ import { shortDate } from "../lib/bookStats";
 
 type Sort = "newest" | "title" | "author";
 
-function PublicBookCard({ book, onChanged }: { book: PublicBook; onChanged: () => void }) {
+function PublicBookCard({ book, onChanged, focused }: { book: PublicBook; onChanged: () => void; focused: boolean }) {
   const { replaceBook, refreshMe, me } = useLibrary();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<"add" | "download" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
 
   const add = async () => {
     setBusy("add");
@@ -60,7 +63,10 @@ function PublicBookCard({ book, onChanged }: { book: PublicBook; onChanged: () =
   const cover = <BookCover book={book} badge coverPath={`/api/public/${book.id}/cover`} className="w-full transition duration-300 group-hover:-translate-y-1" />;
 
   return (
-    <article className="group flex animate-rise flex-col">
+    <article
+      id={`pub-${book.id}`}
+      className={`group flex animate-rise flex-col rounded-xl transition ${focused ? "ring-2 ring-accent ring-offset-8 ring-offset-app" : ""}`}
+    >
       {book.ownBookId ? (
         <Link to={`/read/${book.ownBookId}`} aria-label={`Read ${book.title}`} className="rounded-lg">
           {cover}
@@ -96,16 +102,18 @@ function PublicBookCard({ book, onChanged }: { book: PublicBook; onChanged: () =
           >
             {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           </button>
-          {book.canRemove && (
-            <Menu
-              label={`More actions for ${book.title}`}
-              triggerClassName="icon-btn h-8 w-8"
-              trigger={<MoreHorizontal className="h-4 w-4" />}
-              items={[{ label: "Remove from public library", icon: <Trash2 />, danger: true, onSelect: () => void remove() }]}
-            />
-          )}
+          <Menu
+            label={`More actions for ${book.title}`}
+            triggerClassName="icon-btn h-8 w-8"
+            trigger={<MoreHorizontal className="h-4 w-4" />}
+            items={[
+              ...(!book.isMine ? [{ label: "Report…", icon: <Flag />, onSelect: () => setReporting(true) }] : []),
+              ...(book.canRemove ? [{ label: "Remove from public library", icon: <Trash2 />, danger: true, onSelect: () => void remove() }] : []),
+            ]}
+          />
         </div>
       </div>
+      {reporting && <ReportDialog book={book} onClose={() => setReporting(false)} />}
     </article>
   );
 }
@@ -117,6 +125,10 @@ export function PublicLibraryPage() {
   const [error, setError] = useState(false);
   const [format, setFormat] = useState<string>("all");
   const [sort, setSort] = useState<Sort>("newest");
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "requests" ? "requests" : "books";
+  // "?book=<id>" (from an answered request) scrolls to that book and outlines it.
+  const focusId = params.get("book");
 
   const load = useCallback(() => {
     listPublicBooks()
@@ -128,6 +140,10 @@ export function PublicLibraryPage() {
   }, []);
 
   useEffect(load, [load, publicVersion]);
+
+  useEffect(() => {
+    if (focusId && books) document.getElementById(`pub-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusId, books]);
 
   const formats = useMemo(() => [...new Set(books?.map((b) => b.format))].sort(), [books]);
   const visible = useMemo(() => {
@@ -167,47 +183,72 @@ export function PublicLibraryPage() {
         <StorageMeter />
       </div>
 
-      {books && books.length > 0 && (
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          {["all", ...formats, ...(formats.some(isComicFormat) ? ["comics"] : [])].map((f) => (
-            <button key={f} className={`pill ${format === f ? "pill-on" : ""}`} aria-pressed={format === f} onClick={() => setFormat(f)}>
-              {f === "all" ? "All Books" : f === "comics" ? "Comics" : f.toUpperCase()}
-            </button>
-          ))}
-          <label className="ml-auto flex items-center gap-2 text-sm text-muted">
-            <span className="hidden sm:inline">Sort by</span>
-            <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-              <option value="newest">Newest</option>
-              <option value="title">Title</option>
-              <option value="author">Author</option>
-            </select>
-          </label>
-        </div>
-      )}
+      <div className="mb-8 flex gap-2" role="tablist">
+        {(
+          [
+            ["books", "Books", <Library key="i" className="h-4 w-4" />],
+            ["requests", "Requests", <HandHelping key="i" className="h-4 w-4" />],
+          ] as const
+        ).map(([id, label, icon]) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={tab === id}
+            className={`pill ${tab === id ? "pill-on" : ""}`}
+            onClick={() => setParams(id === "requests" ? { tab: "requests" } : {})}
+          >
+            {icon} {label}
+          </button>
+        ))}
+      </div>
 
-      <section className="@container" aria-label="Public books">
-        {error && !books ? (
-          <EmptyState icon={<Globe />} title="Could not load the public library">
-            <button className="text-accent hover:underline" onClick={load}>
-              Try again
-            </button>
-          </EmptyState>
-        ) : visible === null ? (
-          <BookGridSkeleton />
-        ) : books!.length === 0 ? (
-          <EmptyState icon={<Globe />} title="Nothing here yet">
-            Be the first: open a book’s ⋯ menu in your library and choose “Publish to Public Library”.
-          </EmptyState>
-        ) : visible.length === 0 ? (
-          <p className="py-14 text-center text-sm text-muted">No public books match {query.trim() ? `“${query.trim()}”` : "this filter"}.</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
-            {visible.map((b) => (
-              <PublicBookCard key={b.id} book={b} onChanged={load} />
-            ))}
-          </div>
-        )}
-      </section>
+      {tab === "requests" ? (
+        <RequestsTab />
+      ) : (
+        <>
+          {books && books.length > 0 && (
+            <div className="mb-6 flex flex-wrap items-center gap-2">
+              {["all", ...formats, ...(formats.some(isComicFormat) ? ["comics"] : [])].map((f) => (
+                <button key={f} className={`pill ${format === f ? "pill-on" : ""}`} aria-pressed={format === f} onClick={() => setFormat(f)}>
+                  {f === "all" ? "All Books" : f === "comics" ? "Comics" : f.toUpperCase()}
+                </button>
+              ))}
+              <label className="ml-auto flex items-center gap-2 text-sm text-muted">
+                <span className="hidden sm:inline">Sort by</span>
+                <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+                  <option value="newest">Newest</option>
+                  <option value="title">Title</option>
+                  <option value="author">Author</option>
+                </select>
+              </label>
+            </div>
+          )}
+
+          <section className="@container" aria-label="Public books">
+            {error && !books ? (
+              <EmptyState icon={<Globe />} title="Could not load the public library">
+                <button className="text-accent hover:underline" onClick={load}>
+                  Try again
+                </button>
+              </EmptyState>
+            ) : visible === null ? (
+              <BookGridSkeleton />
+            ) : books!.length === 0 ? (
+              <EmptyState icon={<Globe />} title="Nothing here yet">
+                Be the first: open a book’s ⋯ menu in your library and choose “Publish to Public Library”.
+              </EmptyState>
+            ) : visible.length === 0 ? (
+              <p className="py-14 text-center text-sm text-muted">No public books match {query.trim() ? `“${query.trim()}”` : "this filter"}.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
+                {visible.map((b) => (
+                  <PublicBookCard key={b.id} book={b} onChanged={load} focused={b.id === focusId} />
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
     </>
   );
 }

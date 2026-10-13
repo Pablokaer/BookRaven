@@ -11,10 +11,12 @@ import { bookRoutes } from "./routes/books.js";
 import { eventRoutes } from "./routes/events.js";
 import { progressRoutes } from "./routes/progress.js";
 import { settingsRoutes } from "./routes/settings.js";
+import { adminRoutes } from "./routes/admin.js";
 import { folderRoutes } from "./routes/folders.js";
 import { highlightRoutes } from "./routes/highlights.js";
 import { meRoutes } from "./routes/me.js";
 import { publicRoutes } from "./routes/public.js";
+import { requestRoutes } from "./routes/requests.js";
 import { shareRoutes } from "./routes/shares.js";
 
 /** The Fastify app with every route registered (no listening, no migrations): used by index.ts and the tests. */
@@ -59,6 +61,8 @@ export async function buildServer() {
   await app.register(highlightRoutes);
   await app.register(publicRoutes);
   await app.register(meRoutes);
+  await app.register(adminRoutes);
+  await app.register(requestRoutes);
   await app.register(eventRoutes);
 
   return app;

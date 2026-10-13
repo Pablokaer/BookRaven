@@ -4,8 +4,10 @@ import { isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { copyBookToUser } from "../lib/copies.js";
 import { broadcast, publish } from "../lib/events.js";
+import { BlockedFileError } from "../lib/moderation.js";
 import { QuotaExceededError } from "../lib/quota.js";
 import { bookKey } from "../lib/storage.js";
+import { adminUserIds } from "./admin.js";
 import { SELECT_BOOK, sendCover, sendFile, toBookDto, type BookRow } from "./books.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -99,6 +101,7 @@ export async function publicRoutes(app: FastifyInstance) {
       try {
         result = await copyBookToUser(src, request.user, src.user_id === request.user.id ? null : src.owner_name);
       } catch (err) {
+        if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
         if (err instanceof QuotaExceededError) {
           return reply.code(413).send({ error: "quota_exceeded", usedBytes: err.usedBytes, quotaBytes: err.quotaBytes });
         }
@@ -108,6 +111,38 @@ export async function publicRoutes(app: FastifyInstance) {
       const dto = toBookDto(rows[0]!);
       if (result.created) publish(request.user.id, "book.created", dto);
       return reply.code(result.created ? 201 : 200).send(dto);
+    },
+  );
+
+  /** Reports a public book to the administrators (copyright, illegal content, ...). */
+  app.post<{ Params: { id: string }; Body: { reason: string; details?: string } }>(
+    "/api/public/:id/report",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: {
+        body: {
+          type: "object",
+          required: ["reason"],
+          additionalProperties: false,
+          properties: {
+            reason: { type: "string", enum: ["copyright", "illegal", "offensive", "spam", "other"] },
+            details: { type: "string", maxLength: 2000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const book = await loadPublic(request, reply);
+      if (!book) return;
+      if (book.user_id === request.user.id) return reply.code(400).send({ error: "own_book" });
+      const res = await query(
+        `INSERT INTO content_report (book_id, sha256, title, reporter_id, reason, details)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (reporter_id, sha256) WHERE status = 'open' DO NOTHING`,
+        [book.id, book.sha256, book.title, request.user.id, request.body.reason, request.body.details?.trim() || null],
+      );
+      if (res.rowCount) for (const id of await adminUserIds()) publish(id, "admin.report", { title: book.title });
+      return reply.code(201).send({ ok: true });
     },
   );
 
