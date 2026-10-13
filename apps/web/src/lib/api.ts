@@ -128,4 +128,4 @@ export type Highlight = {
   createdAt: string;
 };
 
-export type ServerConfig = { googleEnabled: boolean; allowSignup: boolean; maxUploadMb: number };
+export type ServerConfig = { googleEnabled: boolean; allowSignup: boolean; maxUploadMb: number; passwordResetEnabled: boolean };

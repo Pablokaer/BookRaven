@@ -4,6 +4,7 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
+import { mailEnabled } from "./lib/mailer.js";
 import { connectionCount } from "./lib/events.js";
 import { authRoutes } from "./routes/auth.js";
 import { bookRoutes } from "./routes/books.js";
@@ -45,6 +46,8 @@ export async function buildServer() {
     googleEnabled,
     allowSignup: config.allowSignup,
     maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),
+    // Without SMTP in production nobody would receive the link, so the option is hidden.
+    passwordResetEnabled: mailEnabled || !config.isProd,
   }));
 
   await app.register(authRoutes);

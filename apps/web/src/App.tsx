@@ -13,6 +13,7 @@ import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage,
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { PublicLibraryPage } from "./pages/PublicLibraryPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SharePage } from "./pages/SharePage";
 
 // The reader (pdf.js, foliate-js) is loaded only when a book is opened.
@@ -51,6 +52,11 @@ export function App() {
     installProgressFlushers();
     return () => stopEvents();
   }, [signedIn]);
+
+  // The password-reset link works whether or not someone is signed in on this browser.
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPasswordPage onDone={() => void refetch()} />;
+  }
 
   if (isPending) {
     return <div className="flex h-dvh items-center justify-center text-muted">Loading…</div>;

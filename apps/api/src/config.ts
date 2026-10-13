@@ -10,6 +10,7 @@ const isProd = process.env.NODE_ENV === "production";
 
 export const config = {
   isProd,
+  isTest: process.env.NODE_ENV === "test",
   port: Number(process.env.PORT ?? 3000),
   host: process.env.HOST ?? "0.0.0.0",
   publicUrl: required("PUBLIC_URL", isProd ? undefined : "http://localhost:5173").replace(/\/$/, ""),
@@ -39,6 +40,9 @@ export const config = {
     forcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? "true").toLowerCase() !== "false",
   },
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 200) * 1024 * 1024,
+  /** SMTP connection URL for outgoing email, e.g. smtps://user:pass@smtp.example.com:465 */
+  smtpUrl: process.env.SMTP_URL ?? "",
+  mailFrom: process.env.MAIL_FROM ?? "ReadSync <no-reply@localhost>",
   /** Total size of the books each account may keep. Administrators have no limit. */
   quotaBytes: Number(process.env.UPLOAD_QUOTA_MB ?? 2048) * 1024 * 1024,
   /** Emails of administrator accounts (comma-separated): unlimited storage, can moderate the public library. */

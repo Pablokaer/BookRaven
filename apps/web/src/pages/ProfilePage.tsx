@@ -1,12 +1,86 @@
-import { LogOut, ShieldCheck, Target } from "lucide-react";
+import { KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { useMemo, useState } from "react";
 import { initials } from "../components/shell/TopBar";
-import { signOut } from "../lib/auth";
+import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { useSettings } from "../lib/settings";
+
+function ChangePassword() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (next !== confirm) return setMessage({ ok: false, text: "The new passwords do not match." });
+    setBusy(true);
+    setMessage(null);
+    const res = await authClient.changePassword({ currentPassword: current, newPassword: next, revokeOtherSessions: true });
+    setBusy(false);
+    if (res.error) {
+      setMessage({ ok: false, text: res.error.code === "INVALID_PASSWORD" ? "The current password is wrong." : (res.error.message ?? "Could not change the password.") });
+    } else {
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setMessage({ ok: true, text: "Password changed. Your other devices were signed out." });
+    }
+  };
+
+  return (
+    <section className="surface p-6">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-medium">
+        <KeyRound className="h-4 w-4 text-accent" /> Change password
+      </h2>
+      <p className="mb-4 text-xs text-muted">Other devices are signed out when you change it.</p>
+      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-3">
+        <input
+          className="input"
+          type="password"
+          placeholder="Current password"
+          aria-label="Current password"
+          required
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          autoComplete="current-password"
+        />
+        <input
+          className="input"
+          type="password"
+          placeholder="New password"
+          aria-label="New password"
+          required
+          minLength={8}
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          autoComplete="new-password"
+        />
+        <input
+          className="input"
+          type="password"
+          placeholder="Repeat new password"
+          aria-label="Repeat new password"
+          required
+          minLength={8}
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password"
+        />
+        <div className="flex items-center gap-3 sm:col-span-3">
+          <button className="btn" disabled={busy}>
+            {busy ? "Saving…" : "Change password"}
+          </button>
+          {message && <p className={`text-sm ${message.ok ? "text-accent" : "text-rose-300"}`}>{message.text}</p>}
+        </div>
+      </form>
+    </section>
+  );
+}
 
 export function ProfilePage({ user }: { user: { name: string; email: string } }) {
   const { books, folders, me } = useLibrary();
@@ -67,6 +141,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       <section className="surface p-6">
         <StorageMeter />
       </section>
+
+      <ChangePassword />
 
       <section className="surface p-6">
         <form onSubmit={saveGoal} className="flex flex-wrap items-end gap-4">

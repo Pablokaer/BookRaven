@@ -17,10 +17,12 @@
     "@fastify/rate-limit": "^11.2.1",
     "better-auth": "1.7.7",
     "fastify": "^5.12.7",
+    "nodemailer": "6.9.16",
     "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "6.4.17",
     "@types/pg": "^8.11.0",
     "s3rver": "3.7.1",
     "tsx": "^4.19.0",

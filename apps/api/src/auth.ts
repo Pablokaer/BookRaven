@@ -5,6 +5,7 @@ import { bearer } from "better-auth/plugins";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
+import { sendMail } from "./lib/mailer.js";
 
 export const auth = betterAuth({
   appName: "ReadSync",
@@ -17,6 +18,16 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
     disableSignUp: !config.allowSignup,
+    // "Forgot password": emails a one-hour link; using it signs out every other session.
+    resetPasswordTokenExpiresIn: 60 * 60,
+    revokeSessionsOnPasswordReset: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendMail({
+        to: user.email,
+        subject: "Reset your ReadSync password",
+        text: `Hi ${user.name || ""},\n\nSomeone (hopefully you) asked to reset the password of your ReadSync account.\nOpen this link within an hour to choose a new one:\n\n${url}\n\nIf you did not ask for this, ignore this email; your password stays the same.`,
+      });
+    },
   },
   socialProviders: googleEnabled
     ? {
