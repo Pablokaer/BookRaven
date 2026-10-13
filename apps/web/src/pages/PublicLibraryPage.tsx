@@ -10,6 +10,7 @@ import { Menu } from "../components/ui/Menu";
 import { Modal } from "../components/ui/Modal";
 import { ApiError, type PublicBook } from "../lib/api";
 import { isComicFormat } from "../lib/comics";
+import { matchesText } from "../lib/search";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { addPublicBook, downloadPublicBook, listPublicBooks, removePublicBook } from "../lib/publicLibrary";
@@ -257,8 +258,7 @@ export function PublicLibraryPage() {
 
   const visible = useMemo(() => {
     if (!pool) return null;
-    const q = query.trim().toLowerCase();
-    const list = pool.filter((b) => (theme === "all" || b.themes.includes(theme)) && (!q || `${b.title} ${b.author ?? ""} ${b.publishedBy ?? ""}`.toLowerCase().includes(q)));
+    const list = pool.filter((b) => (theme === "all" || b.themes.includes(theme)) && matchesText(`${b.title} ${b.author ?? ""} ${b.publishedBy ?? ""}`, query));
     const text = (a: string | null, b: string | null) => (a ?? "\uffff").localeCompare(b ?? "\uffff", undefined, { sensitivity: "base", numeric: true });
     if (sort === "popular") list.sort(byPopularity);
     else if (sort === "title") list.sort((a, b) => text(a.title, b.title));

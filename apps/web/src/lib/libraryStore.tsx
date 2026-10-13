@@ -7,6 +7,7 @@ import { percent } from "./format";
 import { fileSize } from "./format";
 import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } from "./library";
 import { getMe } from "./publicLibrary";
+import { matchesText } from "./search";
 
 export type UploadItem = { key: string; name: string; status: "uploading" | "done" | "error"; message?: string };
 
@@ -331,8 +332,7 @@ export function useLibrary() {
 
 /** Books matching the top-bar search: title, author, tags or collection name. */
 export function matchesQuery(book: Book, query: string, folders: Folder[]) {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
+  if (!query.trim()) return true;
   const folder = book.folderId ? folders.find((f) => f.id === book.folderId)?.name ?? "" : "";
-  return `${book.title} ${book.author ?? ""} ${book.tags.join(" ")} ${folder}`.toLowerCase().includes(q);
+  return matchesText(`${book.title} ${book.author ?? ""} ${book.tags.join(" ")} ${folder}`, query);
 }
