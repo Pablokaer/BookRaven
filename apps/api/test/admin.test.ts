@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { outbox } from "../src/lib/mailer.js";
 import { adminSession, api, fakePdf, signUp, upload, type TestUser } from "./helpers.js";
 
 let adminUser: TestUser | null = null;
@@ -84,6 +85,9 @@ describe("book requests", () => {
 
     const req = (await api(asker, "POST", "/api/requests", { title: "Dune", author: "Frank Herbert" })).json();
     expect(req).toMatchObject({ title: "Dune", votes: 1, voted: true, status: "open", isMine: true });
+    const mail = outbox.findLast((m) => m.to === "admin@test.local" && m.subject === "New book request: Dune")!;
+    expect(mail.text).toContain("Asker asked for “Dune” by Frank Herbert");
+    expect(mail.text).toContain("/public?tab=requests");
     expect((await api(voter, "POST", `/api/requests/${req.id}/vote`)).statusCode).toBe(204);
     expect((await api(voter, "GET", "/api/requests")).json().find((r: { id: string }) => r.id === req.id)).toMatchObject({ votes: 2, voted: true });
 

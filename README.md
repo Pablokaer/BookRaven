@@ -21,7 +21,7 @@ The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (p
 - **Public-domain collection:** an importer fills the Public Library with hundreds of popular public-domain books in English and Portuguese from Project Gutenberg (see below). The Public Library is organised in **sections by theme** (philosophy, politics, economics, technology, computing, science, history, literature, poetry, religion, children), with a language filter, popularity ranking and a link back to the source.
 - **Other apps:** an **OPDS** catalog and a **KOReader** progress-sync server, with per-device app passwords.
 - **Offline:** the web app opens without a connection and shows your saved library; books you opened (or saved for offline) can be read.
-- **Administration:** accounts (storage limits, blocking, temporary passwords, deletion) and content reports on public books (dismiss, unpublish, block the file or delete it everywhere).
+- **Administration:** accounts (storage limits, blocking, temporary passwords, deletion), content reports on public books (dismiss, unpublish, block the file or delete it everywhere), and the number of open book requests (linking to *Public Library → Requests*). Administrators also get an email for each new book request.
 
 ## Stack
 
@@ -117,12 +117,13 @@ The port 80 virtual host just redirects to HTTPS. With nginx use `proxy_pass htt
 
 ### Email
 
-BookRaven sends two emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`):
+BookRaven sends three emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`):
 
 - **Welcome**, once, when an account is created (email form or Google).
 - **Password reset**, from *Forgot password?* on the sign-in screen: a link that works once, for one hour, and signs out the account's other sessions.
+- **New book request**, to every address in `ADMIN_EMAILS` (except the person asking) when someone requests a book in the Public Library, with a link to the requests.
 
-Both go through any SMTP service set in `.env`, for example [Resend](https://resend.com):
+All go through any SMTP service set in `.env`, for example [Resend](https://resend.com):
 
 ```bash
 SMTP_URL=smtps://resend:<api key>@smtp.resend.com:465

@@ -1,5 +1,6 @@
 import { Ban, BookOpen, Check, Copy, Flag, HardDrive, KeyRound, MoreHorizontal, Search, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { EmptyState } from "../components/books/BookBrowser";
 import { ProgressBar } from "../components/books/ProgressBar";
 import { Menu } from "../components/ui/Menu";
@@ -34,12 +35,19 @@ const REASONS: Record<string, string> = {
   other: "Other",
 };
 
-function Stat({ label, value }: { label: string; value: string | number | undefined }) {
-  return (
-    <div className="surface p-4">
+function Stat({ label, value, to }: { label: string; value: string | number | undefined; to?: string }) {
+  const body = (
+    <>
       <div className="text-xl font-semibold tabular-nums">{value ?? "–"}</div>
       <div className="mt-0.5 text-xs text-muted">{label}</div>
-    </div>
+    </>
+  );
+  return to ? (
+    <Link to={to} className="surface block p-4 transition hover:border-accent/40">
+      {body}
+    </Link>
+  ) : (
+    <div className="surface p-4">{body}</div>
   );
 }
 
@@ -345,14 +353,15 @@ export function AdminPage() {
         <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
           <ShieldCheck className="h-7 w-7 text-accent" /> Admin
         </h1>
-        <p className="mt-1.5 text-sm text-muted">Accounts, storage limits, reports and content removal.</p>
+        <p className="mt-1.5 text-sm text-muted">Accounts, storage limits, reports, book requests and content removal.</p>
       </header>
 
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Accounts" value={stats?.users} />
         <Stat label="Books (copies)" value={stats?.books} />
         <Stat label="Stored on disk" value={stats ? fileSize(stats.storedBytes) : undefined} />
         <Stat label="Public books" value={stats?.publicBooks} />
+        <Stat label="Open book requests" value={stats?.openRequests} to="/public?tab=requests" />
       </div>
 
       <div className="mb-6 flex flex-wrap gap-2" role="tablist">

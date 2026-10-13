@@ -1,7 +1,7 @@
 import { config } from "../config.js";
 import type { Mail } from "./mailer.js";
 
-/** The account emails (welcome, password reset): plain text plus HTML in the app's colours. */
+/** The emails (welcome, password reset, new book request): plain text plus HTML in the app's colours. */
 
 const APP = "BookRaven";
 // Email clients ignore stylesheets and CSS variables: inline values from apps/web/src/index.css.
@@ -128,6 +128,36 @@ export function resetPasswordEmail(user: { email: string; name: string }, url: s
         p("Choosing a new password signs you out on your other devices."),
       button: { label: "Choose a new password", url },
       footer: "If you did not ask for this, ignore this email: your password stays the same.",
+    }),
+  };
+}
+
+/** Sent to each administrator (ADMIN_EMAILS) when someone asks for a book in the Public Library. */
+export function bookRequestEmail(
+  to: string,
+  request: { title: string; author: string | null; note: string | null; requester: string },
+): Mail {
+  const url = `${config.publicUrl}/public?tab=requests`;
+  const book = request.author ? `“${request.title}” by ${request.author}` : `“${request.title}”`;
+  return {
+    to,
+    subject: `New book request: ${request.title}`,
+    text: [
+      `${request.requester} asked for ${book} in the Public Library.`,
+      ...(request.note ? ["", `Note: ${request.note}`] : []),
+      "",
+      `See the requests: ${url}`,
+      "",
+      "You received this email because your address is in ADMIN_EMAILS on this server.",
+    ].join("\n"),
+    html: layout({
+      preheader: `${request.requester} asked for ${book}.`,
+      title: "New book request",
+      bodyHtml:
+        p(`${escapeHtml(request.requester)} asked for <strong>${escapeHtml(book)}</strong> in the Public Library.`) +
+        (request.note ? p(`<em>${escapeHtml(request.note)}</em>`) : ""),
+      button: { label: "See the requests", url },
+      footer: "You received this email because your address is in ADMIN_EMAILS on this server.",
     }),
   };
 }

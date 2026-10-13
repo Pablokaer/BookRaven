@@ -1,8 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
-import { isAdmin } from "../config.js";
+import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
+import { bookRequestEmail } from "../lib/emails.js";
 import { broadcast, publish } from "../lib/events.js";
+import { sendMailInBackground } from "../lib/mailer.js";
 import { isFileBlocked } from "../lib/moderation.js";
 import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
 
@@ -105,6 +107,11 @@ export async function requestRoutes(app: FastifyInstance) {
       // Asking counts as a vote.
       await query("INSERT INTO book_request_vote (request_id, user_id) VALUES ($1, $2)", [rows[0]!.id, request.user.id]);
       broadcast("requests.changed", {});
+      const requester = request.user.name.trim() || "Someone";
+      for (const to of config.adminEmails) {
+        if (to === request.user.email.toLowerCase()) continue;
+        sendMailInBackground(bookRequestEmail(to, { title: title.trim(), author: author?.trim() || null, note: note?.trim() || null, requester }));
+      }
       const created = await query<RequestRow>(`${SELECT_REQUEST} WHERE r.id = $2`, [request.user.id, rows[0]!.id]);
       return reply.code(201).send(toDto(created.rows[0]!, request.user));
     },
