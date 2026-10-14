@@ -1,8 +1,12 @@
-import { apiFetch, apiJson, ApiError, type Book, type Me, type PublicBook } from "./api";
+import { apiFetch, apiJson, ApiError, type Book, type Me, type PublicBook, type PublicBookDetails } from "./api";
 import { saveFile } from "./library";
 
 export function getMe() {
   return apiJson<Me>("/api/me");
+}
+
+export function getPublicBook(id: string) {
+  return apiJson<PublicBookDetails>(`/api/public/${id}`);
 }
 
 export function listPublicBooks() {

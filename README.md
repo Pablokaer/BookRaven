@@ -7,6 +7,7 @@ The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (p
 ## Features
 
 - **Accounts:** email + password (change it in the profile, or reset it by email), plus Google sign-in on the web. New accounts get a welcome email; "Forgot password?" emails a one-hour link (both need SMTP, see *Email*). Sign-ups can be closed with `ALLOW_SIGNUP=false`.
+- **Book pages:** clicking a cover opens the book's page: progress (where and on which device you stopped), description (read from the EPUB or PDF metadata on upload, or Gutenberg's summary for imported books), format, size, language, collection and tags, how many other readers have it, its Public Library entry and source, all its highlights (each opens the reader at that passage) and the book clubs reading it. A public book's page shows who shared it, how many readers have it, its sections, and *More by the author* and *You might also like* shelves; *Read* on any card still opens the reader directly.
 - **Library dashboard:** upload by button or drag-and-drop (title, author and cover are read from the file; duplicates are detected by SHA-256). Files dropped on a collection's page or on its card in *Collections*, or picked with the collection's *Upload* button, go straight into that collection (a file already in the library is moved there). An upload panel lists every file with its state (waiting, reading details, percentage sent, saving, added, already in the library, failed) and the overall progress, and stays until cleared; uploads go one at a time, continue while browsing the app, and the browser asks before closing the tab while any are left. Collections, tags, favorites, filters by type, sorting, a top-bar search that always looks in both your library (titles, authors, tags, collections) and the Public Library, with the results in two labelled sections (ignores accents and word order), grid or list, a yearly reading goal, and a 2 GB storage limit per account (`UPLOAD_QUOTA_MB`; administrators are unlimited).
 - **Ebook reader** (foliate-js): 8 bundled fonts, size, line and letter spacing, margins, page width, one or two pages, themes (including inverted) and contrast; table of contents and full-text search.
 - **PDF reader** (pdf.js): streams large files with Range requests, fit page or width, color themes, and a selectable text layer so PDFs get highlights, notes and search too.
@@ -277,14 +278,15 @@ CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build 
 | GET | `/api/config` | public: Google enabled, sign-up open, max upload, password reset / dictionary / translation available |
 | * | `/api/auth/*` | Better Auth (sign-up/in/out, Google callback, session, change/reset password) |
 | GET | `/api/me` | role and storage use |
-| GET/POST | `/api/books` | library; multipart upload `title`, `author`, `folderId` (optional collection), `cover`, `file` |
+| GET/POST | `/api/books` | library; multipart upload `title`, `author`, `description`, `folderId` (optional collection), `cover`, `file` |
 | GET/PATCH/DELETE | `/api/books/:id` | PATCH: title, author, collection, tags, favorite, public |
 | GET | `/api/books/:id/file`, `/cover` | Range requests, ETag (`?download=1` to save) |
+| GET | `/api/books/:id/about` | book page: other readers (a count), public-library entry, source and subjects |
 | GET/PUT | `/api/books/:id/progress` | newest wins |
 | * | `/api/books/:id/highlights`, `/api/highlights/:id` | highlights and notes |
 | * | `/api/folders`, `/api/books/:id/share`, `/api/shares/:token` | collections, share links |
 | * | `/api/folders/:id/share`, `/api/collection-shares/:token` | collection share links: create/revoke, preview, `POST …/accept` copies every book |
-| * | `/api/public/*`, `/api/requests/*` | public library (download, add, report) and book requests |
+| * | `/api/public/*`, `/api/requests/*` | public library (`GET /api/public/:id` for a book's page; download, add, report) and book requests |
 | * | `/api/clubs/*` | book clubs, invites, messages |
 | GET/POST | `/api/dictionary`, `/api/translate` | lookups for selected text |
 | * | `/api/app-passwords` | passwords for OPDS / KOReader |

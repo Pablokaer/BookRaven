@@ -20,7 +20,15 @@ export type GutendexBook = {
   media_type: string;
   formats: Record<string, string>;
   download_count: number;
+  /** Short descriptions of the book (Gutendex adds them for many books). */
+  summaries?: string[];
 };
+
+/** The book's blurb from its catalog summary, if any. */
+export function summaryOf(b: Pick<GutendexBook, "summaries">) {
+  const s = b.summaries?.find((x) => x.trim())?.trim();
+  return s ? s.slice(0, 4000) : null;
+}
 
 /** Latest death year that makes a work public domain under "life + 70" in `year`. */
 export const deathYearCutoff = (year = new Date().getFullYear()) => year - 71;

@@ -92,6 +92,33 @@ describe("sharing and the public library", () => {
     expect((await api(stranger, "GET", "/api/public")).json().map((b: { id: string }) => b.id)).not.toContain(book.id);
   });
 
+  it("keeps the description and tells a book's page about other readers and the public entry", async () => {
+    const owner = await signUp(undefined, "Owner");
+    const reader = await signUp();
+    const long = "x".repeat(5000);
+    const book = (await upload(owner, "d.pdf", fakePdf(), { title: "Described", description: `  A quiet story.  ` })).json();
+    expect(book.description).toBe("A quiet story.");
+    expect((await upload(owner, "f.pdf", fakePdf(), { description: "One.\r\n\r\nTwo." })).json().description).toBe("One.\n\nTwo.");
+    expect((await upload(owner, "e.pdf", fakePdf(), { description: long })).json().description).toHaveLength(4000);
+
+    expect((await api(owner, "GET", `/api/books/${book.id}/about`)).json()).toEqual({ readers: 0, publicBookId: null, source: null, subjects: [] });
+    expect((await api(reader, "GET", `/api/books/${book.id}/about`)).statusCode).toBe(404);
+
+    await api(owner, "PATCH", `/api/books/${book.id}`, { isPublic: true });
+    const page = (await api(reader, "GET", `/api/public/${book.id}`)).json();
+    expect(page).toMatchObject({ title: "Described", description: "A quiet story.", publishedBy: "Owner", readers: 1, ownBookId: null });
+
+    // A copy keeps the blurb, and each side now sees one other reader.
+    const copy = (await api(reader, "POST", `/api/public/${book.id}/add`)).json();
+    expect(copy.description).toBe("A quiet story.");
+    expect((await api(reader, "GET", `/api/books/${copy.id}/about`)).json()).toMatchObject({ readers: 1, publicBookId: book.id });
+    expect((await api(owner, "GET", `/api/books/${book.id}/about`)).json().readers).toBe(1);
+    expect((await api(reader, "GET", `/api/public/${book.id}`)).json()).toMatchObject({ readers: 2, ownBookId: copy.id });
+
+    await api(owner, "DELETE", `/api/public/${book.id}`);
+    expect((await api(reader, "GET", `/api/public/${book.id}`)).statusCode).toBe(404);
+  });
+
   it("shares a whole collection by link", async () => {
     const owner = await signUp(undefined, "Owner");
     const reader = await signUp();

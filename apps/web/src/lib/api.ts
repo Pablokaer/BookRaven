@@ -97,12 +97,24 @@ export type Book = {
   isPublic: boolean;
   /** ISO 639-1 code, when known. */
   language: string | null;
+  /** Blurb from the file's metadata or the catalog. */
+  description: string | null;
   createdAt: string;
   progress: Progress | null;
 };
 
+/** Extra facts for a book's page. */
+export type BookAbout = {
+  /** Other accounts with this file in their library. */
+  readers: number;
+  /** The public-library entry for this file, if it was published. */
+  publicBookId: string | null;
+  source: { name: string; url: string } | null;
+  subjects: string[];
+};
+
 /** A book in the public library, as other accounts see it. */
-export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "filename" | "sizeBytes" | "hasCover"> & {
+export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "filename" | "sizeBytes" | "hasCover" | "description"> & {
   /** ISO 639-1 code, when known. */
   language: string | null;
   /** Set for public-domain books imported from a catalog such as Project Gutenberg. */
@@ -118,6 +130,9 @@ export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "file
   isMine: boolean;
   canRemove: boolean;
 };
+
+/** A public book's page: also how many people have it and its catalog subjects. */
+export type PublicBookDetails = PublicBook & { readers: number; subjects: string[] };
 
 /** The signed-in account. `quotaBytes` is null when storage is unlimited (administrators). */
 export type Me = { isAdmin: boolean; usedBytes: number; quotaBytes: number | null };
