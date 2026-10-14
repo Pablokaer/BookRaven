@@ -55,6 +55,7 @@ export async function buildServer() {
   app.get("/api/config", async () => ({
     googleEnabled,
     allowSignup: config.allowSignup,
+    requireEmailVerification: config.requireEmailVerification,
     maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),
     // Without SMTP in production nobody would receive the link, so the option is hidden.
     passwordResetEnabled: mailEnabled || !config.isProd,

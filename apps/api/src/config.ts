@@ -27,6 +27,8 @@ export const config = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
   },
   allowSignup: (process.env.ALLOW_SIGNUP ?? "true").toLowerCase() !== "false",
+  /** Require a verified email before signing in (opt-in; needs SMTP, or nobody can verify). */
+  requireEmailVerification: (process.env.REQUIRE_EMAIL_VERIFICATION ?? "false").toLowerCase() === "true",
   storageDir: path.resolve(process.env.STORAGE_DIR ?? "./data"),
   /** "local" keeps files in STORAGE_DIR; "s3" uses an S3-compatible bucket (STORAGE_DIR then only holds temp uploads). */
   storageDriver: (process.env.STORAGE_DRIVER ?? "local") === "s3" ? ("s3" as const) : ("local" as const),

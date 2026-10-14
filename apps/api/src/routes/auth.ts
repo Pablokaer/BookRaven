@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { auth } from "../auth.js";
+import { config } from "../config.js";
 
 /**
  * Mounts Better Auth at /api/auth/*.
@@ -10,11 +11,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.removeAllContentTypeParsers();
   app.addContentTypeParser("*", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 
-  app.route({
-    method: ["GET", "POST"],
-    url: "/api/auth/*",
-    config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
-    async handler(request, reply) {
+  async function handle(request: FastifyRequest, reply: FastifyReply) {
       const url = new URL(request.url, `${request.protocol}://${request.headers.host}`);
       const headers = new Headers();
       for (const [key, value] of Object.entries(request.headers)) {
@@ -40,6 +37,19 @@ export async function authRoutes(app: FastifyInstance) {
 
       const text = response.body ? await response.text() : null;
       return reply.send(text);
-    },
+  }
+
+  // The password endpoints are a brute-force target, so they get a tight limit per IP, well
+  // below the catch-all (which also serves the frequent session check and must stay generous).
+  // The tight limit is off under test, where the suite creates many accounts from one IP.
+  const authMax = config.isTest ? 100_000 : 10;
+  for (const path of ["/api/auth/sign-in/email", "/api/auth/sign-up/email", "/api/auth/forget-password", "/api/auth/request-password-reset", "/api/auth/reset-password"]) {
+    app.route({ method: ["POST"], url: path, config: { rateLimit: { max: authMax, timeWindow: "1 minute" } }, handler: handle });
+  }
+  app.route({
+    method: ["GET", "POST"],
+    url: "/api/auth/*",
+    config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+    handler: handle,
   });
 }

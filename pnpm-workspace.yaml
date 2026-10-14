@@ -1,5 +1,8 @@
 packages:
-  - "apps/*"
+  - apps/*
 
 onlyBuiltDependencies:
   - esbuild
+
+patchedDependencies:
+  foliate-js: patches/foliate-js.patch

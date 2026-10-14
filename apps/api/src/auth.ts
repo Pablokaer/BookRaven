@@ -5,7 +5,7 @@ import { bearer } from "better-auth/plugins";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
-import { resetPasswordEmail, welcomeEmail } from "./lib/emails.js";
+import { resetPasswordEmail, verifyEmailEmail, welcomeEmail } from "./lib/emails.js";
 import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
 
@@ -20,12 +20,20 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
     disableSignUp: !config.allowSignup,
+    requireEmailVerification: config.requireEmailVerification,
     // "Forgot password": emails a one-hour link; using it signs out every other session.
     resetPasswordTokenExpiresIn: 60 * 60,
     revokeSessionsOnPasswordReset: true,
     // Not awaited: the answer must not depend on SMTP (see sendMailInBackground).
     sendResetPassword: async ({ user, url }) => {
       sendMailInBackground(resetPasswordEmail(user, url));
+    },
+  },
+  emailVerification: {
+    sendOnSignUp: config.requireEmailVerification,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      sendMailInBackground(verifyEmailEmail(user, url));
     },
   },
   socialProviders: googleEnabled
