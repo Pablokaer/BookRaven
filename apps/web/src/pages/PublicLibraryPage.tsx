@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Download, ExternalLink, Flag, Flame, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
+import { ArrowRight, BookOpen, Download, ExternalLink, Flag, Flame, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2, User, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { EmptyState, BookGridSkeleton } from "../components/books/BookBrowser";
@@ -6,6 +6,7 @@ import { BookCover } from "../components/books/BookCover";
 import { ReportDialog } from "../components/ReportDialog";
 import { RequestsTab } from "../components/RequestsTab";
 import { StorageMeter } from "../components/shell/StorageMeter";
+import { initials } from "../components/shell/TopBar";
 import { Menu } from "../components/ui/Menu";
 import { Modal } from "../components/ui/Modal";
 import { ApiError, type PublicBook } from "../lib/api";
@@ -32,7 +33,34 @@ function languageName(code: string) {
   }
 }
 
-function PublicBookCard({ book, onChanged, focused }: { book: PublicBook; onChanged: () => void; focused: boolean }) {
+/** Who put the book in the public library, shown in full when a book is opened. */
+function PublisherInfo({ book }: { book: PublicBook }) {
+  const name = book.isMine ? "You" : book.publishedBy;
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-elevated/40 p-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-sm font-semibold text-app">
+        {book.isMine || !name ? <User className="h-4 w-4" /> : initials(name)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted">{book.isMine ? "Published by" : "Shared by"}</p>
+        <p className="break-words text-sm font-medium">{name ?? "Someone"}</p>
+      </div>
+      <span className="shrink-0 text-xs text-muted">{shortDate(book.publishedAt)}</span>
+    </div>
+  );
+}
+
+function PublicBookCard({
+  book,
+  onChanged,
+  focused,
+  showPublisher = true,
+}: {
+  book: PublicBook;
+  onChanged: () => void;
+  focused: boolean;
+  showPublisher?: boolean;
+}) {
   const { replaceBook, refreshMe, me } = useLibrary();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<"add" | "download" | null>(null);
@@ -96,7 +124,8 @@ function PublicBookCard({ book, onChanged, focused }: { book: PublicBook; onChan
         </h3>
         <p className="mt-0.5 truncate text-xs text-muted">{book.author ?? "Unknown author"}</p>
         <p className="mt-2 truncate text-[11px] text-muted" title={`Published ${shortDate(book.publishedAt)}`}>
-          {book.isMine ? "Published by you" : `Shared by ${book.publishedBy ?? "someone"}`} · {fileSize(book.sizeBytes)}
+          {showPublisher && <>{book.isMine ? "Published by you" : `Shared by ${book.publishedBy ?? "someone"}`} · </>}
+          {fileSize(book.sizeBytes)}
         </p>
         {book.source && (
           <a
@@ -313,7 +342,7 @@ export function PublicLibraryPage() {
             {icon} {label}
           </button>
         ))}
-        <div className="ml-auto w-full max-w-xs sm:w-72">
+        <div className="w-full sm:ml-auto sm:w-72">
           <StorageMeter />
         </div>
       </div>
@@ -431,8 +460,10 @@ export function PublicLibraryPage() {
                     load();
                   }}
                   focused={false}
+                  showPublisher={false}
                 />
               </div>
+              <PublisherInfo book={books?.find((b) => b.id === opened.id) ?? opened} />
             </Modal>
           )}
         </>

@@ -150,28 +150,31 @@ export function BookBrowser({
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto font-display text-2xl font-semibold">{title}</h2>
         {actions}
-        <label className="flex items-center gap-2 text-sm text-muted">
-          <span className="hidden sm:inline">Sort by</span>
-          <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-            {(Object.keys(SORTS) as Sort[]).map((s) => (
-              <option key={s} value={s}>
-                {SORTS[s]}
-              </option>
+        {/* Sort and view stay together when the header wraps on narrow screens. */}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-muted">
+            <span className="hidden sm:inline">Sort by</span>
+            <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+              {(Object.keys(SORTS) as Sort[]).map((s) => (
+                <option key={s} value={s}>
+                  {SORTS[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex rounded-xl border border-line p-0.5" role="group" aria-label="View">
+            {(["grid", "list"] as const).map((v) => (
+              <button
+                key={v}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${view === v ? "bg-elevated text-accent" : "text-muted hover:text-fg"}`}
+                aria-label={v === "grid" ? "Grid view" : "List view"}
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+              >
+                {v === "grid" ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
+              </button>
             ))}
-          </select>
-        </label>
-        <div className="flex rounded-xl border border-line p-0.5" role="group" aria-label="View">
-          {(["grid", "list"] as const).map((v) => (
-            <button
-              key={v}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${view === v ? "bg-elevated text-accent" : "text-muted hover:text-fg"}`}
-              aria-label={v === "grid" ? "Grid view" : "List view"}
-              aria-pressed={view === v}
-              onClick={() => setView(v)}
-            >
-              {v === "grid" ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
-            </button>
-          ))}
+          </div>
         </div>
       </div>
 

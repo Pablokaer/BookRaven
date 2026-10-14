@@ -108,7 +108,7 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
   };
 
   return (
-    <div className="max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8">
       <section className="surface flex flex-wrap items-center gap-5 p-6">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-xl font-semibold text-app">
           {initials(user.name || user.email)}
