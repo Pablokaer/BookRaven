@@ -30,7 +30,12 @@ import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./
 
 export const LIBRARY_EMAIL = "library@readsync.local";
 const GUTENDEX = "https://gutendex.com";
-const MIRROR = "https://gutenberg.pglaf.org";
+/**
+ * Gutenberg mirrors with the generated EPUBs and covers, tried in order (Gutenberg asks robots
+ * to download from mirrors rather than www.gutenberg.org). Their speed varies a lot: in October
+ * 2026 pglaf served about 35 KB/s while nabasny sent the same 9 MB book in under two seconds.
+ */
+const MIRRORS = ["https://gutenberg.nabasny.com", "https://gutenberg.pglaf.org"];
 /** Gutenberg's whole catalog as CSV (updated daily), to pick candidates without paging through searches. */
 const CATALOG_CSV = "https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz";
 /** Most catalog matches looked up on Gutendex per themed search (32 per request, which can take a minute). */
@@ -110,8 +115,10 @@ export async function importPublicDomain(opts: ImportOptions) {
   async function importOne(b: GutendexBook, lang: string, themes: Theme[]) {
     const epub = await download(
       [
-        `${MIRROR}/cache/epub/${b.id}/pg${b.id}-images-3.epub`, // EPUB 3 with images
-        `${MIRROR}/cache/epub/${b.id}/pg${b.id}.epub`, // without images, when the illustrated one is too big
+        ...MIRRORS.flatMap((m) => [
+          `${m}/cache/epub/${b.id}/pg${b.id}-images-3.epub`, // EPUB 3 with images
+          `${m}/cache/epub/${b.id}/pg${b.id}.epub`, // without images, when the illustrated one is too big
+        ]),
         b.formats["application/epub+zip"],
       ].filter(Boolean) as string[],
       DETECT_BYTES,
@@ -136,7 +143,7 @@ export async function importPublicDomain(opts: ImportOptions) {
           [ownerId, title, author, filename, MIME_TYPES.epub, epub.size, epub.sha256, koreaderMd5, lang, tagsFrom(b), themes],
         );
         bookId = rows[0]!.id;
-        const cover = await download([`${MIRROR}/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`, b.formats["image/jpeg"]].filter(Boolean) as string[], 16);
+        const cover = await download([...MIRRORS.map((m) => `${m}/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`), b.formats["image/jpeg"]].filter(Boolean) as string[], 16);
         if (cover && cover.head[0] === 0xff && cover.head[1] === 0xd8) {
           await commitCover(cover.tmpPath, bookId);
           await query("UPDATE book SET has_cover = true WHERE id = $1", [bookId]);
