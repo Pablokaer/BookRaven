@@ -74,6 +74,9 @@ describe("public-domain rules", () => {
     expect(workKey("Moby Dick; Or, The Whale", [person("Melville, Herman", 1891)], "en")).toBe(
       workKey("Moby Dick", [person("Melville, Herman", 1891)], "en"),
     );
+    expect(workKey("The Adventures of Tom Sawyer, Complete", [person("Twain, Mark", 1910)], "en")).toBe(
+      workKey("The Adventures of Tom Sawyer", [person("Twain, Mark", 1910)], "en"),
+    );
     expect(workKey("Os Lusíadas", [person("Camões, Luís de", 1580)], "pt")).toBe(workKey("Os Lusiadas", [person("Camoes, Luis de", 1580)], "pt"));
     // Different subtitle, author or language: different works.
     const emerson = [person("Emerson, Ralph Waldo", 1882)];
@@ -83,12 +86,18 @@ describe("public-domain rules", () => {
   });
 
   it("recognises pieces of books", () => {
-    expect(fragmentOf("Adventures of Huckleberry Finn, Chapters 06 to 10")).toEqual({ whole: "Adventures of Huckleberry Finn" });
-    expect(fragmentOf("The Adventures of Tom Sawyer, Part 3.")).toEqual({ whole: "The Adventures of Tom Sawyer" });
+    expect(fragmentOf("Adventures of Huckleberry Finn, Chapters 06 to 10")).toBe("piece");
+    expect(fragmentOf("Adventures of Huckleberry Finn, Chapters 36 to the Last")).toBe("piece");
+    expect(fragmentOf("The Adventures of Tom Sawyer, Part 3.")).toBe("piece");
+    expect(fragmentOf("Beaumont and Fletcher's Works, Vol. 06 of 10")).toEqual({ whole: "Beaumont and Fletcher's Works" });
+    expect(fragmentOf("The works of John Dryden, now first collected in eighteen volumes. Volume 14")).toEqual({
+      whole: "The works of John Dryden, now first collected in eighteen volumes",
+    });
     expect(fragmentOf("Oliver Twist, Vol. 1 (of 3)")).toEqual({ whole: "Oliver Twist" });
     expect(fragmentOf("Rob Roy — Volume 01")).toEqual({ whole: "Rob Roy" });
     expect(fragmentOf("Le Morte d'Arthur: Volume 2")).toEqual({ whole: "Le Morte d'Arthur" });
     expect(fragmentOf("Index of the Project Gutenberg Works of Lord Byron")).toBe("index");
+    expect(fragmentOf("The Works of George Meredith: A Linked Index to the Project Gutenberg Editions")).toBe("index");
     // Whole works.
     expect(fragmentOf("King Henry IV, Part 1")).toBeNull();
     expect(fragmentOf("Adventures of Huckleberry Finn")).toBeNull();

@@ -59,22 +59,27 @@ const normalize = (s: string) =>
  * First Series" and "Essays: Second Series" stay different works.
  */
 export function workKey(title: string, authors: Pick<Person, "name">[], language: string) {
-  const t = normalize(cleanTitle(title).replace(/\s*;\s*or\b.*$/i, ""));
+  // "Moby Dick; Or, The Whale" and "Tom Sawyer, Complete" are the same works as "Moby Dick" and "Tom Sawyer".
+  const t = normalize(
+    cleanTitle(title)
+      .replace(/\s*;\s*or\b.*$/i, "")
+      .replace(/(?:,|\s+—)\s+complete\.?$/i, ""),
+  );
   const a = authors.map((p) => normalize(p.name)).sort().join(" + ");
   return `${language}|${t}|${a}`;
 }
 
 /**
- * Gutenberg also carries pieces of books: a novel split into chapter ranges or parts, single
- * volumes of a set, and index pages. "index" means it is not a book at all; otherwise the title
- * of the whole work, so the piece can be skipped when the complete book is already there.
+ * Gutenberg also carries pieces of books: a novel split into chapter ranges or parts (the
+ * complete book is always there too), single volumes of a set, and index pages. "index" and
+ * "piece" are never worth importing; a volume names the whole work, so it can be skipped when
+ * the complete book is already in the library.
  */
-export function fragmentOf(title: string): "index" | { whole: string } | null {
-  if (/^index of the project gutenberg works|table of contents and index/i.test(title)) return "index";
-  const m =
-    /^(.+?),?\s+chapters?\s+\d+\s+(?:to|-)\s+\d+\.?$/i.exec(title) ?? // "Huckleberry Finn, Chapters 06 to 10"
-    /^(.+?),\s+part\s+\d+\.$/i.exec(title) ?? // "Tom Sawyer, Part 3." (plays like "King Henry IV, Part 1" have no period)
-    /^(.+?)(?:,|:|\s+—)\s+(?:vol(?:ume)?\.?|v\.)\s*\d+(?:\s*\(of \d+\))?(?:[:.].*)?$/i.exec(title); // "Oliver Twist, Vol. 1 (of 3)"
+export function fragmentOf(title: string): "index" | "piece" | { whole: string } | null {
+  if (/index of the project gutenberg works|index to the project gutenberg editions|table of contents and index/i.test(title)) return "index";
+  if (/,?\s+chapters?\s+\d+\s+(?:to|-)\s+(?:\d+|the last)\.?$/i.test(title)) return "piece"; // "Huckleberry Finn, Chapters 36 to the Last"
+  if (/,\s+part\s+\d+\.$/i.test(title)) return "piece"; // "Tom Sawyer, Part 3." (plays like "King Henry IV, Part 1" have no period)
+  const m = /^(.+?)(?:,|:|\.|\s+—)\s+(?:vol(?:ume)?\.?|v\.)\s*\d+(?:\s*\(?of \d+\)?)?(?:[:.].*)?$/i.exec(title); // "Oliver Twist, Vol. 1 (of 3)"
   return m ? { whole: m[1]!.trim() } : null;
 }
 
