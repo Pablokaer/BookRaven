@@ -87,3 +87,84 @@ export function tagsFrom(b: Pick<GutendexBook, "bookshelves">) {
 }
 
 export const LANGUAGE_NAMES: Record<string, string> = { en: "English", pt: "Português" };
+
+// ---- Gutenberg's own catalog (pg_catalog.csv) ----
+
+/** A row of Gutenberg's catalog file: enough to choose candidates without asking Gutendex. */
+export type CatalogEntry = Pick<GutendexBook, "id" | "title" | "languages" | "subjects" | "bookshelves" | "authors" | "translators">;
+
+/** RFC 4180 CSV: quoted fields may hold commas, doubled quotes and line breaks. */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') {
+        field += '"';
+        i++;
+      } else if (c === '"') quoted = false;
+      else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = "";
+    } else field += c;
+  }
+  if (field || row.length) rows.push([...row, field]);
+  return rows;
+}
+
+/** A year in a catalog date ("1817", "1775?", "651? BCE"); BCE years are negative. */
+function year(part: string | undefined) {
+  const m = part && /\d{1,4}/.exec(part);
+  if (!m) return null;
+  return /BCE/i.test(part) ? -Number(m[0]) : Number(m[0]);
+}
+
+/**
+ * The catalog's Authors column: "Austen, Jane, 1775-1817; Garnett, Constance, 1861-1946 [Translator]".
+ * People without a role are authors; other roles than translator (editor, illustrator…) are ignored,
+ * as Gutendex does.
+ */
+export function catalogPeople(field: string) {
+  const authors: Person[] = [];
+  const translators: Person[] = [];
+  for (const raw of field.split(";").map((s) => s.trim()).filter(Boolean)) {
+    const role = /\[([^\]]+)\]\s*$/.exec(raw)?.[1];
+    const entry = raw.replace(/\s*\[[^\]]+\]\s*$/, "");
+    const dates = /,\s*([^,]*\d[^,]*)$/.exec(entry);
+    const name = dates ? entry.slice(0, dates.index).trim() : entry;
+    const [born, died] = dates ? dates[1]!.split("-") : [];
+    const person = { name, birth_year: year(born), death_year: year(died) };
+    if (!role) authors.push(person);
+    else if (role === "Translator") translators.push(person);
+  }
+  return { authors, translators };
+}
+
+/** Text entries of Gutenberg's catalog file. */
+export function catalogEntries(csv: string): CatalogEntry[] {
+  const [header, ...rows] = parseCsv(csv);
+  const col = (name: string) => header!.indexOf(name);
+  const [id, type, title, language, people, subjects, shelves] = ["Text#", "Type", "Title", "Language", "Authors", "Subjects", "Bookshelves"].map(col);
+  const list = (s: string | undefined) => (s ?? "").split(";").map((x) => x.trim()).filter(Boolean);
+  return rows
+    .filter((r) => r[type!] === "Text" && Number(r[id!]))
+    .map((r) => ({
+      id: Number(r[id!]),
+      title: (r[title!] ?? "").replace(/\s*\n\s*/g, ": "),
+      languages: list(r[language!]),
+      subjects: list(r[subjects!]),
+      bookshelves: list(r[shelves!]),
+      ...catalogPeople(r[people!] ?? ""),
+    }));
+}

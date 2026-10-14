@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import fs from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
@@ -6,7 +7,17 @@ import { query } from "../db.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
 import { partialMd5OfFile } from "./koreader.js";
 import { isFileBlocked } from "./moderation.js";
-import { cleanTitle, displayName, isPublicDomainEverywhere, tagsFrom, workKey, type GutendexBook } from "./publicDomain.js";
+import {
+  catalogEntries,
+  cleanTitle,
+  deathYearCutoff,
+  displayName,
+  isPublicDomainEverywhere,
+  tagsFrom,
+  workKey,
+  type CatalogEntry,
+  type GutendexBook,
+} from "./publicDomain.js";
 import { IMPORT_PLAN, themesFor, type ImportStep, type Theme } from "./themes.js";
 import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./storage.js";
 
@@ -20,6 +31,10 @@ import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./
 export const LIBRARY_EMAIL = "library@readsync.local";
 const GUTENDEX = "https://gutendex.com";
 const MIRROR = "https://gutenberg.pglaf.org";
+/** Gutenberg's whole catalog as CSV (updated daily), to pick candidates without paging through searches. */
+const CATALOG_CSV = "https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz";
+/** Most catalog matches looked up on Gutendex per themed search (32 per request, which can take a minute). */
+const MAX_CANDIDATES = 960;
 const UA = "BookRaven/1.0 (self-hosted reader; public-domain import)";
 const MAX_BYTES = 60 * 1024 * 1024;
 
@@ -180,6 +195,50 @@ export async function importPublicDomain(opts: ImportOptions) {
       ).rows[0]!.n,
     );
 
+  /** Gutenberg ids and works already in the public library. */
+  async function libraryState() {
+    const inLibrary = (
+      await query<{ source_id: string; title: string; authors: GutendexBook["authors"]; language: string }>(
+        "SELECT source_id, title, authors, language FROM catalog_book WHERE source = 'gutenberg' AND book_id IS NOT NULL",
+      )
+    ).rows;
+    return {
+      done: new Set(inLibrary.map((r) => r.source_id)),
+      // Other editions of a work already in the library are skipped.
+      works: new Set(inLibrary.map((r) => workKey(r.title, r.authors, r.language))),
+    };
+  }
+  type LibraryState = Awaited<ReturnType<typeof libraryState>>;
+
+  /** Imports one candidate if it qualifies (or refreshes it if it is already in the library). */
+  async function consider(state: LibraryState, b: GutendexBook, lang: string, label: string, forced: Theme | null, only: (b: GutendexBook) => boolean) {
+    const themes = [...new Set([...themesFor(b.subjects, b.bookshelves), ...(forced ? [forced] : [])])];
+    if (state.done.has(String(b.id))) {
+      await refresh(b, themes);
+      return;
+    }
+    if (!b.languages.includes(lang) || !isPublicDomainEverywhere(b) || !only(b)) {
+      summary.skipped++;
+      return;
+    }
+    const work = workKey(cleanTitle(b.title), b.authors, lang);
+    if (state.works.has(work)) {
+      summary.duplicates++;
+      return;
+    }
+    try {
+      const title = await importOne(b, lang, themes);
+      state.done.add(String(b.id));
+      state.works.add(work);
+      summary.imported++;
+      log(`  [${lang} ${label} ${await countFor(lang, forced ?? undefined)}] ${title}`);
+    } catch (err) {
+      summary.failed++;
+      log(`  ! ${b.id} ${b.title.slice(0, 60)}: ${(err as Error).message}`);
+    }
+    await delay(opts.delayMs ?? 1500);
+  }
+
   /** Walks one Gutendex search (most popular first) until `enough()` or the pages run out. */
   async function walk(
     lang: string,
@@ -189,14 +248,7 @@ export async function importPublicDomain(opts: ImportOptions) {
     enough: () => Promise<boolean>,
     only: (b: GutendexBook) => boolean = () => true,
   ) {
-    const inLibrary = (
-      await query<{ source_id: string; title: string; authors: GutendexBook["authors"]; language: string }>(
-        "SELECT source_id, title, authors, language FROM catalog_book WHERE source = 'gutenberg' AND book_id IS NOT NULL",
-      )
-    ).rows;
-    const done = new Set(inLibrary.map((r) => r.source_id));
-    // Other editions of a work already in the library are skipped.
-    const works = new Set(inLibrary.map((r) => workKey(r.title, r.authors, r.language)));
+    const state = await libraryState();
     let pages = 0;
     while (url && !(await enough()) && pages < (opts.maxPages ?? 10)) {
       let page: Awaited<ReturnType<typeof getJson>>;
@@ -211,34 +263,73 @@ export async function importPublicDomain(opts: ImportOptions) {
       pages++;
       for (const b of page.results) {
         if (await enough()) break;
-        const themes = [...new Set([...themesFor(b.subjects, b.bookshelves), ...(forced ? [forced] : [])])];
-        if (done.has(String(b.id))) {
-          await refresh(b, themes);
-          continue;
-        }
-        if (!b.languages.includes(lang) || !isPublicDomainEverywhere(b) || !only(b)) {
-          summary.skipped++;
-          continue;
-        }
-        const work = workKey(cleanTitle(b.title), b.authors, lang);
-        if (works.has(work)) {
-          summary.duplicates++;
-          continue;
-        }
-        try {
-          const title = await importOne(b, lang, themes);
-          done.add(String(b.id));
-          works.add(work);
-          summary.imported++;
-          log(`  [${lang} ${label} ${await countFor(lang, forced ?? undefined)}] ${title}`);
-        } catch (err) {
-          summary.failed++;
-          log(`  ! ${b.id} ${b.title.slice(0, 60)}: ${(err as Error).message}`);
-        }
-        await delay(opts.delayMs ?? 1500);
+        await consider(state, b, lang, label, forced, only);
       }
       url = page.next;
     }
+  }
+
+  let catalog: Promise<CatalogEntry[] | null> | null = null;
+  /** Gutenberg's catalog file, downloaded once per run; null when it can't be had. */
+  function loadCatalog() {
+    catalog ??= (async () => {
+      try {
+        const res = await get(CATALOG_CSV, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(300_000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const entries = catalogEntries(gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8"));
+        log(`Gutenberg catalog: ${entries.length} texts`);
+        return entries;
+      } catch (err) {
+        log(`  ! Gutenberg catalog unavailable (${(err as Error).message}), using Gutendex searches`);
+        return null;
+      }
+    })();
+    return catalog;
+  }
+
+  /**
+   * A themed search through Gutenberg's catalog file: matches are picked locally (topic in
+   * the subjects or shelves, like Gutendex's topic search; authors dead long enough), then
+   * only those are looked up on Gutendex, a page of 32 ids at a time, for the copyright
+   * status, download counts and files. Much faster than paging through Gutendex searches,
+   * where most results don't qualify. Returns false when the catalog is unavailable.
+   */
+  async function fromCatalog(lang: string, step: ImportStep, enough: () => Promise<boolean>) {
+    if (await enough()) return true;
+    const entries = await loadCatalog();
+    if (!entries) return false;
+    const state = await libraryState();
+    const topic = step.topic.toLowerCase();
+    const only = step.only ?? (() => true);
+    const cutoff = deathYearCutoff();
+    const candidates = entries.filter(
+      (e) =>
+        e.languages.includes(lang) &&
+        !state.done.has(String(e.id)) &&
+        [...e.subjects, ...e.bookshelves].some((t) => t.toLowerCase().includes(topic)) &&
+        e.authors.length > 0 &&
+        [...e.authors, ...e.translators].every((p) => p.death_year !== null && p.death_year <= cutoff) &&
+        only(e as GutendexBook) &&
+        !state.works.has(workKey(cleanTitle(e.title), e.authors, lang)),
+    );
+    if (candidates.length > MAX_CANDIDATES) log(`  ${candidates.length} catalog matches, looking up the first ${MAX_CANDIDATES}`);
+    const books: GutendexBook[] = [];
+    for (let i = 0; i < Math.min(candidates.length, MAX_CANDIDATES); i += 32) {
+      const ids = candidates.slice(i, i + 32).map((e) => e.id);
+      try {
+        books.push(...(await getJson(`${GUTENDEX}/books/?ids=${ids.join(",")}`)).results);
+      } catch (err) {
+        log(`  ! ${step.theme}: Gutendex lookup failed (${(err as Error).message})`);
+        summary.failed++;
+      }
+    }
+    log(`  ${candidates.length} catalog matches, ${books.length} looked up`);
+    // Most downloaded first, as with the searches.
+    for (const b of books.sort((a, b) => b.download_count - a.download_count)) {
+      if (await enough()) break;
+      await consider(state, b, lang, step.theme, step.theme, only);
+    }
+    return true;
   }
 
   // Books imported before themes existed: classify them from their stored subjects.
@@ -259,7 +350,10 @@ export async function importPublicDomain(opts: ImportOptions) {
       const quota = step.quota[lang];
       if (!quota) continue;
       log(`${lang} · ${step.theme} (“${step.topic}”): ${await countFor(lang, step.theme)}/${quota}`);
-      await walk(lang, `${base}&languages=${lang}&topic=${encodeURIComponent(step.topic)}`, step.theme, step.theme, async () => (await countFor(lang, step.theme)) >= quota, step.only);
+      const enough = async () => (await countFor(lang, step.theme)) >= quota;
+      if (!(await fromCatalog(lang, step, enough))) {
+        await walk(lang, `${base}&languages=${lang}&topic=${encodeURIComponent(step.topic)}`, step.theme, step.theme, enough, step.only);
+      }
     }
     log(`${lang} · most popular overall`);
     await walk(lang, `${base}&languages=${lang}`, "popular", null, async () => (await countFor(lang)) >= opts.perLanguage);
