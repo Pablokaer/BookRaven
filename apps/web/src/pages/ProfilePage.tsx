@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { useMemo, useState } from "react";
-import { initials } from "../components/shell/TopBar";
+import { Avatar } from "../components/ui/Avatar";
 import { Field } from "../components/ui/Field";
 import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
@@ -113,9 +113,7 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <section className="surface flex flex-wrap items-center gap-5 p-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-xl font-semibold text-app">
-          {initials(user.name || user.email)}
-        </div>
+        <Avatar name={user.name || user.email} size="lg" />
         <div className="mr-auto min-w-0">
           <h1 className="truncate font-display text-2xl font-bold">{user.name || "Reader"}</h1>
           <p className="truncate text-sm text-muted">{user.email}</p>

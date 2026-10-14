@@ -160,6 +160,7 @@ export type ServerConfig = {
   allowSignup: boolean;
   maxUploadMb: number;
   passwordResetEnabled: boolean;
+  requireEmailVerification: boolean;
   dictionaryEnabled: boolean;
   translateEnabled: boolean;
 };

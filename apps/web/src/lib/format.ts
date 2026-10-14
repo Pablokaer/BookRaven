@@ -20,3 +20,9 @@ export function fileSize(bytes: number) {
   const gb = bytes / 1024 / 1024 / 1024;
   return `${Number.isInteger(gb) ? gb : gb.toFixed(2)} GB`;
 }
+
+/** "Ana Lima" → "AL", "reader@example.com" → "R". */
+export function initials(name: string) {
+  const parts = name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
+}

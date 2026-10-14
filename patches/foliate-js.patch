@@ -1,0 +1,38 @@
+diff --git a/fixed-layout.js b/fixed-layout.js
+index b648a0da4c07a85d04c53b9be5dbdc0c60b7d47a..cbd68916f9f1b62cc6423edb646ba2f092041bab 100644
+--- a/fixed-layout.js
++++ b/fixed-layout.js
+@@ -82,9 +82,11 @@ export class FixedLayout extends HTMLElement {
+             display: 'none',
+             overflow: 'hidden',
+         })
+-        // `allow-scripts` is needed for events because of WebKit bug
+-        // https://bugs.webkit.org/show_bug.cgi?id=218086
+-        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
++        // BookRaven: no allow-scripts, so scripts embedded in a book (public library, shared
++        // files) cannot run. The reader attaches its own listeners from the parent
++        // (allow-same-origin), which still work. Upstream kept allow-scripts only for an old
++        // WebKit event bug (218086).
++        iframe.setAttribute('sandbox', 'allow-same-origin')
+         iframe.setAttribute('scrolling', 'no')
+         iframe.setAttribute('part', 'filter')
+         this.#root.append(element)
+diff --git a/paginator.js b/paginator.js
+index 95c4d0dae16bd96c3ace91bbd87fd1bea1c9f571..a78d920b31575da06f7b4554de9c240ee8cf9e4a 100644
+--- a/paginator.js
++++ b/paginator.js
+@@ -229,9 +229,11 @@ class View {
+             display: 'none',
+             width: '100%', height: '100%',
+         })
+-        // `allow-scripts` is needed for events because of WebKit bug
+-        // https://bugs.webkit.org/show_bug.cgi?id=218086
+-        this.#iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
++        // BookRaven: no allow-scripts, so scripts embedded in a book (public library, shared
++        // files) cannot run. The reader attaches its own listeners from the parent
++        // (allow-same-origin), which still work. Upstream kept allow-scripts only for an old
++        // WebKit event bug (218086).
++        this.#iframe.setAttribute('sandbox', 'allow-same-origin')
+         this.#iframe.setAttribute('scrolling', 'no')
+     }
+     get element() {

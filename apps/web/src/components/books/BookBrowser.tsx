@@ -150,11 +150,11 @@ export function BookBrowser({
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto font-display text-2xl font-semibold">{title}</h2>
         {actions}
-        {/* Sort and view stay together when the header wraps on narrow screens. */}
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-muted">
+        {/* Sort and view stay together when the header wraps, and wrap themselves on very narrow screens. */}
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
+          <label className="flex min-w-0 items-center gap-2 text-sm text-muted">
             <span className="hidden sm:inline">Sort by</span>
-            <select className="input py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+            <select className="input min-w-0 max-w-full py-1.5" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
               {(Object.keys(SORTS) as Sort[]).map((s) => (
                 <option key={s} value={s}>
                   {SORTS[s]}

@@ -104,6 +104,21 @@ export function welcomeEmail(user: { email: string; name: string }): Mail {
 }
 
 /** "Forgot password?": `url` verifies the one-hour token and opens the app's reset page. */
+export function verifyEmailEmail(user: { email: string; name: string }, url: string): Mail {
+  return {
+    to: user.email,
+    subject: `Confirm your ${APP} email`,
+    text: [greeting(user.name), "", `Confirm this email to finish setting up your ${APP} account:`, "", url, "", "If you did not create an account, ignore this email."].join("\n"),
+    html: layout({
+      preheader: `Confirm your email to start using ${APP}.`,
+      title: "Confirm your email",
+      bodyHtml: p(escapeHtml(greeting(user.name))) + p(`Confirm this email address to finish setting up your ${APP} account.`),
+      button: { label: "Confirm email", url },
+      footer: "If you did not create an account, ignore this email.",
+    }),
+  };
+}
+
 export function resetPasswordEmail(user: { email: string; name: string }, url: string): Mail {
   return {
     to: user.email,

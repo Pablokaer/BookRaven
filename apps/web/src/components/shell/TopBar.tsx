@@ -5,12 +5,8 @@ import { signOut } from "../../lib/auth";
 import { timeAgo } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
 import { useMediaQuery } from "../../lib/useMediaQuery";
+import { Avatar } from "../ui/Avatar";
 import { Menu } from "../ui/Menu";
-
-export function initials(name: string) {
-  const parts = name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
-}
 
 export function TopBar({
   user,
@@ -109,8 +105,7 @@ export function TopBar({
           <div onClickCapture={markActivityRead}>
             <Menu
               label={unreadActivity ? `Notifications, ${unreadActivity} new` : "Notifications"}
-              // On phones the bell sits mid-bar: span the screen instead of hanging off the bell.
-              menuClassName="w-80 max-w-[calc(100vw-2rem)] max-sm:fixed max-sm:inset-x-4 max-sm:top-16 max-sm:w-auto max-sm:max-w-none"
+              menuClassName="w-80"
               triggerClassName="icon-btn relative h-10 w-10"
               trigger={
                 <>
@@ -133,8 +128,8 @@ export function TopBar({
 
           <Menu
             label="Account menu"
-            triggerClassName="ml-1 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-sm font-semibold text-app ring-2 ring-line transition hover:ring-accent/50"
-            trigger={initials(user.name || user.email)}
+            triggerClassName="ml-1 rounded-full ring-2 ring-line transition hover:ring-accent/50"
+            trigger={<Avatar name={user.name || user.email} size="sm" />}
             header={
               <div className="border-b border-line px-3 pb-2.5 pt-1.5 mb-1">
                 <div className="truncate text-sm font-semibold">{user.name || "Reader"}</div>

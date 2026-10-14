@@ -26,6 +26,7 @@ import { getBook, getBookAbout } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { fileSize, timeAgo } from "../lib/format";
 import { HIGHLIGHT_COLORS, highlightsToMarkdown, downloadText, listHighlights } from "../lib/highlights";
+import { authClient } from "../lib/auth";
 import { useLibrary } from "../lib/libraryStore";
 import { getPublicBook, listPublicBooks } from "../lib/publicLibrary";
 import { THEME_INFO } from "../lib/themes";
@@ -290,6 +291,7 @@ export function BookPage() {
 export function PublicBookPage() {
   const { id } = useParams<{ id: string }>();
   const { publicVersion } = useLibrary();
+  const me = authClient.useSession().data?.user;
   const [book, setBook] = useState<PublicBookDetails | null | "missing">(null);
   const [all, setAll] = useState<PublicBook[] | null>(null);
 
@@ -322,10 +324,10 @@ export function PublicBookPage() {
     );
   }
   if (!book) return <div className="mx-auto h-80 max-w-5xl animate-pulse rounded-2xl bg-card/60" />;
-  return <PublicBookView book={book} related={related} />;
+  return <PublicBookView book={book} related={related} viewerName={me?.name || me?.email} />;
 }
 
-function PublicBookView({ book, related }: { book: PublicBookDetails; related: { byAuthor: PublicBook[]; similar: PublicBook[] } }) {
+function PublicBookView({ book, related, viewerName }: { book: PublicBookDetails; related: { byAuthor: PublicBook[]; similar: PublicBook[] }; viewerName?: string | null }) {
   const navigate = useNavigate();
   // After removing, the page leaves (below) instead of reloading a book that is gone.
   const { busy, error, add, download, remove, reporting, setReporting } = usePublicBookActions(book, () => {});
@@ -390,7 +392,7 @@ function PublicBookView({ book, related }: { book: PublicBookDetails; related: {
         {error && <p className="text-sm text-rose-300">{error}</p>}
       </section>
 
-      <PublisherInfo book={book} />
+      <PublisherInfo book={book} viewerName={viewerName} />
 
       <section aria-labelledby="about-heading" className="grid gap-8 lg:grid-cols-[1fr_16rem]">
         <div className="space-y-4">

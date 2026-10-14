@@ -35,6 +35,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [verify, setVerify] = useState(false);
   const [cfg, setCfg] = useState<ServerConfig | null>(null);
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
     setMode(next);
     setError(null);
     setSent(false);
+    setVerify(false);
   };
 
   async function submit(e: React.FormEvent) {
@@ -64,8 +66,14 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
         ? await authClient.signIn.email({ email, password })
         : await authClient.signUp.email({ email, password, name: name || email.split("@")[0]! });
     setBusy(false);
-    if (res.error) setError(res.error.message ?? "Something went wrong");
-    else onSignedIn();
+    if (res.error) {
+      // Signing in before verifying the email: Better Auth sends a 403.
+      if (res.error.status === 403 && cfg?.requireEmailVerification) setVerify(true);
+      else setError(res.error.message ?? "Something went wrong");
+    } else if (mode === "signup" && cfg?.requireEmailVerification) {
+      // No session yet: the account must confirm its email first.
+      setVerify(true);
+    } else onSignedIn();
   }
 
   async function google() {
@@ -110,6 +118,23 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
             </button>
           </form>
         )}
+        <p className="mt-6 text-center text-sm">
+          <button className="font-medium text-accent hover:text-accent-hover" onClick={() => switchMode("signin")}>
+            Back to sign in
+          </button>
+        </p>
+      </AuthLayout>
+    );
+  }
+
+  if (verify) {
+    return (
+      <AuthLayout>
+        <h2 className="mb-2 font-semibold">Confirm your email</h2>
+        <p className="text-sm text-muted">
+          We sent a confirmation link to <span className="text-fg">{email}</span>. Open it to finish signing in. Check your spam folder if it does not
+          arrive.
+        </p>
         <p className="mt-6 text-center text-sm">
           <button className="font-medium text-accent hover:text-accent-hover" onClick={() => switchMode("signin")}>
             Back to sign in
