@@ -6,6 +6,7 @@ import { cachedWidePages, getComicArchive, isComicFormat, makeComicBook, scanWid
 import { fontFaceCss, fontFamily } from "../lib/fonts";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
 import { attachLens } from "../lib/lens";
+import { pinchController, transformSurface, type PinchController } from "../lib/pinchZoom";
 import { THEMES, type ReaderSettings } from "../lib/settings";
 import { USER_NAV_WINDOW_MS, zoneFromX, type ReaderHandle, type ReaderProps } from "./types";
 
@@ -123,6 +124,8 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   propsRef.current = props;
 
   const mark = () => (lastInteraction.current = Date.now());
+  /** Comics: pinch-to-zoom on the page (null for text books). */
+  const zoomRef = useRef<PinchController | null>(null);
 
   useImperativeHandle(ref, () => ({
     next: () => {
@@ -186,6 +189,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   useEffect(() => {
     let cancelled = false;
     let view: FoliateView | null = null;
+    let detachHostZoom: (() => void) | null = null;
     const scanAbort = new AbortController();
 
     (async () => {
@@ -215,10 +219,14 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       await view.open(source);
       if (cancelled) return;
       viewRef.current = view;
+      zoomRef.current = isComicFormat(book.format) ? pinchController(transformSurface(view)) : null;
+      // The margins around the page too (touches inside the page iframes never reach the host).
+      detachHostZoom = zoomRef.current?.attach(hostRef.current) ?? null;
 
       view.addEventListener("relocate", (e) => {
         const d = (e as CustomEvent<RelocateDetail>).detail;
         lastLocator.current = { bookId: propsRef.current.book.id, cfi: d.cfi };
+        zoomRef.current?.reset(); // a new page starts whole
         const byUser = ready.current && Date.now() - lastInteraction.current < USER_NAV_WINDOW_MS;
         propsRef.current.onRelocate(
           { locator: d.cfi, percentage: d.fraction ?? 0, label: d.tocItem?.label?.trim() || null },
@@ -277,14 +285,17 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
         doc.addEventListener("keydown", (ev) => propsRef.current.onKeyDown(ev));
         if (isComicFormat(propsRef.current.book.format)) {
           attachLens(doc, { isActive: () => !!propsRef.current.magnifier });
+          zoomRef.current?.attach(doc);
           doc.body.style.cursor = propsRef.current.magnifier ? "zoom-in" : "";
+          // The app zooms the page itself (pinchZoom.ts); the browser's own pinch would enlarge everything.
+          doc.body.style.touchAction = propsRef.current.magnifier ? "none" : "pan-x pan-y";
           // The fixed-layout renderer has no swipe support: swipe left/right turns the page
           // (the direction follows the finger, so it also feels right for manga).
           let start: { x: number; y: number } | null = null;
           doc.addEventListener("touchstart", (ev) => (start = { x: ev.touches[0]!.clientX, y: ev.touches[0]!.clientY }), { passive: true });
           doc.addEventListener("touchend", (ev) => {
             const t = ev.changedTouches[0];
-            if (!start || !t || propsRef.current.magnifier) return;
+            if (!start || !t || propsRef.current.magnifier || zoomRef.current?.busy()) return;
             const dx = t.clientX - start.x;
             const dy = t.clientY - start.y;
             start = null;
@@ -304,10 +315,13 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
           const host = hostRef.current;
           if (!frame || !host) return;
           const x = frame.getBoundingClientRect().left + ev.clientX - host.getBoundingClientRect().left;
+          const zone = zoneFromX(x, host.clientWidth);
+          // Zoomed into a comic page: side taps would turn the page away; the middle still shows the bars.
+          if (zone !== "center" && zoomRef.current?.busy()) return;
           // foliate reports clicks on a highlight from its own listener; let that win over page turning.
           setTimeout(() => {
             if (Date.now() - annotationClickAt.current < 300) return;
-            propsRef.current.onTap(zoneFromX(x, host.clientWidth));
+            propsRef.current.onTap(zone);
           }, 0);
         });
       });
@@ -338,6 +352,8 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       scanAbort.abort();
       ready.current = false;
       viewRef.current = null;
+      zoomRef.current = null;
+      detachHostZoom?.();
       drawn.current.clear();
       try {
         view?.close();
@@ -360,17 +376,20 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   useEffect(() => {
     for (const { doc } of viewRef.current?.renderer.getContents?.() ?? []) {
       doc.body.style.cursor = props.magnifier ? "zoom-in" : "";
-      doc.body.style.touchAction = props.magnifier ? "none" : "";
+      doc.body.style.touchAction = props.magnifier ? "none" : comic ? "pan-x pan-y" : "";
     }
-  }, [props.magnifier]);
+  }, [props.magnifier, comic]);
 
   const onHostClick = (e: React.MouseEvent<HTMLDivElement>) => {
     // Clicks inside the book's iframe never reach here; these are on the page margins or around the page.
     if (e.target !== e.currentTarget && e.target !== viewRef.current) return;
     mark();
     const rect = e.currentTarget.getBoundingClientRect();
-    props.onTap(zoneFromX(e.clientX - rect.left, rect.width));
+    const zone = zoneFromX(e.clientX - rect.left, rect.width);
+    if (zone !== "center" && zoomRef.current?.busy()) return; // zoomed in: don't turn the page
+    props.onTap(zone);
   };
 
-  return <div ref={hostRef} className="epub-host h-full w-full" onClick={onHostClick} />;
+  // overflow-hidden: a zoomed comic page stays inside the reading area.
+  return <div ref={hostRef} className={`epub-host h-full w-full ${comic ? "overflow-hidden" : ""}`} onClick={onHostClick} />;
 });
