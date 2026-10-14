@@ -6,6 +6,7 @@ import {
   cleanTitle,
   deathYearCutoff,
   displayName,
+  fragmentOf,
   isPublicDomainEverywhere,
   tagsFrom,
   workKey,
@@ -79,6 +80,19 @@ describe("public-domain rules", () => {
     expect(workKey("Essays: First Series", emerson, "en")).not.toBe(workKey("Essays: Second Series", emerson, "en"));
     expect(workKey("Poems", austen, "en")).not.toBe(workKey("Poems", emerson, "en"));
     expect(workKey("Poems", austen, "en")).not.toBe(workKey("Poems", austen, "pt"));
+  });
+
+  it("recognises pieces of books", () => {
+    expect(fragmentOf("Adventures of Huckleberry Finn, Chapters 06 to 10")).toEqual({ whole: "Adventures of Huckleberry Finn" });
+    expect(fragmentOf("The Adventures of Tom Sawyer, Part 3.")).toEqual({ whole: "The Adventures of Tom Sawyer" });
+    expect(fragmentOf("Oliver Twist, Vol. 1 (of 3)")).toEqual({ whole: "Oliver Twist" });
+    expect(fragmentOf("Rob Roy — Volume 01")).toEqual({ whole: "Rob Roy" });
+    expect(fragmentOf("Le Morte d'Arthur: Volume 2")).toEqual({ whole: "Le Morte d'Arthur" });
+    expect(fragmentOf("Index of the Project Gutenberg Works of Lord Byron")).toBe("index");
+    // Whole works.
+    expect(fragmentOf("King Henry IV, Part 1")).toBeNull();
+    expect(fragmentOf("Adventures of Huckleberry Finn")).toBeNull();
+    expect(fragmentOf("Twenty Thousand Leagues under the Sea")).toBeNull();
   });
 
   it("tells books written in English from translations", () => {

@@ -3,7 +3,7 @@
  *
  *   pnpm --filter api import:public-domain                 # 220 English + 220 Portuguese, by theme
  *   pnpm --filter api import:public-domain -- --per-language 200 --languages pt --skip-topics engineering
- *   (production) docker compose exec api node dist/scripts/import-public-domain.js --per-language 100
+ *   (production) docker compose run --rm --no-deps api node dist/scripts/import-public-domain.js --per-language 100
  */
 import { runAuthMigrations } from "../auth.js";
 import { pool, runAppMigrations } from "../db.js";

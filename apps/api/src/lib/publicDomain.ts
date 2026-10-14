@@ -64,6 +64,20 @@ export function workKey(title: string, authors: Pick<Person, "name">[], language
   return `${language}|${t}|${a}`;
 }
 
+/**
+ * Gutenberg also carries pieces of books: a novel split into chapter ranges or parts, single
+ * volumes of a set, and index pages. "index" means it is not a book at all; otherwise the title
+ * of the whole work, so the piece can be skipped when the complete book is already there.
+ */
+export function fragmentOf(title: string): "index" | { whole: string } | null {
+  if (/^index of the project gutenberg works|table of contents and index/i.test(title)) return "index";
+  const m =
+    /^(.+?),?\s+chapters?\s+\d+\s+(?:to|-)\s+\d+\.?$/i.exec(title) ?? // "Huckleberry Finn, Chapters 06 to 10"
+    /^(.+?),\s+part\s+\d+\.$/i.exec(title) ?? // "Tom Sawyer, Part 3." (plays like "King Henry IV, Part 1" have no period)
+    /^(.+?)(?:,|:|\s+—)\s+(?:vol(?:ume)?\.?|v\.)\s*\d+(?:\s*\(of \d+\))?(?:[:.].*)?$/i.exec(title); // "Oliver Twist, Vol. 1 (of 3)"
+  return m ? { whole: m[1]!.trim() } : null;
+}
+
 /** Written in English, not translated: an English-language literature category and no translator. */
 export function writtenInEnglish(b: Pick<GutendexBook, "languages" | "translators" | "bookshelves">) {
   return (
