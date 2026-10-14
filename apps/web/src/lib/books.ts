@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError, apiUrl, type Book } from "./api";
+import { apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book } from "./api";
 import { comicFormatOfName, openComicArchive } from "./comics";
 
 export const SUPPORTED_EXTENSIONS = [".pdf", ".epub", ".mobi", ".azw3", ".azw", ".fb2", ".cbz", ".cbr", ".cb7", ".cbt"];
@@ -154,21 +154,48 @@ export async function extractMetadata(file: File): Promise<Meta> {
 
 export type UploadResult =
   | { ok: true; book: Book }
-  | { ok: false; error: "duplicate" | "unsupported_format" | "file_too_large" | "network" | string };
+  | { ok: false; error: "duplicate" | "unsupported_format" | "file_too_large" | "network" | string; bookId?: string };
 
-export async function uploadBook(file: File): Promise<UploadResult> {
+export type UploadOptions = {
+  /** Collection to put the book in. */
+  folderId?: string | null;
+  /** Reading the file's title, author and cover, before the transfer starts. */
+  onPreparing?: () => void;
+  /** Fraction of the file sent (0 to 1). */
+  onProgress?: (fraction: number) => void;
+};
+
+export async function uploadBook(file: File, opts: UploadOptions = {}): Promise<UploadResult> {
+  opts.onPreparing?.();
   const meta = await extractMetadata(file);
   const form = new FormData();
   if (meta.title) form.append("title", meta.title.trim().slice(0, 500));
   if (meta.author) form.append("author", meta.author.trim().slice(0, 500));
+  if (opts.folderId) form.append("folderId", opts.folderId);
   if (meta.cover && meta.cover.size < 5 * 1024 * 1024) form.append("cover", meta.cover, "cover");
   form.append("file", file, file.name); // file last: server reads fields first
-  try {
-    const res = await apiFetch("/api/books", { method: "POST", body: form });
-    const body = await res.json().catch(() => null);
-    if (res.ok) return { ok: true, book: body };
-    return { ok: false, error: body?.error ?? `HTTP ${res.status}` };
-  } catch {
-    return { ok: false, error: "network" };
-  }
+
+  // XMLHttpRequest rather than fetch: only it reports upload progress.
+  return new Promise<UploadResult>((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", apiUrl("/api/books"));
+    xhr.withCredentials = true;
+    for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      let body: any = null;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* not JSON */
+      }
+      if (xhr.status === 401) window.dispatchEvent(new Event("readsync:unauthorized"));
+      if (xhr.status >= 200 && xhr.status < 300) resolve({ ok: true, book: body });
+      else resolve({ ok: false, error: body?.error ?? `HTTP ${xhr.status}`, bookId: body?.bookId });
+    };
+    xhr.onerror = () => resolve({ ok: false, error: "network" });
+    xhr.send(form);
+  });
 }

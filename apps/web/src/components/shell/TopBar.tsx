@@ -88,7 +88,7 @@ export function TopBar({
         </label>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <button className="btn h-11 px-3 sm:px-4" onClick={pickFiles}>
+          <button className="btn h-11 px-3 sm:px-4" onClick={() => pickFiles()}>
             <Plus className="h-4 w-4" strokeWidth={2.5} />
             <span className="hidden sm:inline">Upload Book</span>
           </button>

@@ -7,7 +7,7 @@ The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (p
 ## Features
 
 - **Accounts:** email + password (change it in the profile, or reset it by email), plus Google sign-in on the web. New accounts get a welcome email; "Forgot password?" emails a one-hour link (both need SMTP, see *Email*). Sign-ups can be closed with `ALLOW_SIGNUP=false`.
-- **Library dashboard:** upload by button or drag-and-drop (title, author and cover are read from the file; duplicates are detected by SHA-256). Collections, tags, favorites, filters by type, sorting, a top-bar search over titles, authors, tags and collections (ignores accents and word order), grid or list, a yearly reading goal, and a 2 GB storage limit per account (`UPLOAD_QUOTA_MB`; administrators are unlimited).
+- **Library dashboard:** upload by button or drag-and-drop (title, author and cover are read from the file; duplicates are detected by SHA-256). Files dropped on a collection's page or on its card in *Collections*, or picked with the collection's *Upload* button, go straight into that collection (a file already in the library is moved there). An upload panel lists every file with its state (waiting, reading details, percentage sent, saving, added, already in the library, failed) and the overall progress, and stays until cleared; uploads go one at a time, continue while browsing the app, and the browser asks before closing the tab while any are left. Collections, tags, favorites, filters by type, sorting, a top-bar search over titles, authors, tags and collections (ignores accents and word order), grid or list, a yearly reading goal, and a 2 GB storage limit per account (`UPLOAD_QUOTA_MB`; administrators are unlimited).
 - **Ebook reader** (foliate-js): 8 bundled fonts, size, line and letter spacing, margins, page width, one or two pages, themes (including inverted) and contrast; table of contents and full-text search.
 - **PDF reader** (pdf.js): streams large files with Range requests, fit page or width, color themes, and a selectable text layer so PDFs get highlights, notes and search too.
 - **Comics:** CBZ, CBR (RAR), CB7 (7-Zip) and CBT (TAR), unpacked in the browser (7-Zip compiled to WebAssembly); natural page order, ComicInfo.xml metadata, two-page spreads with the cover alone, automatic detection of double-page scans, manga right-to-left, a vertical-scroll (webtoon) layout and a magnifier.
@@ -248,7 +248,7 @@ CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build 
 | GET | `/api/config` | public: Google enabled, sign-up open, max upload, password reset / dictionary / translation available |
 | * | `/api/auth/*` | Better Auth (sign-up/in/out, Google callback, session, change/reset password) |
 | GET | `/api/me` | role and storage use |
-| GET/POST | `/api/books` | library; multipart upload `title`, `author`, `cover`, `file` |
+| GET/POST | `/api/books` | library; multipart upload `title`, `author`, `folderId` (optional collection), `cover`, `file` |
 | GET/PATCH/DELETE | `/api/books/:id` | PATCH: title, author, collection, tags, favorite, public |
 | GET | `/api/books/:id/file`, `/cover` | Range requests, ETag (`?download=1` to save) |
 | GET/PUT | `/api/books/:id/progress` | newest wins |

@@ -39,6 +39,18 @@ describe("library", () => {
     expect((await api(u, "GET", "/api/books")).json()).toHaveLength(0);
   });
 
+  it("uploads straight into a collection", async () => {
+    const u = await signUp();
+    const other = await signUp();
+    const folder = (await api(u, "POST", "/api/folders", { name: "Comics" })).json();
+    const res = await upload(u, "c.pdf", fakePdf(), { folderId: folder.id });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().folderId).toBe(folder.id);
+    // Someone else's collection, or nonsense, is refused.
+    expect((await upload(other, "d.pdf", fakePdf(), { folderId: folder.id })).statusCode).toBe(400);
+    expect((await upload(u, "e.pdf", fakePdf(), { folderId: "nope" })).statusCode).toBe(400);
+  });
+
   it("enforces the storage quota, except for administrators", async () => {
     const u = await signUp();
     expect((await upload(u, "a.pdf", fakePdf(600 * 1024))).statusCode).toBe(201);

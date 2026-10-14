@@ -9,7 +9,23 @@ import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } fro
 import { getMe } from "./publicLibrary";
 import { matchesText } from "./search";
 
-export type UploadItem = { key: string; name: string; status: "uploading" | "done" | "error"; message?: string };
+export type UploadStatus = "queued" | "preparing" | "uploading" | "processing" | "done" | "duplicate" | "error";
+
+export type UploadItem = {
+  key: string;
+  name: string;
+  size: number;
+  status: UploadStatus;
+  /** Fraction of the file sent (0 to 1). */
+  progress: number;
+  message?: string;
+  bookId?: string;
+  /** Collection the file goes into. */
+  folderId: string | null;
+};
+
+/** Still to finish: the page should not be closed. */
+export const isActiveUpload = (u: UploadItem) => u.status === "queued" || u.status === "preparing" || u.status === "uploading" || u.status === "processing";
 
 /** Things that happened while the app was open (uploads, progress from other devices…). */
 export type Activity = { id: string; text: string; at: number; bookId?: string };
@@ -52,8 +68,12 @@ type LibraryCtx = {
   query: string;
   setQuery: (q: string) => void;
 
-  pickFiles: () => void;
-  upload: (files: FileList | File[]) => Promise<void>;
+  /** Opens the file picker; the files go into `folderId` when given. */
+  pickFiles: (folderId?: string | null) => void;
+  /** Queues files for upload (into a collection when `folderId` is given). */
+  upload: (files: FileList | File[], folderId?: string | null) => void;
+  /** Removes finished uploads from the list. */
+  clearUploads: () => void;
   removeBook: (book: Book) => Promise<void>;
   toggleFavorite: (book: Book) => Promise<void>;
   replaceBook: (book: Book) => void;
@@ -86,6 +106,11 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   const [sharing, setSharing] = useState<Book | null>(null);
   const [organizing, setOrganizing] = useState<Book | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pickFolderRef = useRef<string | null>(null);
+  const uploadQueue = useRef<{ key: string; file: File; folderId: string | null }[]>([]);
+  const uploading = useRef(false);
+  const meRef = useRef<Me | null>(null);
+  meRef.current = me;
   const booksRef = useRef<Book[] | null>(null);
   /** The signed-in user's id, to skip notifications about their own actions. */
   const meIdRef = useRef(userId);
@@ -179,43 +204,84 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     };
   }, [refresh, refreshMe, log]);
 
-  const upload = useCallback(
-    async (files: FileList | File[]) => {
-      for (const file of Array.from(files)) {
-        const key = `${file.name}-${file.size}-${Date.now()}`;
-        const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
-        if (!SUPPORTED_EXTENSIONS.includes(ext)) {
-          setUploads((u) => [...u, { key, name: file.name, status: "error", message: "Unsupported file type" }]);
-          continue;
-        }
-        setUploads((u) => [...u, { key, name: file.name, status: "uploading" }]);
-        const result = await uploadBook(file);
-        setUploads((u) =>
-          u.map((x) =>
-            x.key === key
-              ? result.ok
-                ? { ...x, status: "done" }
-                : {
-                  ...x,
-                  status: "error",
-                  message:
-                    result.error === "quota_exceeded" && me?.quotaBytes
-                      ? `Storage limit reached (${fileSize(me.quotaBytes)})`
-                      : (UPLOAD_ERRORS[result.error] ?? result.error),
-                }
-              : x,
-          ),
-        );
+  const patchUpload = useCallback((key: string, patch: Partial<UploadItem>) => {
+    setUploads((u) => u.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  }, []);
+
+  /** Sends queued files one at a time; files dropped meanwhile join the same queue. */
+  const runUploads = useCallback(async () => {
+    if (uploading.current) return;
+    uploading.current = true;
+    try {
+      for (let job = uploadQueue.current.shift(); job; job = uploadQueue.current.shift()) {
+        const { key, file, folderId } = job;
+        const result = await uploadBook(file, {
+          folderId,
+          onPreparing: () => patchUpload(key, { status: "preparing" }),
+          // At 100% the server still stores the file and reads its metadata.
+          onProgress: (progress) => patchUpload(key, { status: progress >= 1 ? "processing" : "uploading", progress }),
+        });
         if (result.ok) {
+          patchUpload(key, { status: "done", progress: 1, bookId: result.book.id });
           log(`Uploaded “${result.book.title}”`, result.book.id);
           setBooks((prev) => (prev?.some((b) => b.id === result.book.id) ? prev : sortBooks([result.book, ...(prev ?? [])])));
+        } else if (result.error === "duplicate" && result.bookId) {
+          // Dropped on a collection: the copy already in the library moves there.
+          let message = "Already in your library";
+          if (folderId) {
+            try {
+              const moved = await updateBook(result.bookId, { folderId });
+              setBooks((prev) => prev?.map((b) => (b.id === moved.id ? moved : b)) ?? prev);
+              message = "Already in your library, moved to this collection";
+            } catch {
+              /* keep the plain message */
+            }
+          }
+          patchUpload(key, { status: "duplicate", progress: 1, bookId: result.bookId, message });
+        } else {
+          const quota = meRef.current?.quotaBytes;
+          patchUpload(key, {
+            status: "error",
+            message: result.error === "quota_exceeded" && quota ? `Storage limit reached (${fileSize(quota)})` : (UPLOAD_ERRORS[result.error] ?? result.error),
+          });
         }
       }
+    } finally {
+      uploading.current = false;
       refreshMe();
-      setTimeout(() => setUploads((u) => u.filter((x) => x.status === "uploading")), 6000);
+    }
+  }, [log, patchUpload, refreshMe]);
+
+  const upload = useCallback(
+    (files: FileList | File[], folderId: string | null = null) => {
+      const items: UploadItem[] = Array.from(files).map((file, i) => {
+        const key = `${file.name}-${file.size}-${Date.now()}-${i}`;
+        const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
+        if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+          return { key, name: file.name, size: file.size, status: "error", progress: 0, message: "Unsupported file type", folderId };
+        }
+        uploadQueue.current.push({ key, file, folderId });
+        return { key, name: file.name, size: file.size, status: "queued", progress: 0, folderId };
+      });
+      setUploads((u) => [...u, ...items]);
+      void runUploads();
     },
-    [log, me, refreshMe],
+    [runUploads],
   );
+
+  const clearUploads = useCallback(() => setUploads((u) => u.filter(isActiveUpload)), []);
+
+  // Closing or reloading the page would cancel the uploads still going: ask first.
+  const hasActiveUploads = uploads.some(isActiveUpload);
+  useEffect(() => {
+    if (!hasActiveUploads) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasActiveUploads]);
 
   const removeBook = useCallback(async (book: Book) => {
     if (!window.confirm(`Delete "${book.title}" from your library on all devices?`)) return;
@@ -290,8 +356,12 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
       markActivityRead: () => setReadAt(Date.now()),
       query,
       setQuery,
-      pickFiles: () => inputRef.current?.click(),
+      pickFiles: (folderId?: string | null) => {
+        pickFolderRef.current = folderId ?? null;
+        inputRef.current?.click();
+      },
       upload,
+      clearUploads,
       removeBook,
       toggleFavorite,
       replaceBook,
@@ -303,7 +373,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
       openShare: setSharing,
       openOrganize: setOrganizing,
     }),
-    [books, folders, me, refreshMe, publicVersion, requestsVersion, clubsVersion, foldersReady, uploads, activity, readAt, query, upload, removeBook, toggleFavorite, replaceBook, addFolder, renameFolderPrompt, removeFolder, sharing, organizing],
+    [books, folders, me, refreshMe, publicVersion, requestsVersion, clubsVersion, foldersReady, uploads, activity, readAt, query, upload, clearUploads, removeBook, toggleFavorite, replaceBook, addFolder, renameFolderPrompt, removeFolder, sharing, organizing],
   );
 
   return (
@@ -316,7 +386,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
         hidden
         accept={SUPPORTED_EXTENSIONS.join(",")}
         onChange={(e) => {
-          if (e.target.files) void upload(e.target.files);
+          if (e.target.files) upload(e.target.files, pickFolderRef.current);
           e.target.value = "";
         }}
       />

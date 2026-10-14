@@ -268,6 +268,15 @@ export async function bookRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: "duplicate", bookId: existing.rows[0].id });
       }
 
+      // Optional collection to put the book in (uploads dropped on a collection).
+      const folderId = fields.folderId?.trim() || null;
+      if (folderId) {
+        const owned = UUID_RE.test(folderId)
+          ? await query("SELECT 1 FROM folder WHERE id = $1 AND user_id = $2", [folderId, request.user.id])
+          : { rowCount: 0 };
+        if (!owned.rowCount) return reply.code(400).send({ error: "invalid_folder" });
+      }
+
       const coverOk = cover && !cover.truncated && cover.size <= MAX_COVER_BYTES && isImage(cover.head);
       const fallbackTitle = book.filename.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim() || "Untitled";
 
@@ -279,8 +288,8 @@ export async function bookRoutes(app: FastifyInstance) {
         id = await withQuota(request.user, upload.size, async (client) => {
           await commitBookFile(upload);
           const { rows } = await client.query<{ id: string }>(
-            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5, folder_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
             [
               request.user.id,
               fields.title?.trim() || fallbackTitle,
@@ -292,6 +301,7 @@ export async function bookRoutes(app: FastifyInstance) {
               upload.sha256,
               Boolean(coverOk),
               koreaderMd5,
+              folderId,
             ],
           );
           return rows[0]!.id;

@@ -1,7 +1,8 @@
-import { CheckCircle2, CircleAlert, CloudOff, Loader2, UploadCloud, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock, CloudOff, Loader2, UploadCloud, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
-import { useLibrary } from "../../lib/libraryStore";
+import { fileSize } from "../../lib/format";
+import { isActiveUpload, useLibrary, type UploadItem } from "../../lib/libraryStore";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { OrganizeDialog } from "../OrganizeDialog";
 import { ShareDialog } from "../ShareDialog";
@@ -19,27 +20,98 @@ function loadLayout(): { leftCollapsed: boolean; rightOpen: boolean } {
   }
 }
 
-function UploadToasts() {
-  const { uploads } = useLibrary();
+function uploadLabel(u: UploadItem) {
+  switch (u.status) {
+    case "queued":
+      return "Waiting";
+    case "preparing":
+      return "Reading details…";
+    case "uploading":
+      return `${Math.round(u.progress * 100)}%`;
+    case "processing":
+      return "Saving…";
+    case "done":
+      return "Added";
+    default:
+      return u.message ?? "";
+  }
+}
+
+/** Every file being uploaded, with its state, until the user clears the finished ones. */
+function UploadPanel() {
+  const { uploads, clearUploads, folders } = useLibrary();
+  const [collapsed, setCollapsed] = useState(false);
   if (!uploads.length) return null;
+
+  const active = uploads.filter(isActiveUpload).length;
+  const added = uploads.filter((u) => u.status === "done").length;
+  const already = uploads.filter((u) => u.status === "duplicate").length;
+  const failed = uploads.filter((u) => u.status === "error").length;
+  // Overall progress by bytes; finished files (whatever the outcome) count in full.
+  const total = uploads.reduce((n, u) => n + Math.max(u.size, 1), 0);
+  const sent = uploads.reduce((n, u) => n + Math.max(u.size, 1) * (isActiveUpload(u) ? (u.status === "processing" ? 0.98 : u.progress * 0.95) : 1), 0);
+  const folderName = (id: string | null) => (id ? folders.find((f) => f.id === id)?.name : undefined);
+
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[min(22rem,calc(100vw-2rem))] space-y-2" aria-live="polite">
-      {uploads.map((u) => (
-        <div key={u.key} className="flex animate-rise items-center gap-3 rounded-xl border border-line bg-elevated px-4 py-3 text-sm shadow-pop">
-          {u.status === "uploading" ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
-          ) : u.status === "done" ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
-          ) : (
-            <CircleAlert className="h-4 w-4 shrink-0 text-rose-300" />
-          )}
-          <span className="min-w-0 flex-1 truncate">{u.name}</span>
-          <span className={`shrink-0 text-xs ${u.status === "error" ? "text-rose-300" : "text-muted"}`}>
-            {u.status === "uploading" ? "Uploading…" : u.status === "done" ? "Added" : u.message}
-          </span>
+    <section
+      className="fixed bottom-4 right-4 z-50 flex max-h-[min(28rem,calc(100dvh-6rem))] w-[min(24rem,calc(100vw-2rem))] animate-rise flex-col overflow-hidden rounded-2xl border border-line bg-elevated shadow-pop"
+      aria-label="Uploads"
+    >
+      <header className="flex items-center gap-3 px-4 pb-2 pt-3">
+        {active ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" /> : failed ? <CircleAlert className="h-4 w-4 shrink-0 text-rose-300" /> : <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />}
+        <div className="min-w-0 flex-1" aria-live="polite">
+          <p className="truncate text-sm font-semibold">
+            {active ? `Uploading · ${uploads.length - active} of ${uploads.length} done` : `Uploads finished · ${uploads.length} file${uploads.length === 1 ? "" : "s"}`}
+          </p>
+          <p className="truncate text-xs text-muted">
+            {active
+              ? "Keep this tab open until every file is done. You can keep browsing."
+              : [added && `${added} added`, already && `${already} already in your library`, failed && `${failed} failed`].filter(Boolean).join(" · ") + ". You can leave this page."}
+          </p>
         </div>
-      ))}
-    </div>
+        <button className="icon-btn h-8 w-8" aria-label={collapsed ? "Show files" : "Hide files"} onClick={() => setCollapsed((c) => !c)}>
+          {collapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        {!active && (
+          <button className="icon-btn h-8 w-8" aria-label="Clear uploads" onClick={clearUploads}>
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </header>
+      <div className="mx-4 mb-3 h-1.5 overflow-hidden rounded-full bg-card" role="progressbar" aria-valuenow={Math.round((sent / total) * 100)} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`h-full rounded-full transition-[width] duration-300 ${failed && !active ? "bg-rose-300" : "bg-accent"}`} style={{ width: `${(sent / total) * 100}%` }} />
+      </div>
+      {!collapsed && (
+        <ul className="min-h-0 flex-1 divide-y divide-line/60 overflow-y-auto border-t border-line/60">
+          {uploads.map((u) => (
+            <li key={u.key} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              {u.status === "done" || u.status === "duplicate" ? (
+                <CheckCircle2 className={`h-4 w-4 shrink-0 ${u.status === "done" ? "text-accent" : "text-muted"}`} />
+              ) : u.status === "error" ? (
+                <CircleAlert className="h-4 w-4 shrink-0 text-rose-300" />
+              ) : u.status === "queued" ? (
+                <Clock className="h-4 w-4 shrink-0 text-muted" />
+              ) : (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate">{u.name}</p>
+                <p className="truncate text-xs text-muted">
+                  {fileSize(u.size)}
+                  {folderName(u.folderId) && ` · into ${folderName(u.folderId)}`}
+                </p>
+                {(u.status === "uploading" || u.status === "processing") && (
+                  <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-card">
+                    <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${u.progress * 100}%` }} />
+                  </div>
+                )}
+              </div>
+              <span className={`max-w-[45%] shrink-0 text-right text-xs ${u.status === "error" ? "text-rose-300" : "text-muted"}`}>{uploadLabel(u)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -85,6 +157,10 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
   const showRightColumn = isWide && layout.rightOpen;
   // Profile and collection overview pages do not need the widgets repeated under them.
   const widgetsBelow = !isWide && /^\/($|reading|uploads|shared|favorites|discover)/.test(location.pathname);
+  // Files dropped on a collection's page go into that collection. On the collections
+  // overview, each card is its own drop target (see CollectionsPage).
+  const dropFolder = lib.folders.find((f) => location.pathname === `/collections/${f.id}`) ?? null;
+  const onCollectionsOverview = location.pathname === "/collections";
 
   return (
     <div
@@ -96,9 +172,10 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
       }}
       onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
       onDrop={(e) => {
-        e.preventDefault();
         setDragging(false);
-        if (e.dataTransfer.files.length) void lib.upload(e.dataTransfer.files);
+        if (e.isDefaultPrevented()) return; // already handled by a drop target inside the page (a collection card)
+        e.preventDefault();
+        if (e.dataTransfer.files.length) lib.upload(e.dataTransfer.files, dropFolder?.id ?? null);
       }}
     >
       {/* Left sidebar (tablet: icons only; phone: drawer) */}
@@ -161,13 +238,21 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         </div>
       </div>
 
-      <UploadToasts />
+      <UploadPanel />
 
-      {dragging && (
+      {dragging && onCollectionsOverview && (
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-[70] flex animate-fade justify-center px-4">
+          <div className="flex items-center gap-2 rounded-full border border-accent/50 bg-card/95 px-5 py-2.5 text-sm shadow-pop">
+            <UploadCloud className="h-4 w-4 text-accent" /> Drop on a collection to add the files to it, or anywhere else to add them to your library
+          </div>
+        </div>
+      )}
+
+      {dragging && !onCollectionsOverview && (
         <div className="pointer-events-none fixed inset-0 z-[70] flex animate-fade items-center justify-center bg-app/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-accent/60 bg-card/80 px-16 py-12 text-center">
             <UploadCloud className="h-10 w-10 text-accent" />
-            <div className="font-display text-xl font-semibold">Drop to add to your library</div>
+            <div className="font-display text-xl font-semibold">{dropFolder ? <>Drop to add to “{dropFolder.name}”</> : "Drop to add to your library"}</div>
             <div className="text-sm text-muted">PDF, EPUB, MOBI, AZW3, FB2 and comics (CBZ, CBR, CB7, CBT)</div>
           </div>
         </div>

@@ -12,7 +12,7 @@ function UploadEmpty() {
   return (
     <EmptyState icon={<UploadCloud />} title="Your library is empty">
       Drop PDF, EPUB, MOBI, AZW3, FB2 and comics (CBZ, CBR, CB7, CBT) files anywhere on this page, or{" "}
-      <button className="text-accent hover:underline" onClick={pickFiles}>
+      <button className="text-accent hover:underline" onClick={() => pickFiles()}>
         choose files
       </button>
       .
@@ -99,7 +99,7 @@ export function UploadsPage() {
         <StorageMeter />
       </div>
       <button
-        onClick={pickFiles}
+        onClick={() => pickFiles()}
         className="group mb-10 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line bg-card/40 px-6 py-10 text-center transition hover:border-accent/50 hover:bg-card/70"
       >
         <UploadCloud className="h-8 w-8 text-accent transition group-hover:-translate-y-0.5" />
