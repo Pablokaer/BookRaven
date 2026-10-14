@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { downloadBook } from "../lib/books";
 import { comicIndexFromLocator, comicLocator, getComicArchive, type ComicArchive } from "../lib/comics";
 import { attachLens } from "../lib/lens";
+import { pinchController, scrollSurface, type PinchController } from "../lib/pinchZoom";
 import { THEMES } from "../lib/settings";
 import { USER_NAV_WINDOW_MS, zoneFromX, type ReaderHandle, type ReaderProps } from "./types";
 
@@ -48,6 +49,8 @@ function Page({ archive, name, index, eager }: { archive: ComicArchive; name: st
  */
 export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function ComicScroller(props, ref) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<PinchController | null>(null);
   const [archive, setArchive] = useState<ComicArchive | null>(null);
   const [startIndex] = useState(() => comicIndexFromLocator(props.initialLocator));
   const current = useRef(startIndex);
@@ -153,6 +156,20 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     };
   }, [archive, report]);
 
+  // Pinch-to-zoom: widens the strip; one finger keeps scrolling it in both directions.
+  useEffect(() => {
+    const el = stageRef.current;
+    const column = columnRef.current;
+    if (!el || !column) return;
+    const zoom = pinchController(scrollSurface(el, column));
+    zoomRef.current = zoom;
+    const detach = zoom.attach(el);
+    return () => {
+      detach();
+      zoomRef.current = null;
+    };
+  }, []);
+
   // Magnifying glass over the pages.
   useEffect(() => {
     const el = stageRef.current;
@@ -164,23 +181,26 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     if (props.magnifier) return;
     const rect = e.currentTarget.getBoundingClientRect();
     mark();
-    props.onTap(zoneFromX(e.clientX - rect.left, rect.width));
+    const zone = zoneFromX(e.clientX - rect.left, rect.width);
+    if (zone !== "center" && zoomRef.current?.busy()) return; // zoomed in: side taps don't scroll away
+    props.onTap(zone);
   };
 
   return (
     <div
       ref={stageRef}
-      className="h-full w-full overflow-y-auto"
+      className="h-full w-full overflow-auto"
       style={{
         background: THEMES[props.settings.theme].surround,
         cursor: props.magnifier ? "zoom-in" : undefined,
-        touchAction: props.magnifier ? "none" : "pan-y pinch-zoom",
+        // The app zooms the strip itself (pinchZoom.ts), so the browser's own pinch stays off.
+        touchAction: props.magnifier ? "none" : "pan-x pan-y",
       }}
       onClick={onClick}
       onWheel={mark}
       onTouchStart={mark}
     >
-      <div className={`mx-auto ${props.settings.comicFit === "width" ? "w-full" : "w-full max-w-[860px]"}`}>
+      <div ref={columnRef} className={`mx-auto ${props.settings.comicFit === "width" ? "w-full" : "w-full max-w-[860px]"}`}>
         {archive?.pages.map((p, i) => (
           <Page key={p.name} archive={archive} name={p.name} index={i} eager={Math.abs(i - startIndex) <= 1} />
         ))}
