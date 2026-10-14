@@ -1,3 +1,5 @@
+import { writtenInEnglish, type GutendexBook } from "./publicDomain.js";
+
 /**
  * Themes are the sections of the public library. Imported books get them from the
  * Library of Congress subjects and Gutenberg bookshelves; books people publish get
@@ -44,7 +46,15 @@ export function themesFor(...texts: string[][]): Theme[] {
  * Gutenberg has almost nothing on programming that is public domain everywhere, so
  * "computing" stays small.
  */
-export const IMPORT_PLAN: { theme: Theme; topic: string; quota: Record<string, number> }[] = [
+export type ImportStep = {
+  theme: Theme;
+  topic: string;
+  quota: Record<string, number>;
+  /** Only books that pass this check count for the step. */
+  only?: (b: GutendexBook) => boolean;
+};
+
+export const IMPORT_PLAN: ImportStep[] = [
   { theme: "philosophy", topic: "philosophy", quota: { en: 60, pt: 40 } },
   { theme: "politics", topic: "politic", quota: { en: 50, pt: 40 } },
   { theme: "economics", topic: "econom", quota: { en: 40, pt: 15 } },
@@ -52,4 +62,6 @@ export const IMPORT_PLAN: { theme: Theme; topic: string; quota: Record<string, n
   { theme: "technology", topic: "engineering", quota: { en: 45, pt: 10 } },
   { theme: "computing", topic: "computer", quota: { en: 10, pt: 5 } },
   { theme: "science", topic: "science", quota: { en: 30, pt: 15 } },
+  // Classics written in English (Gutenberg's "Classics of Literature" also lists translations).
+  { theme: "literature", topic: "Classics of Literature", quota: { en: 400 }, only: writtenInEnglish },
 ];

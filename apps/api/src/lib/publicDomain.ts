@@ -43,6 +43,36 @@ export function cleanTitle(title: string) {
     .trim();
 }
 
+const normalize = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+/**
+ * Identifies a work regardless of the edition: Gutenberg often has several editions of the
+ * same book under different ids (e.g. two "Pride and Prejudice"). Same language, same
+ * authors and the same title, ignoring case, accents, punctuation and alternative titles
+ * ("Moby Dick; Or, The Whale" = "Moby Dick"). Subtitles after ":" are kept, so "Essays:
+ * First Series" and "Essays: Second Series" stay different works.
+ */
+export function workKey(title: string, authors: Pick<Person, "name">[], language: string) {
+  const t = normalize(cleanTitle(title).replace(/\s*;\s*or\b.*$/i, ""));
+  const a = authors.map((p) => normalize(p.name)).sort().join(" + ");
+  return `${language}|${t}|${a}`;
+}
+
+/** Written in English, not translated: an English-language literature category and no translator. */
+export function writtenInEnglish(b: Pick<GutendexBook, "languages" | "translators" | "bookshelves">) {
+  return (
+    b.languages.includes("en") &&
+    b.translators.length === 0 &&
+    b.bookshelves.some((s) => /^Category: (British|American|Irish|Scottish|Canadian|Australian) Literature$/.test(s))
+  );
+}
+
 /** "Assis, Machado de" → "Machado de Assis"; keeps names without a comma as they are. */
 export function displayName(name: string) {
   const clean = name.replace(/\s*\([^)]*\)\s*/g, " ").trim();

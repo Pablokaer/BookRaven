@@ -6,8 +6,8 @@ import { query } from "../db.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
 import { partialMd5OfFile } from "./koreader.js";
 import { isFileBlocked } from "./moderation.js";
-import { cleanTitle, displayName, isPublicDomainEverywhere, tagsFrom, type GutendexBook } from "./publicDomain.js";
-import { IMPORT_PLAN, themesFor, type Theme } from "./themes.js";
+import { cleanTitle, displayName, isPublicDomainEverywhere, tagsFrom, workKey, type GutendexBook } from "./publicDomain.js";
+import { IMPORT_PLAN, themesFor, type ImportStep, type Theme } from "./themes.js";
 import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./storage.js";
 
 /**
@@ -28,7 +28,7 @@ export type ImportOptions = {
   /** How many books per language should be in the library (already imported ones count). */
   perLanguage: number;
   /** Themed searches done before the general "most popular" one (default: IMPORT_PLAN). */
-  plan?: typeof IMPORT_PLAN;
+  plan?: ImportStep[];
   /** Catalog pages to read per search at most (Gutendex is slow; 32 books per page). */
   maxPages?: number;
   fetch?: typeof fetch;
@@ -56,7 +56,7 @@ export async function importPublicDomain(opts: ImportOptions) {
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
   await ensureStorageDirs();
   const ownerId = await ensureLibraryAccount();
-  const summary = { imported: 0, skipped: 0, failed: 0 };
+  const summary = { imported: 0, skipped: 0, duplicates: 0, failed: 0 };
 
   async function getJson(url: string) {
     for (let attempt = 1; ; attempt++) {
@@ -181,10 +181,22 @@ export async function importPublicDomain(opts: ImportOptions) {
     );
 
   /** Walks one Gutendex search (most popular first) until `enough()` or the pages run out. */
-  async function walk(lang: string, url: string | null, label: string, forced: Theme | null, enough: () => Promise<boolean>) {
-    const done = new Set(
-      (await query<{ source_id: string }>("SELECT source_id FROM catalog_book WHERE source = 'gutenberg' AND book_id IS NOT NULL")).rows.map((r) => r.source_id),
-    );
+  async function walk(
+    lang: string,
+    url: string | null,
+    label: string,
+    forced: Theme | null,
+    enough: () => Promise<boolean>,
+    only: (b: GutendexBook) => boolean = () => true,
+  ) {
+    const inLibrary = (
+      await query<{ source_id: string; title: string; authors: GutendexBook["authors"]; language: string }>(
+        "SELECT source_id, title, authors, language FROM catalog_book WHERE source = 'gutenberg' AND book_id IS NOT NULL",
+      )
+    ).rows;
+    const done = new Set(inLibrary.map((r) => r.source_id));
+    // Other editions of a work already in the library are skipped.
+    const works = new Set(inLibrary.map((r) => workKey(r.title, r.authors, r.language)));
     let pages = 0;
     while (url && !(await enough()) && pages < (opts.maxPages ?? 10)) {
       let page: Awaited<ReturnType<typeof getJson>>;
@@ -204,13 +216,19 @@ export async function importPublicDomain(opts: ImportOptions) {
           await refresh(b, themes);
           continue;
         }
-        if (!b.languages.includes(lang) || !isPublicDomainEverywhere(b)) {
+        if (!b.languages.includes(lang) || !isPublicDomainEverywhere(b) || !only(b)) {
           summary.skipped++;
+          continue;
+        }
+        const work = workKey(cleanTitle(b.title), b.authors, lang);
+        if (works.has(work)) {
+          summary.duplicates++;
           continue;
         }
         try {
           const title = await importOne(b, lang, themes);
           done.add(String(b.id));
+          works.add(work);
           summary.imported++;
           log(`  [${lang} ${label} ${await countFor(lang, forced ?? undefined)}] ${title}`);
         } catch (err) {
@@ -241,7 +259,7 @@ export async function importPublicDomain(opts: ImportOptions) {
       const quota = step.quota[lang];
       if (!quota) continue;
       log(`${lang} · ${step.theme} (“${step.topic}”): ${await countFor(lang, step.theme)}/${quota}`);
-      await walk(lang, `${base}&languages=${lang}&topic=${encodeURIComponent(step.topic)}`, step.theme, step.theme, async () => (await countFor(lang, step.theme)) >= quota);
+      await walk(lang, `${base}&languages=${lang}&topic=${encodeURIComponent(step.topic)}`, step.theme, step.theme, async () => (await countFor(lang, step.theme)) >= quota, step.only);
     }
     log(`${lang} · most popular overall`);
     await walk(lang, `${base}&languages=${lang}`, "popular", null, async () => (await countFor(lang)) >= opts.perLanguage);

@@ -28,5 +28,7 @@ await runAuthMigrations();
 await runAppMigrations((m) => console.log(m));
 console.log(`Importing up to ${perLanguage} public-domain books per language: ${languages.join(", ")}`);
 const summary = await importPublicDomain({ languages, perLanguage, maxPages, plan, log: (m) => console.log(m) });
-console.log(`Done: ${summary.imported} imported, ${summary.skipped} not public domain everywhere, ${summary.failed} failed.`);
+console.log(
+  `Done: ${summary.imported} imported, ${summary.duplicates} other editions of books already there, ${summary.skipped} not eligible, ${summary.failed} failed.`,
+);
 await pool.end();
