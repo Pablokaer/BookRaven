@@ -142,11 +142,12 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
                   {u.email} · joined {shortDate(u.createdAt)}
                 </div>
               </div>
-              <div className="w-24 text-xs text-muted">
+              {/* On phones these move to a second line so the actions button stays next to the name. */}
+              <div className="w-24 text-xs text-muted max-sm:order-last">
                 <BookOpen className="mr-1 inline h-3.5 w-3.5" />
                 {u.books} books
               </div>
-              <div className="w-48 text-xs">
+              <div className="w-48 text-xs max-sm:order-last max-sm:flex-1">
                 <div className="mb-1 flex justify-between text-muted">
                   <span>{fileSize(u.usedBytes)}</span>
                   <span>{u.quotaBytes === null ? "unlimited" : `of ${fileSize(u.quotaBytes)}${u.quotaOverride !== null ? " (custom)" : ""}`}</span>

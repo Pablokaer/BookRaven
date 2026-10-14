@@ -96,7 +96,8 @@ export function TopBar({
           <div onClickCapture={markActivityRead}>
             <Menu
               label={unreadActivity ? `Notifications, ${unreadActivity} new` : "Notifications"}
-              menuClassName="w-80 max-w-[calc(100vw-2rem)]"
+              // On phones the bell sits mid-bar: span the screen instead of hanging off the bell.
+              menuClassName="w-80 max-w-[calc(100vw-2rem)] max-sm:fixed max-sm:inset-x-4 max-sm:top-16 max-sm:w-auto max-sm:max-w-none"
               triggerClassName="icon-btn relative h-10 w-10"
               trigger={
                 <>

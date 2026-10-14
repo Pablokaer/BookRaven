@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 export type MenuItem =
   | { label: string; icon?: ReactNode; onSelect: () => void; danger?: boolean }
@@ -30,6 +30,19 @@ export function Menu({
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const id = useId();
+  const [side, setSide] = useState(align);
+
+  // Open on the side that fits: a right-aligned menu under a trigger near the left edge of a
+  // phone screen would otherwise be cut off (and the other way round).
+  useLayoutEffect(() => {
+    if (!open || !root.current || !list.current) return setSide(align);
+    const r = root.current.getBoundingClientRect();
+    const w = list.current.offsetWidth;
+    const margin = 8;
+    if (align === "right" && r.right - w < margin && r.left + w <= window.innerWidth - margin) setSide("left");
+    else if (align === "left" && r.left + w > window.innerWidth - margin && r.right - w >= margin) setSide("right");
+    else setSide(align);
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
@@ -75,7 +88,7 @@ export function Menu({
           id={id}
           role="menu"
           className={`absolute z-50 mt-2 ${menuClassName} origin-top animate-pop overflow-hidden rounded-xl bg-elevated p-1.5 shadow-pop ${
-            align === "right" ? "right-0" : "left-0"
+            side === "right" ? "right-0" : "left-0"
           }`}
           onClick={(e) => e.stopPropagation()}
         >
