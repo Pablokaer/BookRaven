@@ -1,6 +1,7 @@
-import { BookOpen } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Landscape } from "../components/dashboard/Landscape";
+import logoIcon from "../assets/logo.png";
+import wordmark from "../assets/wordmark.png";
 import { Field } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
@@ -13,13 +14,9 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
       <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl">
         <div className="mb-7 flex flex-col items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-app">
-            <BookOpen className="h-6 w-6" strokeWidth={2.4} />
-          </span>
-          <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">BookRaven</h1>
-            <p className="text-sm text-muted">Your books, on every device.</p>
-          </div>
+          <img src={logoIcon} alt="" className="h-16 w-16 rounded-2xl" />
+          <img src={wordmark} alt="BookRaven" className="h-9 w-auto" />
+          <p className="text-sm text-muted">Your books, on every device.</p>
         </div>
         {children}
       </div>
