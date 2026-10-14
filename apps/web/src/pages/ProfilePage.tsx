@@ -3,6 +3,7 @@ import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { useMemo, useState } from "react";
 import { initials } from "../components/shell/TopBar";
+import { Field } from "../components/ui/Field";
 import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
 import { fileSize } from "../lib/format";
@@ -40,38 +41,39 @@ function ChangePassword() {
       </h2>
       <p className="mb-4 text-xs text-muted">Other devices are signed out when you change it.</p>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-3">
-        <input
-          className="input"
-          type="password"
-          placeholder="Current password"
-          aria-label="Current password"
-          required
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          autoComplete="current-password"
-        />
-        <input
-          className="input"
-          type="password"
-          placeholder="New password"
-          aria-label="New password"
-          required
-          minLength={8}
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-          autoComplete="new-password"
-        />
-        <input
-          className="input"
-          type="password"
-          placeholder="Repeat new password"
-          aria-label="Repeat new password"
-          required
-          minLength={8}
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          autoComplete="new-password"
-        />
+        <Field label="Current password">
+          <input
+            className="input w-full"
+            type="password"
+            required
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+          />
+        </Field>
+        <Field label="New password">
+          <input
+            className="input w-full"
+            type="password"
+            placeholder="At least 8 characters"
+            required
+            minLength={8}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            autoComplete="new-password"
+          />
+        </Field>
+        <Field label="Repeat new password">
+          <input
+            className="input w-full"
+            type="password"
+            required
+            minLength={8}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="new-password"
+          />
+        </Field>
         <div className="flex items-center gap-3 sm:col-span-3">
           <button className="btn" disabled={busy}>
             {busy ? "Saving…" : "Change password"}

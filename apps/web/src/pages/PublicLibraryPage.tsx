@@ -5,7 +5,6 @@ import { EmptyState, BookGridSkeleton } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
 import { ReportDialog } from "../components/ReportDialog";
 import { RequestsTab } from "../components/RequestsTab";
-import { StorageMeter } from "../components/shell/StorageMeter";
 import { initials } from "../components/shell/TopBar";
 import { Menu } from "../components/ui/Menu";
 import { Modal } from "../components/ui/Modal";
@@ -123,7 +122,7 @@ function PublicBookCard({
           {book.title}
         </h3>
         <p className="mt-0.5 truncate text-xs text-muted">{book.author ?? "Unknown author"}</p>
-        <p className="mt-2 truncate text-[11px] text-muted" title={`Published ${shortDate(book.publishedAt)}`}>
+        <p className="mt-2 truncate text-xs text-muted" title={`Published ${shortDate(book.publishedAt)}`}>
           {showPublisher && <>{book.isMine ? "Published by you" : `Shared by ${book.publishedBy ?? "someone"}`} · </>}
           {fileSize(book.sizeBytes)}
         </p>
@@ -132,13 +131,13 @@ function PublicBookCard({
             href={book.source.url}
             target="_blank"
             rel="noreferrer"
-            className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/25 hover:bg-accent/20"
+            className="mt-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent ring-1 ring-accent/25 hover:bg-accent/20"
             title={`Public domain, from ${book.source.name}`}
           >
             Public domain · {book.source.name} <ExternalLink className="h-2.5 w-2.5" />
           </a>
         )}
-        {error && <p className="mt-1.5 text-[11px] text-rose-300">{error}</p>}
+        {error && <p className="mt-1.5 text-xs text-rose-300">{error}</p>}
         <div className="mt-3 flex items-center gap-1">
           {book.ownBookId ? (
             <Link to={`/read/${book.ownBookId}`} className="btn mr-auto px-3 py-1.5 text-xs">
@@ -214,7 +213,7 @@ function Shelf({
             <button className="group block w-full text-left" onClick={() => onOpen(b)} title={b.title}>
               <BookCover book={b} coverPath={`/api/public/${b.id}/cover`} className="w-full transition duration-300 group-hover:-translate-y-1" />
               <span className="mt-2 line-clamp-2 block text-xs font-medium leading-snug">{b.title}</span>
-              <span className="mt-0.5 block truncate text-[11px] text-muted">{b.author ?? "Unknown author"}</span>
+              <span className="mt-0.5 block truncate text-xs text-muted">{b.author ?? "Unknown author"}</span>
             </button>
           </li>
         ))}
@@ -323,12 +322,12 @@ export function PublicLibraryPage() {
             {books ? `${books.length} books` : "Books"} shared with everyone on this server, including public-domain classics in English and Portuguese.
             Add a copy to your library to read it with synced progress, or download the file. Publish your own books from a book’s ⋯ menu.
           </p>
+          {me?.isAdmin && (
+            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
+              <ShieldCheck className="h-3.5 w-3.5" /> Administrator: you can remove any book
+            </span>
+          )}
         </div>
-        {me?.isAdmin && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-            <ShieldCheck className="h-3.5 w-3.5" /> Administrator: you can remove any book
-          </span>
-        )}
       </header>
 
       <div className="mb-8 flex flex-wrap items-center gap-2" role="tablist">
@@ -342,9 +341,6 @@ export function PublicLibraryPage() {
             {icon} {label}
           </button>
         ))}
-        <div className="w-full sm:ml-auto sm:w-72">
-          <StorageMeter />
-        </div>
       </div>
 
       {tab === "requests" ? (

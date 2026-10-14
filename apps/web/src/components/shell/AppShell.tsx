@@ -168,9 +168,11 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
   useEffect(() => setMobileNav(false), [location.pathname]);
 
   const compact = !isDesktop || layout.leftCollapsed;
-  const showRightColumn = isWide && layout.rightOpen;
-  // Profile and collection overview pages do not need the widgets repeated under them.
-  const widgetsBelow = !isWide && /^\/($|reading|uploads|shared|favorites|discover)/.test(location.pathname);
+  // The reading overview (goal, recent uploads, shared, discover) belongs to the dashboard only:
+  // repeated on every page it takes a column on desktop and pushes content down on phones.
+  const onDashboard = location.pathname === "/";
+  const showRightColumn = onDashboard && isWide && layout.rightOpen;
+  const widgetsBelow = onDashboard && !isWide;
   // Files dropped on a collection's page go into that collection. On the collections
   // overview, each card is its own drop target (see CollectionsPage).
   const dropFolder = lib.folders.find((f) => location.pathname === `/collections/${f.id}`) ?? null;
@@ -221,7 +223,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
           onToggleLeft={() => setLayout((l) => ({ ...l, leftCollapsed: !l.leftCollapsed }))}
           onToggleRight={() => setLayout((l) => ({ ...l, rightOpen: !l.rightOpen }))}
           showLeftToggle={isDesktop}
-          showRightToggle={isWide}
+          showRightToggle={isWide && onDashboard}
           rightOpen={layout.rightOpen}
         />
 

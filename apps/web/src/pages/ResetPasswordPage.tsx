@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { authClient } from "../lib/auth";
 import { AuthLayout } from "./LoginPage";
+import { Field } from "../components/ui/Field";
 
 /** "/reset-password?token=…" — opened from the password-reset email. */
 export function ResetPasswordPage({ onDone }: { onDone: () => void }) {
@@ -37,29 +38,30 @@ export function ResetPasswordPage({ onDone }: { onDone: () => void }) {
       ) : done ? (
         <p className="text-sm text-muted">Your password was changed and other devices were signed out.</p>
       ) : (
-        <form onSubmit={submit} className="space-y-3">
-          <input
-            className="input h-11 w-full"
-            type="password"
-            placeholder="New password (min. 8 characters)"
-            aria-label="New password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-          <input
-            className="input h-11 w-full"
-            type="password"
-            placeholder="Repeat the new password"
-            aria-label="Repeat the new password"
-            required
-            minLength={8}
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            autoComplete="new-password"
-          />
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="New password">
+            <input
+              className="input h-11 w-full"
+              type="password"
+              placeholder="At least 8 characters"
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+          </Field>
+          <Field label="Repeat the new password">
+            <input
+              className="input h-11 w-full"
+              type="password"
+              required
+              minLength={8}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+            />
+          </Field>
           {error && <p className="text-sm text-rose-300">{error}</p>}
           <button className="btn h-11 w-full" disabled={busy}>
             {busy ? "Please wait…" : "Save new password"}

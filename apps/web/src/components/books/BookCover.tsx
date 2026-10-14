@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Book } from "../../lib/api";
 import { AuthImage } from "../AuthImage";
 
@@ -42,9 +43,12 @@ export function BookCover({
   badge = false,
   className = "",
   coverPath,
+  extraBadge,
 }: {
   book: CoverSource;
   coverPath?: string;
+  /** Shown beside the format badge (with `badge`), e.g. "Public". */
+  extraBadge?: ReactNode;
   size?: "xs" | "sm" | "md" | "lg";
   badge?: boolean;
   className?: string;
@@ -75,7 +79,12 @@ export function BookCover({
       {book.hasCover && (
         <AuthImage path={coverPath ?? `/api/books/${book.id}/cover`} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
-      {badge && <FormatBadge format={book.format} className="absolute left-2 top-2" />}
+      {badge && (
+        <div className="absolute left-2 top-2 flex items-center gap-1">
+          <FormatBadge format={book.format} />
+          {extraBadge}
+        </div>
+      )}
     </div>
   );
 }

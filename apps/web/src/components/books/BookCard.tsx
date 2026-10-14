@@ -17,15 +17,22 @@ export function BookCard({ book }: { book: Book }) {
         className="relative block rounded-lg transition duration-300 group-hover:-translate-y-1 focus-visible:-translate-y-1"
         aria-label={`Read ${book.title}`}
       >
-        <BookCover book={book} badge className="w-full transition duration-300 group-hover:shadow-[0_18px_36px_-14px_rgb(22_201_178/0.35)]" />
-        {book.isPublic && (
-          <span
-            className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/30 backdrop-blur-sm"
-            title="In the Public Library"
-          >
-            <Globe className="h-3 w-3" /> Public
-          </span>
-        )}
+        <BookCover
+          book={book}
+          badge
+          // Next to the format badge: at the bottom it covered the author on generated covers.
+          extraBadge={
+            book.isPublic && (
+              <span
+                className="inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/30 backdrop-blur-sm"
+                title="In the Public Library"
+              >
+                <Globe className="h-3 w-3" /> Public
+              </span>
+            )
+          }
+          className="w-full transition duration-300 group-hover:shadow-[0_18px_36px_-14px_rgb(22_201_178/0.35)]"
+        />
         <FavoriteButton
           book={book}
           className={`absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition hover:bg-black/75 ${
@@ -39,7 +46,9 @@ export function BookCard({ book }: { book: Book }) {
           {book.title}
         </h3>
         <p className="mt-0.5 truncate text-xs text-muted">{book.author ?? (book.sharedBy ? `Shared by ${book.sharedBy}` : "Unknown author")}</p>
-        <div className="mt-2.5 flex items-center justify-between text-[11px] text-muted">
+        {/* Progress and buttons sit at the bottom, so they line up across a row of cards
+            whatever the title's length. */}
+        <div className="mt-auto flex items-center justify-between pt-2.5 text-xs text-muted">
           <span className={p && !isFinished(book) ? "text-accent" : ""}>{readingStatus(book)}</span>
           {p && <span title={new Date(p.updatedAt).toLocaleString()}>{timeAgo(p.updatedAt)}</span>}
         </div>
@@ -49,7 +58,8 @@ export function BookCard({ book }: { book: Book }) {
           <Link to={`/read/${book.id}`} className="btn mr-auto px-3 py-1.5 text-xs">
             <BookOpen className="h-3.5 w-3.5" /> Read
           </Link>
-          <ShareButton book={book} className="icon-btn h-8 w-8" />
+          {/* On phones sharing stays in the ⋯ menu: four controls don't fit a half-width card. */}
+          <ShareButton book={book} className="icon-btn hidden h-8 w-8 sm:inline-flex" />
           <BookMenu book={book} className="icon-btn h-8 w-8" />
         </div>
       </div>
@@ -75,7 +85,7 @@ export function BookRow({ book }: { book: Book }) {
         <p className="truncate text-xs text-muted">{book.author ?? (book.sharedBy ? `Shared by ${book.sharedBy}` : "Unknown author")}</p>
       </div>
       <div className="hidden w-44 shrink-0 sm:block">
-        <div className="mb-1 text-[11px] text-muted">{readingStatus(book)}</div>
+        <div className="mb-1 text-xs text-muted">{readingStatus(book)}</div>
         <ProgressBar value={p?.percentage ?? 0} className={p ? "" : "opacity-40"} />
       </div>
       <div className="flex shrink-0 items-center gap-0.5">

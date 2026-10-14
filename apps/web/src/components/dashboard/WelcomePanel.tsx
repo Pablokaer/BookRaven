@@ -37,10 +37,11 @@ export function WelcomePanel({ name }: { name: string }) {
         <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-[2.6rem] sm:leading-[1.1]">Welcome back!</h1>
         <p className="mt-2 max-w-md text-sm text-muted sm:text-base">Good to see you again. Keep reading, keep growing.</p>
 
-        <div className="mt-7 grid grid-cols-1 gap-3 @sm:grid-cols-2 @3xl:grid-cols-4">
-          <StatCard icon={<Library />} label="Books Uploaded" value={stats?.total ?? null} hint="Books in your library" />
-          <StatCard icon={<BookOpen />} label="Currently Reading" value={stats?.reading ?? null} hint="Started and not finished yet" />
-          <StatCard icon={<Share2 />} label="Shared Books" value={stats?.shared ?? null} hint="Your books with an active share link" />
+        {/* Two columns even on phones, so the stats don't fill the first screen. */}
+        <div className="mt-6 grid grid-cols-2 gap-2.5 sm:mt-7 sm:gap-3 @3xl:grid-cols-4">
+          <StatCard icon={<Library />} label="Books" value={stats?.total ?? null} hint="Books in your library" />
+          <StatCard icon={<BookOpen />} label="Reading" value={stats?.reading ?? null} hint="Started and not finished yet" />
+          <StatCard icon={<Share2 />} label="Shared" value={stats?.shared ?? null} hint="Your books with an active share link" />
           <StatCard icon={<Heart />} label="Favorites" value={stats?.favorites ?? null} />
         </div>
       </div>
