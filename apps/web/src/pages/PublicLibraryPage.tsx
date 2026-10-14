@@ -6,7 +6,6 @@ import { BookCover } from "../components/books/BookCover";
 import { ReportDialog } from "../components/ReportDialog";
 import { RequestsTab } from "../components/RequestsTab";
 import { Avatar } from "../components/ui/Avatar";
-import { authClient } from "../lib/auth";
 import { Menu } from "../components/ui/Menu";
 import { ApiError, type PublicBook } from "../lib/api";
 import { isComicFormat } from "../lib/comics";
@@ -33,11 +32,10 @@ export function languageName(code: string) {
   }
 }
 
-/** Who put the book in the public library, shown in full on the book's page. */
-export function PublisherInfo({ book }: { book: PublicBook }) {
-  const me = authClient.useSession().data?.user;
+/** Who put the book in the public library, shown in full on the book's page. `viewerName` is the current user's display name, for their own books. */
+export function PublisherInfo({ book, viewerName }: { book: PublicBook; viewerName?: string | null }) {
   // An account's name can be empty: "Someone", with a silhouette, rather than a blank line.
-  const publisher = book.isMine ? me?.name || me?.email : book.publishedBy?.trim();
+  const publisher = book.isMine ? viewerName?.trim() : book.publishedBy?.trim();
   return (
     <div className="flex items-center gap-3 rounded-xl border border-line bg-elevated/40 p-3">
       <Avatar name={publisher} />
