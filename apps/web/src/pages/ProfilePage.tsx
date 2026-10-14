@@ -1,4 +1,4 @@
-import { ArrowRight, KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { ArrowRight, Import, KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
 import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
@@ -154,6 +154,18 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       <ChangePassword />
 
       <OtherApps email={user.email} />
+
+      <section className="surface flex flex-wrap items-center gap-4 p-6">
+        <div className="mr-auto">
+          <h2 className="flex items-center gap-2 text-sm font-medium">
+            <Import className="h-4 w-4 text-accent" /> Import from other apps
+          </h2>
+          <p className="mt-1 text-xs text-muted">Your Goodreads shelves and read books, or your Calibre library with its metadata.</p>
+        </div>
+        <Link to="/import" className="btn-outline">
+          Import…
+        </Link>
+      </section>
 
       <section className="surface p-6">
         <form onSubmit={saveGoal} className="flex flex-wrap items-end gap-4">

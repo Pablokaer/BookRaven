@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, type Book, type Folder, type Me, type Progress } from "./api";
-import { deleteBook, forgetCachedBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook } from "./books";
+import { deleteBook, forgetCachedBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
 import { deviceId } from "./device";
 import { onServerEvent } from "./events";
 import { percent } from "./format";
@@ -23,6 +23,9 @@ export type UploadItem = {
   /** Collection the file goes into. */
   folderId: string | null;
 };
+
+/** A file to upload with what is already known about it (an import from another app). */
+export type UploadEntry = { file: File; meta?: Meta; tags?: string[] };
 
 /** Still to finish: the page should not be closed. */
 export const isActiveUpload = (u: UploadItem) => u.status === "queued" || u.status === "preparing" || u.status === "uploading" || u.status === "processing";
@@ -70,15 +73,16 @@ type LibraryCtx = {
 
   /** Opens the file picker; the files go into `folderId` when given. */
   pickFiles: (folderId?: string | null) => void;
-  /** Queues files for upload (into a collection when `folderId` is given). */
-  upload: (files: FileList | File[], folderId?: string | null) => void;
+  /** Queues files for upload (into a collection when `folderId` is given), optionally with known metadata and tags. */
+  upload: (files: FileList | (File | UploadEntry)[], folderId?: string | null) => void;
   /** Removes finished uploads from the list. */
   clearUploads: () => void;
   removeBook: (book: Book) => Promise<void>;
   toggleFavorite: (book: Book) => Promise<void>;
   replaceBook: (book: Book) => void;
 
-  addFolder: () => Promise<Folder | null>;
+  /** Creates a collection: asks for its name unless one is given (an existing one with that name is reused). */
+  addFolder: (name?: string) => Promise<Folder | null>;
   renameFolderPrompt: (folder: Folder) => Promise<void>;
   removeFolder: (folder: Folder) => Promise<boolean>;
 
@@ -94,6 +98,8 @@ const Ctx = createContext<LibraryCtx | null>(null);
 export function LibraryProvider({ children, userId }: { children: ReactNode; userId: string }) {
   const [books, setBooks] = useState<Book[] | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
   const [foldersReady, setFoldersReady] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
   const [publicVersion, setPublicVersion] = useState(0);
@@ -107,7 +113,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   const [organizing, setOrganizing] = useState<Book | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pickFolderRef = useRef<string | null>(null);
-  const uploadQueue = useRef<{ key: string; file: File; folderId: string | null }[]>([]);
+  const uploadQueue = useRef<{ key: string; file: File; folderId: string | null; meta?: Meta; tags?: string[] }[]>([]);
   const uploading = useRef(false);
   const meRef = useRef<Me | null>(null);
   meRef.current = me;
@@ -214,17 +220,20 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     uploading.current = true;
     try {
       for (let job = uploadQueue.current.shift(); job; job = uploadQueue.current.shift()) {
-        const { key, file, folderId } = job;
+        const { key, file, folderId, meta, tags } = job;
         const result = await uploadBook(file, {
           folderId,
+          meta,
           onPreparing: () => patchUpload(key, { status: "preparing" }),
           // At 100% the server still stores the file and reads its metadata.
           onProgress: (progress) => patchUpload(key, { status: progress >= 1 ? "processing" : "uploading", progress }),
         });
         if (result.ok) {
-          patchUpload(key, { status: "done", progress: 1, bookId: result.book.id });
-          log(`Uploaded “${result.book.title}”`, result.book.id);
-          setBooks((prev) => (prev?.some((b) => b.id === result.book.id) ? prev : sortBooks([result.book, ...(prev ?? [])])));
+          let book = result.book;
+          if (tags?.length) book = await updateBook(book.id, { tags }).catch(() => book);
+          patchUpload(key, { status: "done", progress: 1, bookId: book.id });
+          log(`Uploaded “${book.title}”`, book.id);
+          setBooks((prev) => (prev?.some((b) => b.id === book.id) ? prev : sortBooks([book, ...(prev ?? [])])));
         } else if (result.error === "duplicate" && result.bookId) {
           // Dropped on a collection: the copy already in the library moves there.
           let message = "Already in your library";
@@ -253,14 +262,15 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   }, [log, patchUpload, refreshMe]);
 
   const upload = useCallback(
-    (files: FileList | File[], folderId: string | null = null) => {
-      const items: UploadItem[] = Array.from(files).map((file, i) => {
+    (files: FileList | (File | UploadEntry)[], folderId: string | null = null) => {
+      const items: UploadItem[] = Array.from(files as ArrayLike<File | UploadEntry>).map((entry, i) => {
+        const { file, meta, tags } = entry instanceof File ? { file: entry, meta: undefined, tags: undefined } : entry;
         const key = `${file.name}-${file.size}-${Date.now()}-${i}`;
         const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
         if (!SUPPORTED_EXTENSIONS.includes(ext)) {
           return { key, name: file.name, size: file.size, status: "error", progress: 0, message: "Unsupported file type", folderId };
         }
-        uploadQueue.current.push({ key, file, folderId });
+        uploadQueue.current.push({ key, file, folderId, meta, tags });
         return { key, name: file.name, size: file.size, status: "queued", progress: 0, folderId };
       });
       setUploads((u) => [...u, ...items]);
@@ -308,9 +318,13 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     [replaceBook],
   );
 
-  const addFolder = useCallback(async () => {
-    const name = window.prompt("Collection name")?.trim();
+  const addFolder = useCallback(async (given?: string) => {
+    const name = (given ?? window.prompt("Collection name"))?.trim();
     if (!name) return null;
+    if (given) {
+      const existing = foldersRef.current.find((f) => f.name.toLowerCase() === name.toLowerCase());
+      if (existing) return existing;
+    }
     try {
       const folder = await createFolder(name);
       setFolders((prev) => [...prev.filter((f) => f.id !== folder.id), folder].sort(byName));

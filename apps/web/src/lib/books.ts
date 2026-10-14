@@ -62,7 +62,7 @@ export async function forgetCachedBook(id: string) {
 
 // ---------- Metadata extraction (client-side, before upload) ----------
 
-type Meta = { title?: string; author?: string; description?: string; cover?: Blob };
+export type Meta = { title?: string; author?: string; description?: string; cover?: Blob };
 
 /** EPUB descriptions are often HTML: keep the text, one blank line between paragraphs. */
 function plainText(html: string | undefined) {
@@ -177,11 +177,15 @@ export type UploadOptions = {
   onPreparing?: () => void;
   /** Fraction of the file sent (0 to 1). */
   onProgress?: (fraction: number) => void;
+  /** Known metadata (e.g. from a Calibre library) instead of what the file says; the cover still comes from the file if missing. */
+  meta?: Meta;
 };
 
 export async function uploadBook(file: File, opts: UploadOptions = {}): Promise<UploadResult> {
   opts.onPreparing?.();
-  const meta = await extractMetadata(file);
+  const meta = opts.meta
+    ? { ...opts.meta, cover: opts.meta.cover ?? (await extractMetadata(file)).cover }
+    : await extractMetadata(file);
   const form = new FormData();
   if (meta.title) form.append("title", meta.title.trim().slice(0, 500));
   if (meta.author) form.append("author", meta.author.trim().slice(0, 500));
