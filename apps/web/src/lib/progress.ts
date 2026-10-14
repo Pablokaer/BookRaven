@@ -107,3 +107,14 @@ export function installProgressFlushers() {
   });
   flushProgress();
 }
+
+/**
+ * Marks a book as finished at `at` (an import from another app). The server keeps the newest
+ * position, so a book read since then keeps its real place.
+ */
+export function markFinished(bookId: string, at: Date) {
+  return apiJson<{ applied: boolean }>(`/api/books/${bookId}/progress`, {
+    method: "PUT",
+    body: JSON.stringify({ locator: "fraction:1", percentage: 1, label: null, deviceId, deviceName: "Import", clientUpdatedAt: Math.min(at.getTime(), Date.now()) }),
+  });
+}

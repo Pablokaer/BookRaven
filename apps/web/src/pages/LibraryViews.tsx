@@ -1,5 +1,6 @@
 import { BookOpen, Compass, Heart, Share2, Sparkles, UploadCloud } from "lucide-react";
 import { useMemo } from "react";
+import { Link } from "react-router";
 import { BookBrowser, EmptyState } from "../components/books/BookBrowser";
 import { FeaturedBookCard } from "../components/books/FeaturedBookCard";
 import { StorageMeter } from "../components/shell/StorageMeter";
@@ -90,6 +91,11 @@ export function UploadsPage() {
   return (
     <>
       <PageHeader title="Uploads" subtitle="Everything you have added, newest first." />
+      <p className="-mt-5 mb-6 text-sm">
+        <Link to="/import" className="text-accent hover:underline">
+          Import from Goodreads or Calibre →
+        </Link>
+      </p>
       <button
         onClick={() => pickFiles()}
         className="group flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line bg-card/40 px-6 py-10 text-center transition hover:border-accent/50 hover:bg-card/70"
