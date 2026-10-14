@@ -82,7 +82,7 @@ export function OrganizeDialog({
               <span key={t} className="inline-flex items-center gap-1 rounded-full bg-accent/12 py-0.5 pl-2.5 pr-1 text-sm text-accent ring-1 ring-accent/25">
                 {t}
                 <button
-                  className="rounded-full px-1.5 hover:bg-white/10"
+                  className="rounded-full px-1.5 hover:bg-fg/10"
                   aria-label={`Remove tag ${t}`}
                   onClick={() => setTags((all) => all.filter((x) => x !== t))}
                 >

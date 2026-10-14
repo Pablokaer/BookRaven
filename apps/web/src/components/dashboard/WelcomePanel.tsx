@@ -2,7 +2,6 @@ import { BookOpen, Heart, Library, Share2 } from "lucide-react";
 import { useMemo } from "react";
 import { isInProgress } from "../../lib/bookStats";
 import { useLibrary } from "../../lib/libraryStore";
-import { Landscape } from "./Landscape";
 import { StatCard } from "./StatCard";
 
 function greeting() {
@@ -24,17 +23,13 @@ export function WelcomePanel({ name }: { name: string }) {
   const first = name.split(/[\s@]/)[0];
 
   return (
-    <section className="@container relative overflow-hidden rounded-3xl border border-line/70 shadow-card">
-      <Landscape className="absolute inset-0 h-full w-full" />
-      <div className="absolute inset-0 bg-gradient-to-r from-app/90 via-app/45 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-t from-app/75 via-app/10 to-transparent" />
-
-      <div className="relative px-5 pb-5 pt-8 sm:px-8 sm:pb-7 sm:pt-10">
-        <p className="eyebrow text-accent/90">
+    <section className="@container surface rounded-3xl">
+      <div className="px-5 pb-5 pt-7 sm:px-8 sm:pb-7 sm:pt-9">
+        <p className="eyebrow">
           {greeting()}
           {first ? `, ${first}` : ""}
         </p>
-        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-[2.6rem] sm:leading-[1.1]">Welcome back!</h1>
+        <h1 className="mt-2 font-display text-3xl font-medium tracking-tight sm:text-[2.6rem] sm:leading-[1.1]">Welcome back!</h1>
         <p className="mt-2 max-w-md text-sm text-muted sm:text-base">Good to see you again. Keep reading, keep growing.</p>
 
         {/* Two columns even on phones, so the stats don't fill the first screen. */}

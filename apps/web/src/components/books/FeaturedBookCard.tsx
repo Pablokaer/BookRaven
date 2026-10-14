@@ -11,14 +11,13 @@ export function FeaturedBookCard({ book }: { book: Book }) {
   const p = book.progress!;
   return (
     <article className="surface group relative flex animate-rise gap-5 overflow-hidden p-4 transition hover:border-accent/30 sm:p-5">
-      <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-accent/10 blur-3xl transition group-hover:bg-accent/15" />
       <Link to={`/read/${book.id}`} aria-label={`Continue reading ${book.title}`} className="shrink-0">
         <BookCover book={book} badge className="w-24 sm:w-28" />
       </Link>
       <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="line-clamp-2 font-display text-lg font-semibold leading-snug" title={book.title}>
+            <h3 className="line-clamp-2 font-display text-lg font-medium leading-snug" title={book.title}>
               {book.title}
             </h3>
             <p className="mt-1 truncate text-sm text-muted">{book.author ?? "Unknown author"}</p>

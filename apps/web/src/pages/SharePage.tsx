@@ -42,14 +42,14 @@ export function SharePage() {
         ) : (
           <>
             <div className="relative mx-auto aspect-[2/3] w-36 overflow-hidden rounded-lg bg-elevated shadow-pop">
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/60 to-card p-3 font-display text-sm font-semibold">
+              <div className="absolute inset-0 flex items-center justify-center bg-elevated p-3 font-display text-sm font-medium">
                 {book.title}
               </div>
               {book.hasCover && <AuthImage path={`/api/shares/${token}/cover`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
             </div>
             <div>
               <p className="eyebrow text-accent/90">{book.sharedBy ? `${book.sharedBy} shared a book with you` : "Shared book"}</p>
-              <h1 className="mt-2 font-display text-xl font-semibold leading-snug">{book.title}</h1>
+              <h1 className="mt-2 font-display text-xl font-medium leading-snug">{book.title}</h1>
               <p className="mt-1 text-sm text-muted">
                 {book.author ?? "Unknown author"} · {book.format.toUpperCase()}
               </p>
@@ -124,7 +124,7 @@ export function SharedCollectionPage() {
           <header className="mb-8 flex flex-wrap items-end gap-4">
             <div className="mr-auto min-w-0">
               <p className="eyebrow text-accent/90">{collection.sharedBy ? `${collection.sharedBy} shared a collection with you` : "Shared collection"}</p>
-              <h1 className="mt-2 truncate font-display text-3xl font-bold tracking-tight">{collection.name}</h1>
+              <h1 className="mt-2 truncate font-display text-3xl font-medium tracking-tight">{collection.name}</h1>
               <p className="mt-1.5 text-sm text-muted">
                 {collection.books.length} book{collection.books.length === 1 ? "" : "s"}
                 {!collection.isOwner && collection.books.length > 0 &&
@@ -145,7 +145,7 @@ export function SharedCollectionPage() {
             {collection.books.map((b) => (
               <li key={b.id} className="min-w-0">
                 <div className="relative aspect-[2/3] overflow-hidden rounded-lg bg-elevated shadow-pop">
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/60 to-card p-2 text-center font-display text-xs font-semibold">
+                  <div className="absolute inset-0 flex items-center justify-center bg-elevated p-2 text-center font-display text-xs font-medium">
                     {b.title}
                   </div>
                   {b.hasCover && (

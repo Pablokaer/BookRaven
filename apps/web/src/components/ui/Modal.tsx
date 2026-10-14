@@ -28,7 +28,7 @@ export function Modal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
-          <h2 className="font-display text-xl font-semibold leading-snug">{title}</h2>
+          <h2 className="font-display text-xl font-medium leading-snug">{title}</h2>
           <button className="icon-btn -mr-2 -mt-1" aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
           </button>

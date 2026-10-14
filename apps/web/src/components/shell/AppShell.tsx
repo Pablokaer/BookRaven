@@ -9,6 +9,7 @@ import { OrganizeDialog } from "../OrganizeDialog";
 import { ShareDialog } from "../ShareDialog";
 import { LeftSidebar } from "./LeftSidebar";
 import { RightSidebarWidgets } from "./RightSidebar";
+import { BottomNav, LIBRARY_PATHS, LibraryTabs } from "./navigation";
 import { TopBar } from "./TopBar";
 
 const LAYOUT_KEY = "readsync.layout";
@@ -55,7 +56,7 @@ function UploadPanel() {
 
   return (
     <section
-      className="fixed bottom-4 right-4 z-50 flex max-h-[min(28rem,calc(100dvh-6rem))] w-[min(24rem,calc(100vw-2rem))] animate-rise flex-col overflow-hidden rounded-2xl border border-line bg-elevated shadow-pop"
+      className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-50 flex max-h-[min(28rem,calc(100dvh-10rem))] md:bottom-4 w-[min(24rem,calc(100vw-2rem))] animate-rise flex-col overflow-hidden rounded-2xl border border-line bg-elevated shadow-pop"
       aria-label="Uploads"
     >
       <header className="flex items-center gap-3 px-4 pb-2 pt-3">
@@ -135,7 +136,6 @@ function useOnline() {
 export function AppShell({ user }: { user: { name: string; email: string } }) {
   const lib = useLibrary();
   const [layout, setLayout] = useState(loadLayout);
-  const [mobileNav, setMobileNav] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragTimer = useRef<number | undefined>(undefined);
   const stopDragging = () => {
@@ -163,9 +163,6 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
       /* ignore */
     }
   }, [layout]);
-
-  // Close the mobile drawer whenever the page changes.
-  useEffect(() => setMobileNav(false), [location.pathname]);
 
   const compact = !isDesktop || layout.leftCollapsed;
   // The reading overview (goal, recent uploads, shared, discover) belongs to the dashboard only:
@@ -195,7 +192,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         if (e.dataTransfer.files.length) lib.upload(e.dataTransfer.files, dropFolder?.id ?? null);
       }}
     >
-      {/* Left sidebar (tablet: icons only; phone: drawer) */}
+      {/* Left sidebar (tablet: icons only; phone: the bottom bar instead) */}
       <aside
         className={`sticky top-0 hidden h-dvh shrink-0 border-r border-line/60 bg-sidebar pt-[env(safe-area-inset-top)] transition-[width] duration-300 ease-out md:block ${
           compact ? "w-[76px]" : "w-64"
@@ -204,22 +201,9 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         <LeftSidebar compact={compact} />
       </aside>
 
-      {mobileNav && (
-        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
-          <div className="absolute inset-0 animate-fade bg-black/60 backdrop-blur-sm" onClick={() => setMobileNav(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-slide-in border-r border-line bg-sidebar pt-[env(safe-area-inset-top)] shadow-pop">
-            <button className="icon-btn absolute right-3 top-[calc(env(safe-area-inset-top)+18px)]" aria-label="Close navigation" onClick={() => setMobileNav(false)}>
-              <X className="h-4 w-4" />
-            </button>
-            <LeftSidebar compact={false} onNavigate={() => setMobileNav(false)} />
-          </aside>
-        </div>
-      )}
-
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           user={user}
-          onOpenMobileNav={() => setMobileNav(true)}
           onToggleLeft={() => setLayout((l) => ({ ...l, leftCollapsed: !l.leftCollapsed }))}
           onToggleRight={() => setLayout((l) => ({ ...l, rightOpen: !l.rightOpen }))}
           showLeftToggle={isDesktop}
@@ -236,8 +220,10 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         )}
 
         <div className="flex flex-1">
-          <main className="min-w-0 flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">
+          {/* Phones: room at the bottom for the navigation bar. */}
+          <main className="min-w-0 flex-1 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 md:pb-16 lg:px-8">
             <div className="mx-auto max-w-[1400px]">
+              {LIBRARY_PATHS.test(location.pathname) && <LibraryTabs />}
               <Outlet />
               {widgetsBelow && (
                 <div className="mt-12">
@@ -255,6 +241,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         </div>
       </div>
 
+      <BottomNav />
       <UploadPanel />
       <AppUpdateBanner />
 
@@ -270,7 +257,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         <div className="pointer-events-none fixed inset-0 z-[70] flex animate-fade items-center justify-center bg-app/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 rounded-3xl border-2 border-dashed border-accent/60 bg-card/80 px-16 py-12 text-center">
             <UploadCloud className="h-10 w-10 text-accent" />
-            <div className="font-display text-xl font-semibold">{dropFolder ? <>Drop to add to “{dropFolder.name}”</> : "Drop to add to your library"}</div>
+            <div className="font-display text-xl font-medium">{dropFolder ? <>Drop to add to “{dropFolder.name}”</> : "Drop to add to your library"}</div>
             <div className="text-sm text-muted">PDF, EPUB, MOBI, AZW3, FB2 and comics (CBZ, CBR, CB7, CBT)</div>
           </div>
         </div>

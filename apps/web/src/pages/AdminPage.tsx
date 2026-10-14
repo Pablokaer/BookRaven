@@ -246,7 +246,7 @@ function ReportsTab({ onChanged }: { onChanged: () => void }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-medium">{r.title}</h3>
                     <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300">{REASONS[r.reason]}</span>
-                    {r.status !== "open" && <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-muted">{r.status}: {r.resolution}</span>}
+                    {r.status !== "open" && <span className="rounded-full bg-fg/8 px-2 py-0.5 text-xs text-muted">{r.status}: {r.resolution}</span>}
                     {r.blocked && <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-xs text-rose-300">File blocked</span>}
                     {r.stillPublic && <span className="rounded-full bg-accent/12 px-2 py-0.5 text-xs text-accent">Still public</span>}
                   </div>
@@ -351,7 +351,7 @@ export function AdminPage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
+        <h1 className="flex items-center gap-3 font-display text-3xl font-medium tracking-tight">
           <ShieldCheck className="h-7 w-7 text-accent" /> Admin
         </h1>
         <p className="mt-1.5 text-sm text-muted">Accounts, storage limits, reports, book requests and content removal.</p>

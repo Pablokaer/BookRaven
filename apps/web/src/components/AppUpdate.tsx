@@ -37,7 +37,7 @@ export function AppUpdateBanner() {
   if (!apkUpdate || !release || dismissed) return null;
   return (
     <section
-      className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-50 mx-auto max-w-md animate-rise rounded-2xl border border-line bg-elevated p-4 shadow-pop"
+      className="fixed inset-x-4 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-50 md:bottom-[calc(env(safe-area-inset-bottom)+1rem)] mx-auto max-w-md animate-rise rounded-2xl border border-line bg-elevated p-4 shadow-pop"
       aria-label="App update"
     >
       <div className="flex items-start gap-3">

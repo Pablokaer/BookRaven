@@ -101,7 +101,7 @@ export function Menu({
                 key={i}
                 type="button"
                 role="menuitem"
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm outline-none transition hover:bg-white/5 focus-visible:bg-white/5 ${
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm outline-none transition hover:bg-fg/5 focus-visible:bg-fg/5 ${
                   item.danger ? "text-rose-300" : "text-fg"
                 }`}
                 onClick={() => {

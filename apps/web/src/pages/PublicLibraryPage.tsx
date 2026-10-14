@@ -37,7 +37,7 @@ function PublisherInfo({ book }: { book: PublicBook }) {
   const name = book.isMine ? "You" : book.publishedBy;
   return (
     <div className="flex items-center gap-3 rounded-xl border border-line bg-elevated/40 p-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-sm font-semibold text-app">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent/12 text-sm font-semibold text-accent ring-1 ring-inset ring-accent/30">
         {book.isMine || !name ? <User className="h-4 w-4" /> : initials(name)}
       </span>
       <div className="min-w-0 flex-1">
@@ -195,7 +195,7 @@ function Shelf({
     <section className="animate-rise" aria-label={title}>
       <div className="mb-3 flex items-end gap-3">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+          <h2 className="flex items-center gap-2 font-display text-xl font-medium">
             <span className="text-accent [&>svg]:h-5 [&>svg]:w-5">{icon}</span> {title}
             <span className="font-sans text-sm font-normal text-muted">{total}</span>
           </h2>
@@ -315,7 +315,7 @@ export function PublicLibraryPage() {
     <>
       <header className="mb-8 flex flex-wrap items-end gap-4">
         <div className="mr-auto max-w-2xl">
-          <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
+          <h1 className="flex items-center gap-3 font-display text-3xl font-medium tracking-tight">
             <Globe className="h-7 w-7 text-accent" /> Public Library
           </h1>
           <p className="mt-1.5 text-sm text-muted">

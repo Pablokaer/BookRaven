@@ -66,7 +66,7 @@ export function LookupCard({
         state.def ? (
           <div className="space-y-3">
             <div>
-              <span className="font-display text-xl font-semibold">{state.def.word}</span>
+              <span className="font-display text-xl font-medium">{state.def.word}</span>
               {state.def.language && <span className="ml-2 text-xs text-muted">{state.def.language}</span>}
             </div>
             {state.def.entries.map((e, i) => (

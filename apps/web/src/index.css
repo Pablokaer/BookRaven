@@ -1,24 +1,26 @@
 @import "tailwindcss";
 
-/* ---- Design tokens (dark teal library theme) ---- */
+/* ---- Design tokens ----
+   Dark (default): near-neutral charcoal surfaces, one restrained teal accent, thin borders
+   instead of heavy shadows. The light theme below overrides the same variables. */
 @theme {
-  --color-app: #071315;
-  --color-sidebar: #09191c;
-  --color-card: #102327;
-  --color-elevated: #173137;
-  --color-accent: #16c9b2;
-  --color-accent-hover: #20dfca;
-  --color-primary: #087f78;
-  --color-primary-hover: #0a968e;
-  --color-fg: #f3f7f6;
-  --color-muted: #9baeb2;
-  --color-line: #244045;
+  --color-app: #0a0c0d;
+  --color-sidebar: #0c0f10;
+  --color-card: #111617;
+  --color-elevated: #182022;
+  --color-accent: #3fc2a5;
+  --color-accent-hover: #5fd3b9;
+  --color-primary: #117a66;
+  --color-primary-hover: #138a73;
+  --color-fg: #e9edeb;
+  --color-muted: #95a09d;
+  --color-line: #222a2c;
 
-  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Newsreader Variable", Georgia, "Times New Roman", serif;
 
-  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 10px 30px -18px rgb(0 0 0 / 0.8);
-  --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(36 64 69 / 0.9);
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.02) inset;
+  --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.65), 0 0 0 1px var(--color-line);
 
   --animate-pop: pop 140ms ease-out;
   --animate-fade: fade 160ms ease-out;
@@ -52,6 +54,24 @@
 
 :root {
   color-scheme: dark;
+}
+
+/* Light theme: chosen in Profile → Appearance (or following the system), set on <html>. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-app: #f5f6f5;
+  --color-sidebar: #eef0ef;
+  --color-card: #ffffff;
+  --color-elevated: #e9eceb;
+  --color-accent: #0e7c6a;
+  --color-accent-hover: #0a6657;
+  --color-primary: #0e7c6a;
+  --color-primary-hover: #0a6657;
+  --color-fg: #151a1a;
+  --color-muted: #5b6664;
+  --color-line: #dce1df;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.18), 0 0 0 1px var(--color-line);
 }
 
 html,
@@ -195,7 +215,7 @@ body {
     cursor: default;
   }
   ::selection {
-    background: rgb(22 201 178 / 0.35);
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
   }
 }
 

@@ -1,6 +1,7 @@
-import { Bell, LogOut, Menu as MenuIcon, PanelLeft, PanelRight, Plus, Search, User, X } from "lucide-react";
+import { Bell, Download, LogOut, PanelLeft, PanelRight, Plus, Search, ShieldCheck, User, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { isNative } from "../../lib/api";
 import { signOut } from "../../lib/auth";
 import { timeAgo } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
@@ -18,7 +19,6 @@ export function TopBar({
   user,
   onToggleLeft,
   onToggleRight,
-  onOpenMobileNav,
   showLeftToggle,
   showRightToggle,
   rightOpen,
@@ -26,12 +26,11 @@ export function TopBar({
   user: { name: string; email: string };
   onToggleLeft: () => void;
   onToggleRight: () => void;
-  onOpenMobileNav: () => void;
   showLeftToggle: boolean;
   showRightToggle: boolean;
   rightOpen: boolean;
 }) {
-  const { query, setQuery, pickFiles, activity, unreadActivity, markActivityRead } = useLibrary();
+  const { query, setQuery, pickFiles, activity, unreadActivity, markActivityRead, me } = useLibrary();
   const navigate = useNavigate();
   const location = useLocation();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -57,9 +56,6 @@ export function TopBar({
   return (
     <header className="sticky top-0 z-30 border-b border-line/60 bg-app/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
       <div className="flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6">
-        <button className="icon-btn md:hidden" aria-label="Open navigation" onClick={onOpenMobileNav}>
-          <MenuIcon className="h-5 w-5" />
-        </button>
         {showLeftToggle && (
           <button className="icon-btn hidden md:inline-flex" aria-label="Toggle sidebar" title="Toggle sidebar" onClick={onToggleLeft}>
             <PanelLeft className="h-[18px] w-[18px]" />
@@ -120,7 +116,7 @@ export function TopBar({
 
           <Menu
             label="Account menu"
-            triggerClassName="ml-1 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-sm font-semibold text-app ring-2 ring-line transition hover:ring-accent/50"
+            triggerClassName="ml-1 flex h-10 w-10 items-center justify-center rounded-full bg-accent/12 text-sm font-semibold text-accent ring-1 ring-inset ring-accent/30 transition hover:bg-accent/20"
             trigger={initials(user.name || user.email)}
             header={
               <div className="border-b border-line px-3 pb-2.5 pt-1.5 mb-1">
@@ -130,6 +126,9 @@ export function TopBar({
             }
             items={[
               { label: "Profile", icon: <User />, onSelect: () => navigate("/profile") },
+              ...(me?.isAdmin ? [{ label: "Admin", icon: <ShieldCheck />, onSelect: () => navigate("/admin") }] : []),
+              { label: isNative ? "App updates" : "Android app", icon: <Download />, onSelect: () => navigate("/download") },
+              { separator: true },
               { label: "Sign out", icon: <LogOut />, onSelect: () => void signOut() },
             ]}
           />

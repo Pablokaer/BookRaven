@@ -1,9 +1,10 @@
-import { KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { KeyRound, LogOut, Monitor, Moon, ShieldCheck, Sun, Target } from "lucide-react";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { initials } from "../components/shell/TopBar";
 import { Field } from "../components/ui/Field";
+import { type AppTheme, useAppTheme } from "../lib/appTheme";
 import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
 import { fileSize } from "../lib/format";
@@ -85,6 +86,41 @@ function ChangePassword() {
   );
 }
 
+const THEMES: { id: AppTheme; label: string; icon: ReactNode }[] = [
+  { id: "system", label: "System", icon: <Monitor className="h-4 w-4" /> },
+  { id: "dark", label: "Dark", icon: <Moon className="h-4 w-4" /> },
+  { id: "light", label: "Light", icon: <Sun className="h-4 w-4" /> },
+];
+
+function Appearance() {
+  const [theme, setTheme] = useAppTheme();
+  return (
+    <section className="surface flex flex-wrap items-center gap-4 p-6">
+      <div className="mr-auto">
+        <h2 className="text-sm font-medium">Appearance</h2>
+        <p className="mt-1 text-xs text-muted">For the library on this device. Books keep their own page themes in the reader.</p>
+      </div>
+      <div className="flex rounded-xl border border-line p-1" role="radiogroup" aria-label="Interface theme">
+        {THEMES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="radio"
+            aria-checked={theme === t.id}
+            onClick={() => setTheme(t.id)}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition ${
+              theme === t.id ? "bg-accent/12 text-accent" : "text-muted hover:text-fg"
+            }`}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function ProfilePage({ user }: { user: { name: string; email: string } }) {
   const { books, folders, me } = useLibrary();
   const { settings, update } = useSettings();
@@ -112,11 +148,11 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <section className="surface flex flex-wrap items-center gap-5 p-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-accent/80 to-primary text-xl font-semibold text-app">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent/12 text-xl font-semibold text-accent ring-1 ring-inset ring-accent/30">
           {initials(user.name || user.email)}
         </div>
         <div className="mr-auto min-w-0">
-          <h1 className="truncate font-display text-2xl font-bold">{user.name || "Reader"}</h1>
+          <h1 className="truncate font-display text-2xl font-medium">{user.name || "Reader"}</h1>
           <p className="truncate text-sm text-muted">{user.email}</p>
           {me?.isAdmin && (
             <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-0.5 text-xs text-accent">
@@ -130,7 +166,7 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       </section>
 
       <section>
-        <h2 className="mb-4 font-display text-xl font-semibold">Your reading</h2>
+        <h2 className="mb-4 font-display text-xl font-medium">Your reading</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {stats.map((s) => (
             <div key={s.label} className="surface p-4">
@@ -144,6 +180,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       <section className="surface p-6">
         <StorageMeter />
       </section>
+
+      <Appearance />
 
       <ChangePassword />
 

@@ -83,7 +83,10 @@ importers:
       '@capawesome/capacitor-live-update':
         specifier: 8.7.0
         version: 8.7.0(@capacitor/core@8.5.3)
-      '@fontsource-variable/inter':
+      '@fontsource-variable/geist':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/newsreader':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/atkinson-hyperlegible':
@@ -96,9 +99,6 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/opendyslexic':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/playfair-display':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/source-sans-3':
@@ -660,8 +660,11 @@ packages:
   '@fastify/rate-limit@11.2.1':
     resolution: {integrity: sha512-uTQjii3tJUnb6ZyEMcunuvKE3FDKNZEaPpxdyWADDgthHnUV1swdvwuiZfi3DDDgxm1iBrhOkQ/w0yDBQ8qJtA==}
 
-  '@fontsource-variable/inter@5.3.0':
-    resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
+  '@fontsource-variable/geist@5.3.0':
+    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
+
+  '@fontsource-variable/newsreader@5.3.0':
+    resolution: {integrity: sha512-rrzYi43qMpbzwuFtf9OkWH8sxAPVPcQQQEwXpPtwaKYeJ8yVg5aLs5kawmo1f2Q1t1M38TLmEKCkGVDsYwgdFw==}
 
   '@fontsource/atkinson-hyperlegible@5.3.0':
     resolution: {integrity: sha512-Sp8Ve8+rQmENY2Lv02VH7sLpntzTTvnncnJMTbRE7DX6TLxGraN4ykZfzaUWIoCFmaomwkvNiqmlPkrKBuDoSA==}
@@ -674,9 +677,6 @@ packages:
 
   '@fontsource/opendyslexic@5.3.0':
     resolution: {integrity: sha512-BVYIW/ghc1U2iAghhYTN+GFWiZ3lnCy8Jf2KkZC23aHQHBNcMqKT718zckfqVxRx4qsXJmIMPWvczirRuhmtsg==}
-
-  '@fontsource/playfair-display@5.3.0':
-    resolution: {integrity: sha512-uJSABalvdWc10fEPppQjQocamT21LEyRfzzWfRfqbkPz+sRv+kKpYDKyluBUskvJREkJTos9epj1WjQROGu99Q==}
 
   '@fontsource/source-sans-3@5.3.1':
     resolution: {integrity: sha512-O3YxvbotUOgYI2Zx0bBcEMNjnwitRf9P2+9pd54sMoux1NHrdXnMwZusw2P78lFhEzOPN4glOEQmX0ASaS68uA==}
@@ -3674,7 +3674,9 @@ snapshots:
       ip-address: 10.7.4
       toad-cache: 3.7.4
 
-  '@fontsource-variable/inter@5.3.0': {}
+  '@fontsource-variable/geist@5.3.0': {}
+
+  '@fontsource-variable/newsreader@5.3.0': {}
 
   '@fontsource/atkinson-hyperlegible@5.3.0': {}
 
@@ -3683,8 +3685,6 @@ snapshots:
   '@fontsource/merriweather@5.3.0': {}
 
   '@fontsource/opendyslexic@5.3.0': {}
-
-  '@fontsource/playfair-display@5.3.0': {}
 
   '@fontsource/source-sans-3@5.3.1': {}
 

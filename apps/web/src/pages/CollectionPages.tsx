@@ -29,7 +29,7 @@ export function CollectionsPage() {
     <>
       <header className="mb-8 flex flex-wrap items-end gap-4">
         <div className="mr-auto">
-          <h1 className="font-display text-3xl font-bold tracking-tight">Collections</h1>
+          <h1 className="font-display text-3xl font-medium tracking-tight">Collections</h1>
           <p className="mt-1.5 text-sm text-muted">
             Group books the way you think about them. Drop files on a collection to upload them into it.{" "}
             {books && `${loose} book${loose === 1 ? " is" : "s are"} not in a collection.`}
@@ -91,7 +91,7 @@ export function CollectionsPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
-                    <h2 className="truncate font-display text-lg font-semibold">{f.name}</h2>
+                    <h2 className="truncate font-display text-lg font-medium">{f.name}</h2>
                   </div>
                   <p className="mt-1 text-sm text-muted">
                     {dropTarget === f.id ? "Drop to upload into this collection" : `${list.length} book${list.length === 1 ? "" : "s"}`}
@@ -121,7 +121,7 @@ export function CollectionPage() {
     <>
       <header className="mb-8 flex items-center gap-3">
         {folder && <span className="h-3 w-3 rounded-full" style={{ background: collectionColor(folder) }} />}
-        <h1 className="mr-auto truncate font-display text-3xl font-bold tracking-tight">{folder?.name ?? "Collection"}</h1>
+        <h1 className="mr-auto truncate font-display text-3xl font-medium tracking-tight">{folder?.name ?? "Collection"}</h1>
         {folder && (
           <button className="btn" onClick={() => pickFiles(folder.id)}>
             <Upload className="h-4 w-4" /> Upload

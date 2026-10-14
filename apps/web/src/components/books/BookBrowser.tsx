@@ -61,7 +61,7 @@ export function EmptyState({ icon, title, children }: { icon: ReactNode; title: 
   return (
     <div className="flex flex-col items-center rounded-2xl border border-dashed border-line px-6 py-14 text-center">
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent [&>svg]:h-5 [&>svg]:w-5">{icon}</div>
-      <h3 className="font-display text-lg font-semibold">{title}</h3>
+      <h3 className="font-display text-lg font-medium">{title}</h3>
       {children && <div className="mt-2 max-w-sm text-sm text-muted">{children}</div>}
     </div>
   );
@@ -148,7 +148,7 @@ export function BookBrowser({
   return (
     <section aria-label={title} className="@container">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto font-display text-2xl font-semibold">{title}</h2>
+        <h2 className="mr-auto font-display text-2xl font-medium">{title}</h2>
         {actions}
         {/* Sort and view stay together when the header wraps on narrow screens. */}
         <div className="flex items-center gap-3">

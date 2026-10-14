@@ -1,6 +1,5 @@
 import { BookOpen } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Landscape } from "../components/dashboard/Landscape";
 import { Field } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
@@ -8,16 +7,14 @@ import { authClient } from "../lib/auth";
 /** Centered card over the landscape, shared by the sign-in and password-reset screens. Headings are centered; form fields read left to right. */
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
-      <Landscape className="absolute inset-0 h-full w-full opacity-70" />
-      <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
-      <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl">
+    <div className="flex min-h-dvh items-center justify-center bg-app p-4">
+      <div className="w-full max-w-sm animate-rise rounded-3xl border border-line bg-card p-7 text-center shadow-card">
         <div className="mb-7 flex flex-col items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-app">
-            <BookOpen className="h-6 w-6" strokeWidth={2.4} />
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/12 text-accent ring-1 ring-inset ring-accent/25">
+            <BookOpen className="h-6 w-6" strokeWidth={2} />
           </span>
           <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">BookRaven</h1>
+            <h1 className="font-display text-2xl font-medium tracking-tight">BookRaven</h1>
             <p className="text-sm text-muted">Your books, on every device.</p>
           </div>
         </div>

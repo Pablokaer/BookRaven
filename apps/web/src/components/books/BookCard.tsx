@@ -24,14 +24,14 @@ export function BookCard({ book }: { book: Book }) {
           extraBadge={
             book.isPublic && (
               <span
-                className="inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/30 backdrop-blur-sm"
+                className="inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-[#5fd3b9] ring-1 ring-[#5fd3b9]/30 backdrop-blur-sm"
                 title="In the Public Library"
               >
                 <Globe className="h-3 w-3" /> Public
               </span>
             )
           }
-          className="w-full transition duration-300 group-hover:shadow-[0_18px_36px_-14px_rgb(22_201_178/0.35)]"
+          className="w-full"
         />
         <FavoriteButton
           book={book}
@@ -80,7 +80,7 @@ export function BookRow({ book }: { book: Book }) {
           <h3 className="truncate text-sm font-medium" title={book.title}>
             {book.title}
           </h3>
-          <FormatBadge format={book.format} className="shrink-0 bg-white/8" />
+          <FormatBadge format={book.format} className="shrink-0 !bg-fg/8 !text-fg !ring-line" />
         </div>
         <p className="truncate text-xs text-muted">{book.author ?? (book.sharedBy ? `Shared by ${book.sharedBy}` : "Unknown author")}</p>
       </div>

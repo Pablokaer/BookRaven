@@ -59,7 +59,7 @@ export function BookCover({
 
   return (
     <div
-      className={`relative aspect-[2/3] shrink-0 overflow-hidden rounded-lg bg-elevated shadow-[0_8px_24px_-10px_rgb(0_0_0/0.8)] ring-1 ring-white/5 ${className}`}
+      className={`relative aspect-[2/3] shrink-0 overflow-hidden rounded-lg bg-elevated shadow-[0_8px_20px_-12px_rgb(0_0_0/0.55)] ring-1 ring-black/10 ${className}`}
     >
       <div
         className={`absolute inset-0 flex flex-col ${pad} ${badge && (size === "md" || size === "lg") ? "pt-10" : ""}`}
@@ -67,7 +67,7 @@ export function BookCover({
         aria-hidden={book.hasCover}
       >
         <div className="h-px w-1/3" style={{ background: ink, opacity: 0.6 }} />
-        <div className={`mt-[12%] line-clamp-5 font-display font-semibold leading-snug text-white/95 ${titleSize}`}>{book.title}</div>
+        <div className={`mt-[12%] line-clamp-5 font-display font-medium leading-snug text-white/95 ${titleSize}`}>{book.title}</div>
         {size !== "xs" && book.author && (
           <div className="mt-auto line-clamp-2 text-[0.6rem] uppercase tracking-[0.15em]" style={{ color: ink, opacity: 0.85 }}>
             {book.author}

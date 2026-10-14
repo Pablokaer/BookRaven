@@ -28,8 +28,8 @@ import { useLibrary } from "../lib/libraryStore";
 
 function ClubCover({ club, className = "" }: { club: Pick<ClubSummary, "id" | "book">; className?: string }) {
   return (
-    <div className={`relative aspect-[2/3] shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-primary/60 to-card shadow-card ring-1 ring-white/5 ${className}`}>
-      <div className="absolute inset-0 flex items-center justify-center p-2 text-center font-display text-xs font-semibold">{club.book.title}</div>
+    <div className={`relative aspect-[2/3] shrink-0 overflow-hidden rounded-lg bg-elevated shadow-card ring-1 ring-line ${className}`}>
+      <div className="absolute inset-0 flex items-center justify-center p-2 text-center font-display text-xs font-medium">{club.book.title}</div>
       {club.book.hasCover && <AuthImage path={`/api/clubs/${club.id}/cover`} alt="" className="absolute inset-0 h-full w-full object-cover" />}
     </div>
   );
@@ -109,7 +109,7 @@ export function ClubsPage() {
     <>
       <header className="mb-8 flex flex-wrap items-end gap-4">
         <div className="mr-auto">
-          <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
+          <h1 className="flex items-center gap-3 font-display text-3xl font-medium tracking-tight">
             <UsersRound className="h-7 w-7 text-accent" /> Book Clubs
           </h1>
           <p className="mt-1.5 text-sm text-muted">Read a book together, follow each other’s progress and discuss it.</p>
@@ -130,7 +130,7 @@ export function ClubsPage() {
             <Link key={c.id} to={`/clubs/${c.id}`} className="surface flex animate-rise gap-4 p-5 transition hover:-translate-y-0.5 hover:border-accent/30">
               <ClubCover club={c} className="w-16" />
               <div className="min-w-0">
-                <h2 className="truncate font-display text-lg font-semibold">{c.name}</h2>
+                <h2 className="truncate font-display text-lg font-medium">{c.name}</h2>
                 <p className="truncate text-sm text-muted">{c.book.title}</p>
                 <p className="mt-2 text-xs text-muted">
                   {c.members} member{c.members === 1 ? "" : "s"}
@@ -202,7 +202,7 @@ export function ClubPage() {
           <ClubCover club={club} className="w-28" />
           <div className="min-w-0 flex-1">
             <div className="flex items-start gap-2">
-              <h1 className="mr-auto font-display text-3xl font-bold tracking-tight">{club.name}</h1>
+              <h1 className="mr-auto font-display text-3xl font-medium tracking-tight">{club.name}</h1>
               <Menu
                 label="Club actions"
                 trigger={<MoreHorizontal className="h-4 w-4" />}
@@ -263,7 +263,7 @@ export function ClubPage() {
         </header>
 
         <section aria-labelledby="discussion">
-          <h2 id="discussion" className="mb-4 flex items-center gap-2 font-display text-xl font-semibold">
+          <h2 id="discussion" className="mb-4 flex items-center gap-2 font-display text-xl font-medium">
             <MessageSquare className="h-5 w-5 text-accent" /> Discussion
           </h2>
           <div className="surface space-y-4 p-5">
@@ -435,7 +435,7 @@ export function ClubInvitePage() {
             <ClubCover club={invite} className="mx-auto w-32" />
             <div>
               <p className="eyebrow text-accent/90">{invite.ownerName} invited you to a book club</p>
-              <h1 className="mt-2 font-display text-xl font-semibold">{invite.name}</h1>
+              <h1 className="mt-2 font-display text-xl font-medium">{invite.name}</h1>
               <p className="mt-1 text-sm text-muted">
                 {invite.book.title} · {invite.members} member{invite.members === 1 ? "" : "s"}
               </p>

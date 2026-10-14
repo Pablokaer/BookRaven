@@ -48,11 +48,11 @@ function InstalledApp() {
   return (
     <section className="surface space-y-4 p-6">
       <div className="flex items-start gap-4">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-primary text-app">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent ring-1 ring-inset ring-accent/25">
           <Smartphone className="h-6 w-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-display text-xl font-semibold">You are using the Android app</h2>
+          <h2 className="font-display text-xl font-medium">You are using the Android app</h2>
           <p className="mt-1 text-sm text-muted">Installed version {installedVersion || "…"}</p>
         </div>
       </div>
@@ -96,11 +96,11 @@ function GetTheApp() {
   return (
     <div className="space-y-8">
       <section className="surface flex flex-col gap-6 p-6 sm:flex-row sm:items-center">
-        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-primary text-app shadow-[0_6px_20px_-6px_rgb(22_201_178/0.6)]">
+        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent ring-1 ring-inset ring-accent/25">
           <Smartphone className="h-8 w-8" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-display text-xl font-semibold">BookRaven for Android</h2>
+          <h2 className="font-display text-xl font-medium">BookRaven for Android</h2>
           <p className="mt-1 text-sm text-muted">
             {release === undefined ? "Checking the latest version…" : release ? releaseLine(release) : "The Android app has not been published on this server yet."}
           </p>
@@ -121,7 +121,7 @@ function GetTheApp() {
       )}
 
       <section className="surface p-6">
-        <h2 className="mb-5 font-display text-xl font-semibold">How to install</h2>
+        <h2 className="mb-5 font-display text-xl font-medium">How to install</h2>
         <ol className="space-y-5">
           <Step n={1} title="Download the APK on your phone">
             Tap <b>Download for Android</b>. The app comes straight from this server, not from the Play Store, so Chrome may warn that the file
@@ -174,7 +174,7 @@ export function DownloadPage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Android app</h1>
+        <h1 className="font-display text-3xl font-medium tracking-tight">Android app</h1>
         <p className="mt-1.5 text-sm text-muted">Read on your phone and tablet, with your library and reading progress in sync.</p>
       </header>
       {isNative ? <InstalledApp /> : <GetTheApp />}
