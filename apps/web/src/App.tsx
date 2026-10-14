@@ -1,5 +1,5 @@
 import { App as CapApp } from "@capacitor/app";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { isNative } from "./lib/api";
 import { authClient } from "./lib/auth";
@@ -41,6 +41,7 @@ function NativeBackButton() {
 export function App() {
   const { data: session, isPending, refetch } = authClient.useSession();
   const signedIn = Boolean(session?.user);
+  const sessionChecked = useRef(false);
 
   useEffect(() => {
     const onUnauthorized = () => void refetch();
@@ -60,7 +61,11 @@ export function App() {
     return <ResetPasswordPage onDone={() => void refetch()} />;
   }
 
-  if (isPending) {
+  // Better Auth refetches the session whenever the tab regains focus, and while signed out each
+  // refetch sets isPending again. Show the loading screen only for the first check: replacing the
+  // login page with it would unmount the form and lose what was typed.
+  if (!isPending) sessionChecked.current = true;
+  if (isPending && !sessionChecked.current) {
     return <div className="flex h-dvh items-center justify-center text-muted">Loading…</div>;
   }
 
