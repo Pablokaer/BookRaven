@@ -1,16 +1,17 @@
 import { BookOpen } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Landscape } from "../components/dashboard/Landscape";
+import { Field } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
 
-/** Centered card over the landscape, shared by the sign-in and password-reset screens. Everything in it is centered, inputs included. */
+/** Centered card over the landscape, shared by the sign-in and password-reset screens. Headings are centered; form fields read left to right. */
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       <Landscape className="absolute inset-0 h-full w-full opacity-70" />
       <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
-      <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl [&_input]:text-center">
+      <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl">
         <div className="mb-7 flex flex-col items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-primary text-app">
             <BookOpen className="h-6 w-6" strokeWidth={2.4} />
@@ -77,16 +78,17 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
   const showGoogle = cfg?.googleEnabled && !isNative;
 
   const emailInput = (
-    <input
-      className="input h-11 w-full"
-      type="email"
-      placeholder="Email"
-      aria-label="Email"
-      required
-      value={email}
-      onChange={(e) => setEmail(e.target.value)}
-      autoComplete="email"
-    />
+    <Field label="Email">
+      <input
+        className="input h-11 w-full"
+        type="email"
+        placeholder="you@example.com"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        autoComplete="email"
+      />
+    </Field>
   );
 
   if (mode === "forgot") {
@@ -99,7 +101,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
             hour.
           </p>
         ) : (
-          <form onSubmit={submit} className="space-y-3">
+          <form onSubmit={submit} className="space-y-4">
             <p className="text-sm text-muted">Enter your email and we will send you a link.</p>
             {emailInput}
             {error && <p className="text-sm text-rose-300">{error}</p>}
@@ -119,24 +121,27 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <AuthLayout>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={submit} className="space-y-4">
         {mode === "signup" && (
-          <input className="input h-11 w-full" placeholder="Name" aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+          <Field label="Name">
+            <input className="input h-11 w-full" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+          </Field>
         )}
         {emailInput}
-        <input
-          className="input h-11 w-full"
-          type="password"
-          placeholder="Password (min. 8 characters)"
-          aria-label="Password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete={mode === "signin" ? "current-password" : "new-password"}
-        />
+        <Field label="Password">
+          <input
+            className="input h-11 w-full"
+            type="password"
+            placeholder="At least 8 characters"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          />
+        </Field>
         {mode === "signin" && cfg?.passwordResetEnabled && (
-          <div className="-mt-1">
+          <div className="-mt-2 text-right">
             <button type="button" className="text-xs text-muted hover:text-accent" onClick={() => switchMode("forgot")}>
               Forgot password?
             </button>

@@ -276,7 +276,7 @@ export function ClubPage() {
                     {m.author.slice(0, 1).toUpperCase()}
                   </div>
                   <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${m.isMine ? "bg-primary/30" : "bg-elevated/70"}`}>
-                    <div className="mb-1 text-[11px] text-muted">
+                    <div className="mb-1 text-xs text-muted">
                       {m.isMine ? "You" : m.author} · {timeAgo(m.createdAt)}
                     </div>
                     {m.quote && (
@@ -284,7 +284,7 @@ export function ClubPage() {
                         <Quote className="mr-1 inline h-3 w-3 opacity-60" />
                         {m.quote}
                         {m.locator && club.myBookId && (
-                          <Link to={`/read/${club.myBookId}?at=${encodeURIComponent(m.locator)}`} className="ml-2 not-italic text-[11px] text-accent hover:underline">
+                          <Link to={`/read/${club.myBookId}?at=${encodeURIComponent(m.locator)}`} className="ml-2 not-italic text-xs text-accent hover:underline">
                             Open in book
                           </Link>
                         )}
@@ -345,7 +345,7 @@ export function ClubPage() {
                 <div className="mb-1 flex items-center gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">
                     {m.isMe ? "You" : m.name}
-                    {m.isOwner && <span className="ml-1.5 text-[11px] text-accent">host</span>}
+                    {m.isOwner && <span className="ml-1.5 text-xs text-accent">host</span>}
                   </span>
                   <span className="text-xs tabular-nums text-muted" title={m.progressAt ? `Updated ${timeAgo(m.progressAt)}` : undefined}>
                     {m.progress === null ? "not started" : percent(m.progress)}
@@ -455,7 +455,7 @@ export function ClubInvitePage() {
             )}
           </>
         )}
-        <Link to="/clubs" className="btn-ghost">
+        <Link to="/clubs" className={error ? "btn-outline" : "btn-ghost"}>
           Your clubs
         </Link>
       </div>

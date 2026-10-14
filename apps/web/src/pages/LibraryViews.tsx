@@ -95,17 +95,18 @@ export function UploadsPage() {
   return (
     <>
       <PageHeader title="Uploads" subtitle="Everything you have added, newest first." />
-      <div className="surface mb-5 p-4">
-        <StorageMeter />
-      </div>
       <button
         onClick={() => pickFiles()}
-        className="group mb-10 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line bg-card/40 px-6 py-10 text-center transition hover:border-accent/50 hover:bg-card/70"
+        className="group flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line bg-card/40 px-6 py-10 text-center transition hover:border-accent/50 hover:bg-card/70"
       >
         <UploadCloud className="h-8 w-8 text-accent transition group-hover:-translate-y-0.5" />
         <span className="font-medium">Drop files here or click to upload</span>
         <span className="text-sm text-muted">PDF, EPUB, MOBI, AZW3, FB2 and comics (CBZ, CBR, CB7, CBT) · duplicates are detected automatically</span>
       </button>
+      {/* Space left, where it matters: right under where files are added. */}
+      <div className="mb-10 mt-3 max-w-xs">
+        <StorageMeter />
+      </div>
       <BookBrowser books={books} title="All uploads" defaultSort="added" empty={<UploadEmpty />} />
     </>
   );
