@@ -19,6 +19,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { PublicLibraryPage } from "./pages/PublicLibraryPage";
 import { SearchPage } from "./pages/SearchPage";
 import { BookPage, PublicBookPage } from "./pages/BookPages";
+import { StatsPage } from "./pages/StatsPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SharedCollectionPage, SharePage } from "./pages/SharePage";
 
@@ -111,6 +112,7 @@ export function App() {
               <Route path="collections/:id" element={<CollectionPage />} />
               <Route path="favorites" element={<FavoritesPage />} />
               <Route path="profile" element={<ProfilePage user={user} />} />
+              <Route path="stats" element={<StatsPage />} />
               <Route path="admin" element={<AdminPage />} />
               <Route path="download" element={<DownloadPage />} />
               <Route path="clubs" element={<ClubsPage />} />

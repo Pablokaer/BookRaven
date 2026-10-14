@@ -74,7 +74,10 @@ function ReadingGoal() {
           <p className="mt-1 text-xs leading-relaxed text-muted">books finished this year</p>
         </div>
       </div>
-      <figure className="mt-5 border-t border-line pt-4">
+      <Link to="/stats" className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+        Reading stats <ArrowRight className="h-3.5 w-3.5" />
+      </Link>
+      <figure className="mt-4 border-t border-line pt-4">
         <blockquote className="font-display text-sm italic leading-relaxed text-fg/90">“{quote}”</blockquote>
         <figcaption className="mt-1.5 text-xs text-muted">— {author}</figcaption>
       </figure>
