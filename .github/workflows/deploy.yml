@@ -47,3 +47,133 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" bash -s -- "$APP_DIR" "$COMMIT" < infra/deploy.sh
+
+  # Android app (README → Android app): a signed APK and a live-update bundle of the web app,
+  # built while the server deploys and published under /downloads once it is up. Skipped
+  # until the ANDROID_KEYSTORE_BASE64 secret exists.
+  android-build:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      APP_DIR: ${{ vars.VPS_APP_DIR || '/opt/mico-livrao' }}
+      SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - name: Signing key
+        id: key
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 is not set, so the Android app is not built (README → Android app)"
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.enabled
+        with:
+          ref: ${{ env.COMMIT }}
+          fetch-depth: 0 # the commit count is the APK's versionCode
+
+      # The app talks to the server's PUBLIC_URL: the PUBLIC_URL variable, or the one in the server's .env.
+      - name: Server URL
+        if: steps.key.outputs.enabled
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          if [ -z "$PUBLIC_URL" ]; then
+            install -d -m 700 ~/.ssh
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+            chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+            PUBLIC_URL=$(ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
+              "sed -n 's/^PUBLIC_URL=//p' '$APP_DIR/.env'" | tr -d '\r"' | tail -n 1)
+          fi
+          if [ -z "$PUBLIC_URL" ]; then echo "::error::PUBLIC_URL not found"; exit 1; fi
+          echo "VITE_API_URL=$PUBLIC_URL" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.key.outputs.enabled
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.enabled
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        if: steps.key.outputs.enabled
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build
+        if: steps.key.outputs.enabled
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export VERSION_CODE=$(git rev-list --count HEAD)
+          export VERSION_NAME="1.$VERSION_CODE"
+          export BUNDLE_VERSION=$(git rev-parse --short=12 HEAD)
+          pnpm install --frozen-lockfile
+          cd apps/web
+          pnpm exec vite build --mode native
+          pnpm exec cap sync android
+          (cd android && ./gradlew --no-daemon assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME")
+          node scripts/android-release.mjs "$RUNNER_TEMP/android-release"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.enabled
+        with:
+          name: android-release
+          path: ${{ runner.temp }}/android-release
+          retention-days: 7
+    outputs:
+      enabled: ${{ steps.key.outputs.enabled }}
+
+  android-publish:
+    needs: [deploy, android-build]
+    if: needs.android-build.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      APP_DIR: ${{ vars.VPS_APP_DIR || '/opt/mico-livrao' }}
+      SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-release
+          path: android-release
+
+      - name: SSH key
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+      - name: Publish
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          remote() { ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" "$@"; }
+          tar -C android-release -czf - . | remote "rm -rf '$APP_DIR/downloads/.incoming' && mkdir -p '$APP_DIR/downloads/.incoming' && tar -C '$APP_DIR/downloads/.incoming' -xzf -"
+          remote bash -s -- "$APP_DIR" < infra/publish-android.sh

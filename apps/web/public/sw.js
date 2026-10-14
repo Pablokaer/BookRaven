@@ -60,6 +60,8 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || request.headers.has("range")) return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Android app downloads (APK, update bundles) always come from the server.
+  if (url.pathname.startsWith("/downloads/")) return;
 
   if (request.mode === "navigate") {
     // Every route is the same single-page app.

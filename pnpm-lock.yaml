@@ -71,12 +71,18 @@ importers:
       '@capacitor/core':
         specifier: ^8.5.3
         version: 8.5.3
+      '@capacitor/file-transfer':
+        specifier: 2.0.6
+        version: 2.0.6(@capacitor/core@8.5.3)
       '@capacitor/filesystem':
         specifier: 8.1.4
         version: 8.1.4(@capacitor/core@8.5.3)
       '@capacitor/preferences':
         specifier: ^8.0.1
         version: 8.0.1(@capacitor/core@8.5.3)
+      '@capawesome/capacitor-live-update':
+        specifier: 8.7.0
+        version: 8.7.0(@capacitor/core@8.5.3)
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -418,6 +424,11 @@ packages:
   '@capacitor/core@8.5.3':
     resolution: {integrity: sha512-oBE1oGuYE4ZzYYrulC75OuHdSsD6zLUy7d5o1tFwDLG4govGoubY15cxpiI5l0+q87Lm5p0bhbehMdzJg4aFag==}
 
+  '@capacitor/file-transfer@2.0.6':
+    resolution: {integrity: sha512-1KBmDqhz8iFCzJyuxp+0Xm2VlUzhq7Hy0png3Nl0H6659P2qd04nYISb1BdnnkdmiQwyLq7R86QYgrQOwVSrEQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
   '@capacitor/filesystem@8.1.4':
     resolution: {integrity: sha512-8MXmt10cb+dGWoh8jUeO8on0U6iETQCX5k+fmdB278PZ3MYDEVGQo08+hroaOtUbK3+5stiRk4/K6QBHKepv0A==}
     peerDependencies:
@@ -430,6 +441,24 @@ packages:
 
   '@capacitor/synapse@1.0.4':
     resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
+
+  '@capawesome/capacitor-live-update@8.7.0':
+    resolution: {integrity: sha512-iWFEaD1gd0PParSapVaKLMbP2g7EENHqGSeg27h7COhNXeWsxfmaVCdJafW5mT096WykEDrgLJD3p5GmE+9D0g==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+      '@capawesome/capacitor-electron': '>=0.2.0'
+    peerDependenciesMeta:
+      '@capawesome/capacitor-electron':
+        optional: true
+
+  '@capawesome/electron-live-update@0.1.0':
+    resolution: {integrity: sha512-1qTEO8SzNplSfj53PkvrmV+5s+t86dZeYzjbsswCqSEhXIzg0TUsrBmWCueRgjGcOXb0Iu3AYi6pKekKQi9XTw==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      electron: '>=28.0.0'
+    peerDependenciesMeta:
+      electron:
+        optional: true
 
   '@colors/colors@1.6.0':
     resolution: {integrity: sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==}
@@ -2869,6 +2898,10 @@ packages:
   yauzl@2.10.0:
     resolution: {integrity: sha512-p4a9I6X6nu6IhoGmBqAcbJy1mlC4j27vEPZX9F4L4/vZT3Lyq1VkFHw/V/PUcB9Buo+DG3iHkT0x3Qya58zc3g==}
 
+  yauzl@3.4.0:
+    resolution: {integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==}
+    engines: {node: '>=12'}
+
   ylru@1.4.0:
     resolution: {integrity: sha512-2OQsPNEmBCvXuFlIni/a+Rn+R2pHW9INm0BxXJ4hVDA8TirqMj+J/Rp9ItLatT/5pZqWwefVrTQcHpixsxnVlA==}
     engines: {node: '>= 4.0.0'}
@@ -3479,6 +3512,11 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@capacitor/file-transfer@2.0.6(@capacitor/core@8.5.3)':
+    dependencies:
+      '@capacitor/core': 8.5.3
+      '@capacitor/synapse': 1.0.4
+
   '@capacitor/filesystem@8.1.4(@capacitor/core@8.5.3)':
     dependencies:
       '@capacitor/core': 8.5.3
@@ -3489,6 +3527,17 @@ snapshots:
       '@capacitor/core': 8.5.3
 
   '@capacitor/synapse@1.0.4': {}
+
+  '@capawesome/capacitor-live-update@8.7.0(@capacitor/core@8.5.3)':
+    dependencies:
+      '@capacitor/core': 8.5.3
+      '@capawesome/electron-live-update': 0.1.0
+    transitivePeerDependencies:
+      - electron
+
+  '@capawesome/electron-live-update@0.1.0':
+    dependencies:
+      yauzl: 3.4.0
 
   '@colors/colors@1.6.0': {}
 
@@ -5769,6 +5818,10 @@ snapshots:
     dependencies:
       buffer-crc32: 0.2.13
       fd-slicer: 1.1.0
+
+  yauzl@3.4.0:
+    dependencies:
+      pend: 1.2.0
 
   ylru@1.4.0: {}
 

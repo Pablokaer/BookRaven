@@ -18,6 +18,18 @@
 		}
 	}
 
+	# Android app: APK, live-update bundles and android.json, uploaded by the Deploy workflow
+	# into ./downloads on the host. The app (served from https://localhost) reads android.json.
+	handle /downloads/* {
+		root * /var/www
+		@release path /downloads/android.json /downloads/bookraven.apk
+		header @release Cache-Control "no-cache"
+		header /downloads/android.json Access-Control-Allow-Origin "*"
+		@apk path *.apk
+		header @apk Content-Type "application/vnd.android.package-archive"
+		file_server
+	}
+
 	# Static frontend (SPA)
 	handle {
 		root * /srv

@@ -25,6 +25,9 @@ git checkout --quiet main
 git reset --quiet --hard "$COMMIT"
 echo "deploy: at $(git log -1 --format='%h %s')"
 
+# Created here (not by Docker as root) so the Deploy workflow can upload the Android app into it.
+mkdir -p downloads
+
 # Builds the new images first, then replaces the running containers.
 docker compose up -d --build --remove-orphans
 

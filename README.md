@@ -20,6 +20,7 @@ The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (p
 - **Sharing:** share a book or a whole collection by link (a collection link always shows the collection's current books; accepting adds copies of all of them to a collection of the same name, and accepting again adds only the new ones), publish it to the **Public Library** (everyone on the server can read or download it), request books there and vote on requests, and read together in **book clubs** (members see each other's progress and discuss passages).
 - **Public-domain collection:** an importer fills the Public Library with hundreds of popular public-domain books in English and Portuguese from Project Gutenberg (see below). The Public Library is organised in **sections by theme** (philosophy, politics, economics, technology, computing, science, history, literature, poetry, religion, children), with a language filter, popularity ranking and a link back to the source.
 - **Other apps:** an **OPDS** catalog and a **KOReader** progress-sync server, with per-device app passwords.
+- **Android app** without the Play Store: *Download* in the sidebar explains how to install the APK straight from your server. Installed apps update themselves: interface changes arrive as silent live updates, and when the native part changes the app offers the new APK.
 - **Offline:** the web app opens without a connection and shows your saved library; books you opened (or saved for offline) can be read.
 - **Administration:** accounts (storage limits, blocking, temporary passwords, deletion), content reports on public books (dismiss, unpublish, block the file or delete it everywhere), and the number of open book requests (linking to *Public Library → Requests*). Administrators also get an email for each new book request.
 
@@ -50,8 +51,10 @@ apps/
     src/reader/       EpubReader (foliate-js), PdfReader (pdf.js), settings + TOC panels
     src/lib/          api client, auth, progress sync/outbox, SSE client, settings, fonts
     android/          Capacitor Android project
+    scripts/          Android release helpers (native-version fingerprint, release files)
 infra/Caddyfile
 infra/deploy.sh          update the VPS to a commit and restart (used by the Deploy workflow)
+infra/publish-android.sh publish an Android release into ./downloads (used by the Deploy workflow)
 docker-compose.yml       production: postgres + api + caddy
 docker-compose.dev.yml   development: postgres only
 ```
@@ -134,7 +137,7 @@ The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF 
 
 ### Automatic deploys (GitHub Actions → VPS)
 
-Every push to `main` that passes CI is deployed by `.github/workflows/deploy.yml`: it connects to the VPS over SSH and runs `infra/deploy.sh`, which moves the clone in `/opt/mico-livrao` to the tested commit, rebuilds the images with `docker compose up -d --build` and waits for the API to answer (the job fails, with the API log, if it doesn't). `.env`, `data/` and `backups/` are ignored by git and never touched. *Actions → Deploy → Run workflow* deploys the current `main` by hand, and `bash infra/deploy.sh` on the server does the same.
+Every push to `main` that passes CI is deployed by `.github/workflows/deploy.yml`: it connects to the VPS over SSH and runs `infra/deploy.sh`, which moves the clone in `/opt/mico-livrao` to the tested commit, rebuilds the images with `docker compose up -d --build` and waits for the API to answer (the job fails, with the API log, if it doesn't). `.env`, `data/`, `backups/` and `downloads/` are ignored by git and never touched. In parallel it builds the Android app and publishes it under `/downloads` (see *Android app*). *Actions → Deploy → Run workflow* deploys the current `main` by hand, and `bash infra/deploy.sh` on the server does the same.
 
 One-time setup (tested on a Hostinger KVM VPS with Ubuntu; the *Ubuntu with Docker* template already has Docker):
 
@@ -194,6 +197,33 @@ The Google button only shows up when both values are set.
 
 ## Android app
 
+The Android app is the same React app wrapped with Capacitor: the interface ships inside the APK and talks to your server over HTTPS (bearer token in Capacitor Preferences; the API already allows the Capacitor origins `https://localhost` and `capacitor://localhost` for CORS). The app id is `app.readsync`.
+
+### Distribution and updates (no Play Store)
+
+Every deploy also builds the app (`android-build` and `android-publish` jobs in `.github/workflows/deploy.yml`) and puts it in `./downloads` on the server, which Caddy serves at `/downloads`:
+
+| File | What it is |
+|---|---|
+| `/downloads/bookraven.apk` | the newest signed APK (the *Download* page links to it) |
+| `/downloads/bookraven-1.<N>.apk` | the same APK by version (the last 3 are kept) |
+| `/downloads/bundles/<commit>.zip` | the web app as a live-update bundle (the last 10 are kept) |
+| `/downloads/android.json` | the current release: `versionCode`, `versionName`, `nativeVersion`, APK path and size, bundle id/URL/SHA-256 |
+
+- **Install:** *Download* in the sidebar (`/download`) shows the version, the download button and step-by-step instructions (allow installing from the browser, Play Protect's *Install anyway*). Android 7 or newer.
+- **Versions:** `versionCode` is the number of commits on `main`, `versionName` is `1.<versionCode>`, and the bundle id is the commit.
+- **Updates:** the app reads `android.json` when it starts and when it comes back after 15 minutes. `nativeVersion` is a fingerprint of the native layer (`apps/web/scripts/native-version.mjs`: the committed `android/` project, `capacitor.config.ts` and the installed Capacitor plugin versions).
+  - Same fingerprint as the installed app: the new web bundle is downloaded in the background ([`@capawesome/capacitor-live-update`](https://capawesome.io/plugins/live-update/), self-hosted, checksum-verified) and used from the next start. If a bundle does not start within 10 s it is rolled back to the APK's own and never retried.
+  - Different fingerprint (new plugin, permission, icon, Capacitor version…): the app shows *A new version is available*; *Update* downloads the APK and opens Android's installer (the first time Android asks to allow BookRaven to install apps). *App updates* in the sidebar shows the installed version and checks by hand.
+- **Signing key:** installed apps only accept updates signed with the same key. The workflow reads it from the GitHub secrets `ANDROID_KEYSTORE_BASE64` (the keystore, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`; without them the Android jobs are skipped. Keep a backup of the keystore and its password: losing it means everyone has to uninstall and reinstall. To create one:
+  ```bash
+  keytool -genkeypair -storetype PKCS12 -keystore bookraven-release.jks -alias bookraven -keyalg RSA -keysize 4096 -validity 36500
+  base64 -i bookraven-release.jks | gh secret set ANDROID_KEYSTORE_BASE64
+  ```
+- **Server URL:** the app is built against the GitHub variable `PUBLIC_URL`, or, if it isn't set, the `PUBLIC_URL` in the server's `.env` (read over SSH).
+
+### Local builds
+
 ```bash
 cd apps/web
 cp .env.native.example .env.native     # VITE_API_URL=https://books.example.com
@@ -201,9 +231,8 @@ pnpm android:sync                      # builds the web app and copies it into a
 pnpm android:open                      # opens Android Studio → Run / Build APK
 ```
 
-- The Android app id is `app.readsync`. Builds made before this id was set used a different one, so they install as a separate app: uninstall the old one and sign in again.
-- The app loads its interface from inside the APK and talks to your VPS over HTTPS. It stores a bearer token in Capacitor Preferences.
-- The API already allows the Capacitor origins (`https://localhost`, `capacitor://localhost`) for CORS.
+Local builds are version 1 and debug-signed, so they don't update an app installed from the server (uninstall it first). After adding or upgrading a Capacitor plugin, run `pnpm android:sync` and commit the regenerated `android/` files: they are part of the native fingerprint.
+
 - **Google sign-in on Android:** Google blocks OAuth inside embedded WebViews, so the app hides the Google button for now and you sign in with email + password. Adding it later means a native Google Sign-In plugin that returns an ID token, which you then pass to `authClient.signIn.social({ provider: "google", idToken: { token } })`.
 
 ## Public-domain books
@@ -267,7 +296,7 @@ CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build 
 ## Known limitations / next steps
 
 - DRM-protected books (bought on Kindle, Kobo, …) can't be opened. Only DRM-free files work.
-- The Android app has not been rebuilt and tested with the latest web changes; run `pnpm android:sync` and try downloads (saved to *Documents/BookRaven*) on a device.
+- The Android app's update flow (live updates and APK updates) still needs testing on a real device.
 - **Google sign-in on Android** still needs a native Google Sign-In plugin and an Android OAuth client in Google Cloud (see *Android app* above).
 - Comics: CBR support relies on 7-Zip's RAR decoder; password-protected archives can't be opened.
 - KOReader can't receive BookRaven positions for reflowable ebooks (only PDFs and comics), see above.

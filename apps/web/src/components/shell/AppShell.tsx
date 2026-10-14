@@ -4,6 +4,7 @@ import { Outlet, useLocation } from "react-router";
 import { fileSize } from "../../lib/format";
 import { isActiveUpload, useLibrary, type UploadItem } from "../../lib/libraryStore";
 import { useMediaQuery } from "../../lib/useMediaQuery";
+import { AppUpdateBanner } from "../AppUpdate";
 import { OrganizeDialog } from "../OrganizeDialog";
 import { ShareDialog } from "../ShareDialog";
 import { LeftSidebar } from "./LeftSidebar";
@@ -253,6 +254,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
       </div>
 
       <UploadPanel />
+      <AppUpdateBanner />
 
       {dragging && onCollectionsOverview && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-[70] flex animate-fade justify-center px-4">

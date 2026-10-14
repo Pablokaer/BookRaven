@@ -2,6 +2,7 @@ import { App as CapApp } from "@capacitor/app";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { isNative } from "./lib/api";
+import { startAppUpdates } from "./lib/appUpdate";
 import { authClient } from "./lib/auth";
 import { startEvents, stopEvents } from "./lib/events";
 import { installProgressFlushers } from "./lib/progress";
@@ -11,6 +12,7 @@ import { SettingsProvider } from "./lib/settings";
 import { AdminPage } from "./pages/AdminPage";
 import { ClubInvitePage, ClubPage, ClubsPage } from "./pages/ClubPages";
 import { CollectionPage, CollectionsPage } from "./pages/CollectionPages";
+import { DownloadPage } from "./pages/DownloadPage";
 import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage, UploadsPage } from "./pages/LibraryViews";
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -42,6 +44,9 @@ export function App() {
   const { data: session, isPending, refetch } = authClient.useSession();
   const signedIn = Boolean(session?.user);
   const sessionChecked = useRef(false);
+
+  // Android app: this bundle rendered, so the live-update plugin needn't roll it back.
+  useEffect(startAppUpdates, []);
 
   useEffect(() => {
     const onUnauthorized = () => void refetch();
@@ -102,6 +107,7 @@ export function App() {
               <Route path="favorites" element={<FavoritesPage />} />
               <Route path="profile" element={<ProfilePage user={user} />} />
               <Route path="admin" element={<AdminPage />} />
+              <Route path="download" element={<DownloadPage />} />
               <Route path="clubs" element={<ClubsPage />} />
               <Route path="clubs/join/:token" element={<ClubInvitePage />} />
               <Route path="clubs/:id" element={<ClubPage />} />

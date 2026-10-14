@@ -68,6 +68,8 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      # Android app downloads (README → Android app)
+      - ./downloads:/var/www/downloads:ro
     depends_on:
       - api
 
