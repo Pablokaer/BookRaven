@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Landscape } from "../components/dashboard/Landscape";
+import logoIcon from "../assets/logo.png";
 import wordmark from "../assets/wordmark.png";
 import { Field } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
@@ -13,7 +14,8 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
       <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl">
         <div className="mb-7 flex flex-col items-center gap-3">
-          <img src={wordmark} alt="BookRaven" className="h-11 w-auto" />
+          <img src={logoIcon} alt="" className="h-16 w-16 rounded-2xl" />
+          <img src={wordmark} alt="BookRaven" className="h-9 w-auto" />
           <p className="text-sm text-muted">Your books, on every device.</p>
         </div>
         {children}
