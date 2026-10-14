@@ -71,9 +71,8 @@ export function workKey(title: string, authors: Pick<Person, "name">[], language
 
 /**
  * Gutenberg also carries pieces of books: a novel split into chapter ranges or parts (the
- * complete book is always there too), single volumes of a set, and index pages. "index" and
- * "piece" are never worth importing; a volume names the whole work, so it can be skipped when
- * the complete book is already in the library.
+ * complete book is always there too), single volumes of a set, and index pages. For a volume
+ * the result names the whole work.
  */
 export function fragmentOf(title: string): "index" | "piece" | { whole: string } | null {
   if (/index of the project gutenberg works|index to the project gutenberg editions|table of contents and index/i.test(title)) return "index";

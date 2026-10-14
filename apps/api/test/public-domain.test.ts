@@ -156,6 +156,7 @@ describe("Gutenberg import", () => {
       book(103, { title: "Memórias Póstumas" }),
       book(104, { title: "O Capital", subjects: ["Economics", "Capital"], bookshelves: ["Category: Economics"] }),
       book(105, { title: "Dom Casmurro" }), // another edition of 101
+      book(106, { title: "Quincas Borba, Vol. 1 (of 2)" }), // a single volume: skipped
     ];
     const files = new Map(catalog.map((b) => [b.id, fakeEpub(b.id)]));
     const requested: string[] = [];
@@ -187,6 +188,7 @@ describe("Gutenberg import", () => {
     const dom = list.find((b) => b.title === "Dom Casmurro")!;
     expect(dom).toMatchObject({ author: "Machado de Assis", language: "pt", publishedBy: "BookRaven Library", source: { url: "https://www.gutenberg.org/ebooks/101" } });
     expect(list.some((b) => b.title === "Book 102")).toBe(false);
+    expect(list.some((b) => b.title.startsWith("Quincas Borba"))).toBe(false);
     expect(dom.themes).toContain("literature"); // from "Category: Novels"
     expect(dom.popularity).toBe(899);
     // Found by the themed search first, and classified by its subjects too.

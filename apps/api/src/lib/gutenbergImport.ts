@@ -231,12 +231,13 @@ export async function importPublicDomain(opts: ImportOptions) {
     }
     const work = workKey(cleanTitle(b.title), b.authors, lang);
     const fragment = fragmentOf(cleanTitle(b.title));
-    if (fragment === "index" || fragment === "piece") {
+    // Index pages, pieces of novels and, for now, single volumes of a set: imported one by one,
+    // a set would usually end up incomplete.
+    if (fragment) {
       summary.skipped++;
       return;
     }
-    // Another edition, or a piece (chapters, part, volume) of a book already in the library.
-    if (state.works.has(work) || (typeof fragment === "object" && fragment && state.works.has(workKey(fragment.whole, b.authors, lang)))) {
+    if (state.works.has(work)) {
       summary.duplicates++;
       return;
     }
