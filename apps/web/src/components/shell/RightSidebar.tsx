@@ -185,11 +185,11 @@ function ListSkeleton() {
   return (
     <div className="space-y-3" aria-busy="true">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="flex animate-pulse items-center gap-3">
-          <div className="h-12 w-8 rounded bg-elevated" />
+        <div key={i} className="flex items-center gap-3">
+          <div className="skeleton h-12 w-8" />
           <div className="flex-1 space-y-1.5">
-            <div className="h-2.5 w-3/4 rounded bg-elevated" />
-            <div className="h-2 w-1/2 rounded bg-elevated/70" />
+            <div className="skeleton h-2.5 w-3/4" />
+            <div className="skeleton h-2 w-1/2" />
           </div>
         </div>
       ))}

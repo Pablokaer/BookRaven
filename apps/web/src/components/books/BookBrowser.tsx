@@ -47,10 +47,10 @@ export function BookGridSkeleton({ count = 6 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6" aria-busy="true" aria-label="Loading books">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="animate-pulse">
-          <div className="aspect-[2/3] rounded-lg bg-elevated/70" />
-          <div className="mt-3 h-3 w-4/5 rounded bg-elevated/70" />
-          <div className="mt-2 h-2.5 w-1/2 rounded bg-elevated/50" />
+        <div key={i}>
+          <div className="skeleton aspect-[2/3] rounded-lg" />
+          <div className="skeleton mt-3 h-3 w-4/5" />
+          <div className="skeleton mt-2 h-2.5 w-1/2" />
         </div>
       ))}
     </div>

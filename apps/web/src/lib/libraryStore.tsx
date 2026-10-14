@@ -3,6 +3,7 @@ import { ApiError, type Book, type Folder, type Me, type Progress } from "./api"
 import { deleteBook, forgetCachedBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
 import { deviceId } from "./device";
 import { onServerEvent } from "./events";
+import { loadCachedBooks, loadCachedMe, saveCachedBooks, saveCachedMe } from "./libraryCache";
 import { percent } from "./format";
 import { fileSize } from "./format";
 import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } from "./library";
@@ -96,12 +97,14 @@ type LibraryCtx = {
 const Ctx = createContext<LibraryCtx | null>(null);
 
 export function LibraryProvider({ children, userId }: { children: ReactNode; userId: string }) {
-  const [books, setBooks] = useState<Book[] | null>(null);
+  // Hydrate instantly from the last snapshot kept in localStorage (keyed by user), so a cold
+  // start shows real numbers on the first frame; `refresh()` below updates them over the network.
+  const [books, setBooks] = useState<Book[] | null>(() => loadCachedBooks(userId));
   const [folders, setFolders] = useState<Folder[]>([]);
   const foldersRef = useRef(folders);
   foldersRef.current = folders;
   const [foldersReady, setFoldersReady] = useState(false);
-  const [me, setMe] = useState<Me | null>(null);
+  const [me, setMe] = useState<Me | null>(() => loadCachedMe(userId));
   const [publicVersion, setPublicVersion] = useState(0);
   const [requestsVersion, setRequestsVersion] = useState(0);
   const [clubsVersion, setClubsVersion] = useState(0);
@@ -122,6 +125,15 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   const meIdRef = useRef(userId);
   meIdRef.current = userId;
   booksRef.current = books;
+
+  // Keep the localStorage snapshot in step with every change (network refresh, live events,
+  // optimistic edits), so the next cold start hydrates from the latest known state.
+  useEffect(() => {
+    if (books) saveCachedBooks(userId, books);
+  }, [books, userId]);
+  useEffect(() => {
+    if (me) saveCachedMe(userId, me);
+  }, [me, userId]);
 
   const log = useCallback((text: string, bookId?: string) => {
     setActivity((a) => [{ id: `${Date.now()}-${Math.random()}`, text, at: Date.now(), bookId }, ...a].slice(0, 30));

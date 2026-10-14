@@ -8,7 +8,7 @@ export function StatCard({ icon, label, value, hint }: { icon: ReactNode; label:
       </div>
       <div className="min-w-0">
         <div className="text-xl font-semibold tabular-nums leading-tight">
-          {value === null ? <span className="inline-block h-5 w-8 animate-pulse rounded bg-white/10 align-middle" /> : value}
+          {value === null ? <span className="skeleton inline-block h-5 w-8 align-middle" /> : value}
         </div>
         <div className="truncate text-xs text-muted">{label}</div>
       </div>
