@@ -10,6 +10,7 @@ import { authRoutes } from "./routes/auth.js";
 import { bookRoutes } from "./routes/books.js";
 import { eventRoutes } from "./routes/events.js";
 import { progressRoutes } from "./routes/progress.js";
+import { statsRoutes } from "./routes/stats.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { adminRoutes } from "./routes/admin.js";
 import { clubRoutes } from "./routes/clubs.js";
@@ -64,6 +65,7 @@ export async function buildServer() {
   await app.register(authRoutes);
   await app.register(bookRoutes);
   await app.register(progressRoutes);
+  await app.register(statsRoutes);
   await app.register(settingsRoutes);
   await app.register(shareRoutes);
   await app.register(collectionShareRoutes);

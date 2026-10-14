@@ -1,4 +1,5 @@
-import { BookOpen, Heart, Library, Share2 } from "lucide-react";
+import { ArrowRight, BookOpen, Heart, Library, Share2 } from "lucide-react";
+import { Link } from "react-router";
 import { useMemo } from "react";
 import { isInProgress } from "../../lib/bookStats";
 import { useLibrary } from "../../lib/libraryStore";
@@ -36,6 +37,9 @@ export function WelcomePanel({ name }: { name: string }) {
         </p>
         <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-[2.6rem] sm:leading-[1.1]">Welcome back!</h1>
         <p className="mt-2 max-w-md text-sm text-muted sm:text-base">Good to see you again. Keep reading, keep growing.</p>
+        <Link to="/stats" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
+          See your reading stats <ArrowRight className="h-4 w-4" />
+        </Link>
 
         {/* Two columns even on phones, so the stats don't fill the first screen. */}
         <div className="mt-6 grid grid-cols-2 gap-2.5 sm:mt-7 sm:gap-3 @3xl:grid-cols-4">

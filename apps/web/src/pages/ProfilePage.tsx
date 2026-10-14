@@ -1,4 +1,5 @@
-import { KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { ArrowRight, KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { useMemo, useState } from "react";
@@ -130,7 +131,12 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       </section>
 
       <section>
-        <h2 className="mb-4 font-display text-xl font-semibold">Your reading</h2>
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold">Your reading</h2>
+          <Link to="/stats" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
+            Reading stats <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {stats.map((s) => (
             <div key={s.label} className="surface p-4">

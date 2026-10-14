@@ -11,6 +11,38 @@ export type ProgressRow = {
   updated_at: Date;
 };
 
+/** Progress at or past this point counts as finished (same mark as the app's). */
+export const FINISHED_AT = 0.98;
+/** A longer pause between two saved positions is a break, not reading time. */
+const MAX_GAP_SECONDS = 600;
+
+/**
+ * Adds a moved position to the reading history (the stats page): the time since the previous
+ * position, when it was a short gap, and whether the book was just finished. Opening a book
+ * without turning a page records nothing.
+ */
+async function recordActivity(
+  userId: string,
+  bookId: string,
+  prev: { locator: string; percentage: number; updated_at: Date } | null,
+  locator: string,
+  percentage: number,
+  at: Date,
+) {
+  if (prev?.locator === locator) return;
+  const gap = prev ? (at.getTime() - prev.updated_at.getTime()) / 1000 : 0;
+  const seconds = gap > 0 && gap <= MAX_GAP_SECONDS ? Math.round(gap) : 0;
+  const finished = (prev?.percentage ?? 0) < FINISHED_AT && percentage >= FINISHED_AT;
+  await query(
+    `INSERT INTO reading_activity (user_id, book_id, hour, seconds, finished)
+     VALUES ($1, $2, date_trunc('hour', $3::timestamptz), $4, $5)
+     ON CONFLICT (user_id, book_id, hour) DO UPDATE SET
+       seconds = reading_activity.seconds + EXCLUDED.seconds,
+       finished = reading_activity.finished OR EXCLUDED.finished`,
+    [userId, bookId, at, seconds, finished],
+  );
+}
+
 export function progressDto(bookId: string, r: ProgressRow) {
   return {
     bookId,
@@ -34,6 +66,10 @@ export async function saveReadingProgress(
   p: { locator: string; percentage: number; label: string | null; deviceId: string; deviceName: string | null; at: Date },
 ) {
   const ts = new Date(Math.min(p.at.getTime(), Date.now())); // never in the future (bad device clocks)
+  const before = await query<{ locator: string; percentage: number; updated_at: Date }>(
+    "SELECT locator, percentage, updated_at FROM reading_progress WHERE user_id = $1 AND book_id = $2",
+    [userId, bookId],
+  );
   const { rows } = await query<ProgressRow>(
     `INSERT INTO reading_progress (user_id, book_id, locator, percentage, label, device_id, device_name, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -45,6 +81,7 @@ export async function saveReadingProgress(
     [userId, bookId, p.locator, p.percentage, p.label, p.deviceId, p.deviceName, ts],
   );
   if (rows[0]) {
+    await recordActivity(userId, bookId, before.rows[0] ?? null, p.locator, p.percentage, ts);
     publish(userId, "progress.updated", progressDto(bookId, rows[0]));
     // Fellow book-club members see each other's progress live.
     await notifyClubProgress(userId, bookId).catch(() => {});
