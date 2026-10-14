@@ -31,42 +31,37 @@ function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
 
 /** "/" — welcome, continue reading and the whole library. */
 export function DashboardPage({ userName }: { userName: string }) {
-  const { books, query } = useLibrary();
+  const { books } = useLibrary();
   const current = useMemo(() => (books ?? []).filter(isInProgress).sort(byLastRead).slice(0, 2), [books]);
-  const searching = query.trim() !== "";
 
   return (
     <div className="space-y-12">
-      {!searching && (
-        <>
-          <WelcomePanel name={userName} />
+      <WelcomePanel name={userName} />
 
-          <section aria-labelledby="continue-heading" className="@container">
-            <h2 id="continue-heading" className="mb-5 font-display text-2xl font-semibold">
-              Continue Reading
-            </h2>
-            {books === null ? (
-              <div className="grid gap-5 @3xl:grid-cols-2">
-                {[0, 1].map((i) => (
-                  <div key={i} className="surface h-48 animate-pulse" />
-                ))}
-              </div>
-            ) : current.length === 0 ? (
-              <EmptyState icon={<BookOpen />} title="Nothing in progress">
-                {books.length ? "Open any book below and your place will be saved here, on every device." : "Upload a book to start reading."}
-              </EmptyState>
-            ) : (
-              <div className="grid gap-5 @3xl:grid-cols-2">
-                {current.map((b) => (
-                  <FeaturedBookCard key={b.id} book={b} />
-                ))}
-              </div>
-            )}
-          </section>
-        </>
-      )}
+      <section aria-labelledby="continue-heading" className="@container">
+        <h2 id="continue-heading" className="mb-5 font-display text-2xl font-semibold">
+          Continue Reading
+        </h2>
+        {books === null ? (
+          <div className="grid gap-5 @3xl:grid-cols-2">
+            {[0, 1].map((i) => (
+              <div key={i} className="surface h-48 animate-pulse" />
+            ))}
+          </div>
+        ) : current.length === 0 ? (
+          <EmptyState icon={<BookOpen />} title="Nothing in progress">
+            {books.length ? "Open any book below and your place will be saved here, on every device." : "Upload a book to start reading."}
+          </EmptyState>
+        ) : (
+          <div className="grid gap-5 @3xl:grid-cols-2">
+            {current.map((b) => (
+              <FeaturedBookCard key={b.id} book={b} />
+            ))}
+          </div>
+        )}
+      </section>
 
-      <BookBrowser books={books} title={searching ? "Search results" : "My Library"} empty={<UploadEmpty />} />
+      <BookBrowser books={books} title="My Library" empty={<UploadEmpty />} />
     </div>
   );
 }

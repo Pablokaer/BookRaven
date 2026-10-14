@@ -49,7 +49,7 @@ function PublisherInfo({ book }: { book: PublicBook }) {
   );
 }
 
-function PublicBookCard({
+export function PublicBookCard({
   book,
   onChanged,
   focused,

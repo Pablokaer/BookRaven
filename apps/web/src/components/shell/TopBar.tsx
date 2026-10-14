@@ -4,10 +4,8 @@ import { useLocation, useNavigate } from "react-router";
 import { signOut } from "../../lib/auth";
 import { timeAgo } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { Menu } from "../ui/Menu";
-
-/** Pages whose content the top-bar search filters; elsewhere searching jumps to the library. */
-const SEARCHABLE = /^\/($|public|reading|uploads|shared|favorites|discover|collections\/.+)/;
 
 export function initials(name: string) {
   const parts = name.replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
@@ -49,10 +47,25 @@ export function TopBar({
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  const wide = useMediaQuery("(min-width: 640px)");
+  const onSearchPage = location.pathname === "/search";
+
+  // The search always looks in the personal and the public library at once, on its own page.
   const onSearch = (q: string) => {
     setQuery(q);
-    if (q && !SEARCHABLE.test(location.pathname)) navigate("/");
+    if (q && !onSearchPage) navigate("/search");
+    // Cleared: back to where the search started.
+    else if (!q && onSearchPage) {
+      if (location.key === "default") navigate("/");
+      else navigate(-1);
+    }
   };
+
+  // Leaving the results (a link, the back button) ends the search, so no other page is filtered.
+  useEffect(() => {
+    if (!onSearchPage && query) setQuery("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-line/60 bg-app/80 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
@@ -67,7 +80,7 @@ export function TopBar({
         )}
 
         <label className="relative flex min-w-0 max-w-xl flex-1 items-center">
-          <span className="sr-only">Search books, authors and collections</span>
+          <span className="sr-only">Search your library and the Public Library</span>
           <Search className="pointer-events-none absolute left-3.5 h-4 w-4 text-muted" />
           <input
             ref={searchRef}
@@ -75,7 +88,7 @@ export function TopBar({
             value={query}
             onChange={(e) => onSearch(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && onSearch("")}
-            placeholder="Search books, authors, collections…"
+            placeholder={wide ? "Search your library and the Public Library…" : "Search all books"}
             className="h-11 w-full rounded-xl border border-line bg-card/80 pl-10 pr-10 text-sm text-fg outline-none transition placeholder:text-muted/70 focus:border-accent/60 focus:bg-card focus:ring-2 focus:ring-accent/15 [&::-webkit-search-cancel-button]:hidden"
           />
           {query ? (
