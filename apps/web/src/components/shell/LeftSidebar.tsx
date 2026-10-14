@@ -26,7 +26,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
   }, [books]);
 
   const nav: NavItem[] = [
-    { to: "/", label: "Library", icon: <Library />, end: true },
+    { to: "/", label: "Personal Library", icon: <Library />, end: true },
     { to: "/public", label: "Public Library", icon: <Globe /> },
     { to: "/discover", label: "Discover", icon: <Compass /> },
     { to: "/shared", label: "Shared", icon: <Share2 />, count: counts.sharedWithMe },
