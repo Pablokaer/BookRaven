@@ -49,6 +49,13 @@
     transform: translateY(8px);
   }
 }
+/* A light sweep crossing a placeholder, so loading blocks read as "loading" and not as
+   dead black rectangles against the dark theme. */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
 
 :root {
   color-scheme: dark;
@@ -97,6 +104,17 @@ body {
   }
   .surface {
     @apply rounded-2xl border border-line/80 bg-card/70 shadow-card;
+  }
+  /* Loading placeholder: a faintly lit base with a moving highlight sweep. Use in place of a
+     flat dark fill so a cold start looks intentionally busy rather than broken. */
+  .skeleton {
+    @apply relative overflow-hidden rounded bg-white/[0.07];
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.1), transparent);
+    animation: shimmer 1.4s ease-in-out infinite;
   }
   .eyebrow {
     @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted;

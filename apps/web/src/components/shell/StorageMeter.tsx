@@ -6,7 +6,7 @@ import { ProgressBar } from "../books/ProgressBar";
 /** Storage used by the account against its limit (administrators are unlimited). */
 export function StorageMeter() {
   const { me } = useLibrary();
-  if (!me) return <div className="h-9 animate-pulse rounded-lg bg-elevated/60" aria-busy="true" />;
+  if (!me) return <div className="skeleton h-9 rounded-lg" aria-busy="true" />;
 
   if (me.quotaBytes === null) {
     return (

@@ -46,7 +46,7 @@ export function DashboardPage({ userName }: { userName: string }) {
         {books === null ? (
           <div className="grid gap-5 @3xl:grid-cols-2">
             {[0, 1].map((i) => (
-              <div key={i} className="surface h-48 animate-pulse" />
+              <div key={i} className="skeleton h-48 rounded-2xl" />
             ))}
           </div>
         ) : current.length === 0 ? (
