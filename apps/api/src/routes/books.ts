@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
+import { aboutFile } from "../lib/bookAbout.js";
 import { broadcast, publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
 import { isFileBlocked } from "../lib/moderation.js";
@@ -23,6 +24,8 @@ import {
 } from "../lib/storage.js";
 
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
+/** Longest blurb kept (some EPUBs carry a whole chapter in their description). */
+export const MAX_DESCRIPTION = 4000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type BookRow = {
@@ -44,6 +47,7 @@ export type BookRow = {
   is_public: boolean;
   published_at: Date | null;
   language: string | null;
+  description: string | null;
   created_at: Date;
   p_locator: string | null;
   p_percentage: number | null;
@@ -80,6 +84,7 @@ export function toBookDto(r: BookRow) {
     /** Published in the public library. */
     isPublic: r.is_public,
     language: r.language,
+    description: r.description,
     createdAt: r.created_at.toISOString(),
     progress: r.p_locator
       ? {
@@ -215,8 +220,14 @@ export async function bookRoutes(app: FastifyInstance) {
     if (book) return toBookDto(book);
   });
 
+  /** For the book's page: other readers, its public-library entry and its source. */
+  app.get<{ Params: { id: string } }>("/api/books/:id/about", async (request, reply) => {
+    const book = await loadOwnedBook(request, reply);
+    if (book) return aboutFile(book.sha256, request.user.id);
+  });
+
   /**
-   * Multipart upload. Fields: title, author (optional, extracted client-side),
+   * Multipart upload. Fields: title, author, description (optional, extracted client-side),
    * cover (optional image), file (required book file).
    */
   app.post("/api/books", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
@@ -238,7 +249,7 @@ export async function bookRoutes(app: FastifyInstance) {
     try {
       for await (const part of request.parts()) {
         if (part.type === "field") {
-          if (typeof part.value === "string") fields[part.fieldname] = part.value.slice(0, 500);
+          if (typeof part.value === "string") fields[part.fieldname] = part.value.slice(0, part.fieldname === "description" ? MAX_DESCRIPTION : 500);
           continue;
         }
         if (part.fieldname === "file" && !book) {
@@ -288,8 +299,8 @@ export async function bookRoutes(app: FastifyInstance) {
         id = await withQuota(request.user, upload.size, async (client) => {
           await commitBookFile(upload);
           const { rows } = await client.query<{ id: string }>(
-            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5, folder_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5, folder_id, description)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
             [
               request.user.id,
               fields.title?.trim() || fallbackTitle,
@@ -302,6 +313,8 @@ export async function bookRoutes(app: FastifyInstance) {
               Boolean(coverOk),
               koreaderMd5,
               folderId,
+              // Multipart turns line breaks into CRLF.
+              fields.description?.replace(/\r\n?/g, "\n").trim() || null,
             ],
           );
           return rows[0]!.id;

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { isAdmin } from "../config.js";
 import { query } from "../db.js";
+import { aboutFile } from "../lib/bookAbout.js";
 import { copyBookToUser } from "../lib/copies.js";
 import { broadcast, publish } from "../lib/events.js";
 import { BlockedFileError } from "../lib/moderation.js";
@@ -37,6 +38,7 @@ const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id
   themes: [...new Set([...(r.themes ?? []), ...themesFor(r.tags ?? [])])],
   /** Downloads at the source (Gutenberg), a popularity signal; null for books people published. */
   popularity: r.download_count ?? null,
+  description: r.description,
   publishedBy: r.owner_name,
   publishedAt: (r.published_at ?? r.created_at).toISOString(),
   /** The viewer's own copy of this file, if they have one. */
@@ -87,6 +89,23 @@ export async function publicRoutes(app: FastifyInstance) {
       [request.user.id],
     );
     return rows.map((r) => toPublicDto(r, request.user));
+  });
+
+  /** One public book, for its page: also how many people have it and its catalog subjects. */
+  app.get<{ Params: { id: string } }>("/api/public/:id", async (request, reply) => {
+    if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
+    const { rows } = await query<PublicRow & { own_book_id: string | null }>(
+      `SELECT b.*, u.name AS owner_name, cb.source_url, cb.download_count,
+              (SELECT m.id FROM book m WHERE m.user_id = $2 AND m.sha256 = b.sha256) AS own_book_id
+       FROM book b JOIN "user" u ON u.id = b.user_id
+       LEFT JOIN catalog_book cb ON cb.book_id = b.id
+       WHERE b.id = $1 AND b.is_public`,
+      [request.params.id, request.user.id],
+    );
+    const r = rows[0];
+    if (!r) return reply.code(404).send({ error: "not_found" });
+    const about = await aboutFile(r.sha256, null); // everyone who has it, the viewer included
+    return { ...toPublicDto(r, request.user), readers: about.readers, subjects: about.subjects };
   });
 
   app.get<{ Params: { id: string } }>("/api/public/:id/cover", async (request, reply) => {

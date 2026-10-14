@@ -1,10 +1,14 @@
-import { apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book } from "./api";
+import { apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
 import { comicFormatOfName, openComicArchive } from "./comics";
 
 export const SUPPORTED_EXTENSIONS = [".pdf", ".epub", ".mobi", ".azw3", ".azw", ".fb2", ".cbz", ".cbr", ".cb7", ".cbt"];
 
 export function listBooks() {
   return apiJson<Book[]>("/api/books");
+}
+
+export function getBookAbout(id: string) {
+  return apiJson<BookAbout>(`/api/books/${id}/about`);
 }
 
 export function getBook(id: string) {
@@ -58,7 +62,15 @@ export async function forgetCachedBook(id: string) {
 
 // ---------- Metadata extraction (client-side, before upload) ----------
 
-type Meta = { title?: string; author?: string; cover?: Blob };
+type Meta = { title?: string; author?: string; description?: string; cover?: Blob };
+
+/** EPUB descriptions are often HTML: keep the text, one blank line between paragraphs. */
+function plainText(html: string | undefined) {
+  if (!html) return undefined;
+  const doc = new DOMParser().parseFromString(html.replace(/<\/(p|div|br)\s*>|<br\s*\/?>/gi, "\n\n$&"), "text/html");
+  const text = (doc.body.textContent ?? "").replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*/g, "\n\n").trim();
+  return text || undefined;
+}
 
 function langString(v: unknown): string | undefined {
   if (!v) return undefined;
@@ -94,6 +106,7 @@ async function pdfMeta(file: File): Promise<Meta> {
     return {
       title: typeof info?.Title === "string" ? info.Title : undefined,
       author: typeof info?.Author === "string" ? info.Author : undefined,
+      description: typeof info?.Subject === "string" && info.Subject.trim().length > 20 ? info.Subject.trim() : undefined,
       cover: cover ?? undefined,
     };
   } finally {
@@ -109,6 +122,7 @@ async function ebookMeta(file: File): Promise<Meta> {
     return {
       title: langString(book.metadata?.title),
       author: authorString(book.metadata?.author),
+      description: plainText(langString(book.metadata?.description)),
       cover: cover ?? undefined,
     };
   } finally {
@@ -171,6 +185,7 @@ export async function uploadBook(file: File, opts: UploadOptions = {}): Promise<
   const form = new FormData();
   if (meta.title) form.append("title", meta.title.trim().slice(0, 500));
   if (meta.author) form.append("author", meta.author.trim().slice(0, 500));
+  if (meta.description) form.append("description", meta.description.slice(0, 4000));
   if (opts.folderId) form.append("folderId", opts.folderId);
   if (meta.cover && meta.cover.size < 5 * 1024 * 1024) form.append("cover", meta.cover, "cover");
   form.append("file", file, file.name); // file last: server reads fields first

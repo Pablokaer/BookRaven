@@ -1,4 +1,4 @@
-import { BookOpen, CloudDownload, Download, FolderInput, Globe, Heart, MoreHorizontal, Share2, Trash2 } from "lucide-react";
+import { BookOpen, CloudDownload, Download, FolderInput, Globe, Heart, Info, MoreHorizontal, Share2, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { Book } from "../../lib/api";
 import { downloadBook } from "../../lib/books";
@@ -68,6 +68,7 @@ export function BookMenu({ book, className }: { book: Book; className?: string }
       trigger={<MoreHorizontal className="h-4 w-4" />}
       items={[
         { label: book.progress ? "Continue reading" : "Start reading", icon: <BookOpen />, onSelect: () => navigate(`/read/${book.id}`) },
+        { label: "Details", icon: <Info />, onSelect: () => navigate(`/books/${book.id}`) },
         { label: "Collection & tags…", icon: <FolderInput />, onSelect: () => openOrganize(book) },
         { label: "Share…", icon: <Share2 />, onSelect: () => openShare(book) },
         book.isPublic

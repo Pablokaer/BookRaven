@@ -12,10 +12,11 @@ export function BookCard({ book }: { book: Book }) {
   const p = book.progress;
   return (
     <article className="group flex animate-rise flex-col">
+      {/* The cover opens the book's page; "Read" below opens the reader. */}
       <Link
-        to={`/read/${book.id}`}
+        to={`/books/${book.id}`}
         className="relative block rounded-lg transition duration-300 group-hover:-translate-y-1 focus-visible:-translate-y-1"
-        aria-label={`Read ${book.title}`}
+        aria-label={`About ${book.title}`}
       >
         <BookCover
           book={book}
@@ -43,7 +44,9 @@ export function BookCard({ book }: { book: Book }) {
 
       <div className="mt-3 flex min-h-0 flex-1 flex-col">
         <h3 className="line-clamp-2 text-sm font-medium leading-snug text-fg" title={book.title}>
-          {book.title}
+          <Link to={`/books/${book.id}`} className="hover:text-accent">
+            {book.title}
+          </Link>
         </h3>
         <p className="mt-0.5 truncate text-xs text-muted">{book.author ?? (book.sharedBy ? `Shared by ${book.sharedBy}` : "Unknown author")}</p>
         {/* Progress and buttons sit at the bottom, so they line up across a row of cards
@@ -72,13 +75,15 @@ export function BookRow({ book }: { book: Book }) {
   const p = book.progress;
   return (
     <article className="group flex animate-rise items-center gap-4 rounded-xl border border-transparent px-3 py-2.5 transition hover:border-line hover:bg-card/70">
-      <Link to={`/read/${book.id}`} aria-label={`Read ${book.title}`} className="shrink-0">
+      <Link to={`/books/${book.id}`} aria-label={`About ${book.title}`} className="shrink-0">
         <BookCover book={book} size="sm" className="w-11" />
       </Link>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h3 className="truncate text-sm font-medium" title={book.title}>
-            {book.title}
+            <Link to={`/books/${book.id}`} className="hover:text-accent">
+              {book.title}
+            </Link>
           </h3>
           <FormatBadge format={book.format} className="shrink-0 bg-white/8" />
         </div>

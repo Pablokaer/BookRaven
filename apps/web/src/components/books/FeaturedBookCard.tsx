@@ -19,7 +19,9 @@ export function FeaturedBookCard({ book }: { book: Book }) {
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <h3 className="line-clamp-2 font-display text-lg font-semibold leading-snug" title={book.title}>
-              {book.title}
+              <Link to={`/books/${book.id}`} className="hover:text-accent">
+                {book.title}
+              </Link>
             </h3>
             <p className="mt-1 truncate text-sm text-muted">{book.author ?? "Unknown author"}</p>
           </div>

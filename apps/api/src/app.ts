@@ -41,7 +41,8 @@ export async function buildServer() {
   });
   await app.register(rateLimit, { max: 600, timeWindow: "1 minute" });
   await app.register(multipart, {
-    limits: { fileSize: config.maxUploadBytes, files: 2, fields: 10, fieldSize: 2000 },
+    // fieldSize fits a book description (4000 characters, up to 4 bytes each in UTF-8).
+    limits: { fileSize: config.maxUploadBytes, files: 2, fields: 10, fieldSize: 16 * 1024 },
   });
 
   app.get("/api/health", async () => {

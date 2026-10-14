@@ -18,6 +18,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { PublicLibraryPage } from "./pages/PublicLibraryPage";
 import { SearchPage } from "./pages/SearchPage";
+import { BookPage, PublicBookPage } from "./pages/BookPages";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { SharedCollectionPage, SharePage } from "./pages/SharePage";
 
@@ -100,6 +101,8 @@ export function App() {
               <Route index element={<DashboardPage userName={user.name || user.email} />} />
               <Route path="public" element={<PublicLibraryPage />} />
               <Route path="search" element={<SearchPage />} />
+              <Route path="books/:id" element={<BookPage />} />
+              <Route path="public/books/:id" element={<PublicBookPage />} />
               <Route path="discover" element={<DiscoverPage />} />
               <Route path="shared" element={<SharedPage />} />
               <Route path="reading" element={<ReadingNowPage />} />

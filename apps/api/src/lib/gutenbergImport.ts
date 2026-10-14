@@ -14,6 +14,7 @@ import {
   displayName,
   fragmentOf,
   isPublicDomainEverywhere,
+  summaryOf,
   tagsFrom,
   workKey,
   type CatalogEntry,
@@ -139,9 +140,9 @@ export async function importPublicDomain(opts: ImportOptions) {
         await commitBookFile(epub);
         const { rows } = await query<{ id: string }>(
           `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
-                             koreader_md5, is_public, published_at, language, tags, themes)
-           VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, true, now(), $9, $10, $11) RETURNING id`,
-          [ownerId, title, author, filename, MIME_TYPES.epub, epub.size, epub.sha256, koreaderMd5, lang, tagsFrom(b), themes],
+                             koreader_md5, is_public, published_at, language, tags, themes, description)
+           VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, true, now(), $9, $10, $11, $12) RETURNING id`,
+          [ownerId, title, author, filename, MIME_TYPES.epub, epub.size, epub.sha256, koreaderMd5, lang, tagsFrom(b), themes, summaryOf(b)],
         );
         bookId = rows[0]!.id;
         const cover = await download([...MIRRORS.map((m) => `${m}/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`), b.formats["image/jpeg"]].filter(Boolean) as string[], 16);
@@ -178,7 +179,7 @@ export async function importPublicDomain(opts: ImportOptions) {
     }
   }
 
-  /** Refreshes popularity, shelves and themes of a book imported before. */
+  /** Refreshes popularity, shelves, themes and (when missing) the blurb of a book imported before. */
   async function refresh(b: GutendexBook, themes: Theme[]) {
     const { rows } = await query<{ book_id: string | null }>(
       `UPDATE catalog_book SET download_count = $2, bookshelves = $3, themes = (SELECT array(SELECT DISTINCT unnest(themes || $4::text[])))
@@ -187,8 +188,9 @@ export async function importPublicDomain(opts: ImportOptions) {
     );
     if (rows[0]?.book_id) {
       await query(
-        `UPDATE book SET themes = (SELECT array(SELECT DISTINCT unnest(themes || $2::text[]))), tags = $3 WHERE id = $1`,
-        [rows[0].book_id, themes, tagsFrom(b)],
+        `UPDATE book SET themes = (SELECT array(SELECT DISTINCT unnest(themes || $2::text[]))), tags = $3,
+                         description = COALESCE(description, $4) WHERE id = $1`,
+        [rows[0].book_id, themes, tagsFrom(b), summaryOf(b)],
       );
     }
   }

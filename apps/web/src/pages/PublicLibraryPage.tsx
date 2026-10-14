@@ -7,7 +7,6 @@ import { ReportDialog } from "../components/ReportDialog";
 import { RequestsTab } from "../components/RequestsTab";
 import { initials } from "../components/shell/TopBar";
 import { Menu } from "../components/ui/Menu";
-import { Modal } from "../components/ui/Modal";
 import { ApiError, type PublicBook } from "../lib/api";
 import { isComicFormat } from "../lib/comics";
 import { matchesText } from "../lib/search";
@@ -23,7 +22,7 @@ const SHELF_SIZE = 18;
 const PAGE_SIZE = 60;
 
 /** "pt" → "Português", in the language itself. */
-function languageName(code: string) {
+export function languageName(code: string) {
   try {
     const name = new Intl.DisplayNames([code], { type: "language" }).of(code) ?? code;
     return name.charAt(0).toUpperCase() + name.slice(1);
@@ -32,8 +31,8 @@ function languageName(code: string) {
   }
 }
 
-/** Who put the book in the public library, shown in full when a book is opened. */
-function PublisherInfo({ book }: { book: PublicBook }) {
+/** Who put the book in the public library, shown in full on the book's page. */
+export function PublisherInfo({ book }: { book: PublicBook }) {
   const name = book.isMine ? "You" : book.publishedBy;
   return (
     <div className="flex items-center gap-3 rounded-xl border border-line bg-elevated/40 p-3">
@@ -49,17 +48,8 @@ function PublisherInfo({ book }: { book: PublicBook }) {
   );
 }
 
-export function PublicBookCard({
-  book,
-  onChanged,
-  focused,
-  showPublisher = true,
-}: {
-  book: PublicBook;
-  onChanged: () => void;
-  focused: boolean;
-  showPublisher?: boolean;
-}) {
+/** Add, download, report and remove for a public book; shared by its card and its page. */
+export function usePublicBookActions(book: PublicBook, onChanged: () => void) {
   const { replaceBook, refreshMe, me } = useLibrary();
   const navigate = useNavigate();
   const [busy, setBusy] = useState<"add" | "download" | null>(null);
@@ -96,12 +86,35 @@ export function PublicBookCard({
     }
   };
 
+  /** Resolves to true once the book is out of the public library. */
   const remove = async () => {
     const who = book.isMine ? "your" : `${book.publishedBy ?? "this user"}’s`;
-    if (!window.confirm(`Remove ${who} “${book.title}” from the public library? Copies people already added stay in their libraries.`)) return;
-    await removePublicBook(book.id).catch(() => setError("Could not remove it, try again."));
+    if (!window.confirm(`Remove ${who} “${book.title}” from the public library? Copies people already added stay in their libraries.`)) return false;
+    try {
+      await removePublicBook(book.id);
+    } catch {
+      setError("Could not remove it, try again.");
+      return false;
+    }
     onChanged();
+    return true;
   };
+
+  return { busy, error, add, download, remove, reporting, setReporting };
+}
+
+export function PublicBookCard({
+  book,
+  onChanged,
+  focused,
+  showPublisher = true,
+}: {
+  book: PublicBook;
+  onChanged: () => void;
+  focused: boolean;
+  showPublisher?: boolean;
+}) {
+  const { busy, error, add, download, remove, reporting, setReporting } = usePublicBookActions(book, onChanged);
 
   const cover = <BookCover book={book} badge coverPath={`/api/public/${book.id}/cover`} className="w-full transition duration-300 group-hover:-translate-y-1" />;
 
@@ -110,13 +123,9 @@ export function PublicBookCard({
       id={`pub-${book.id}`}
       className={`group flex animate-rise flex-col rounded-xl transition ${focused ? "ring-2 ring-accent ring-offset-8 ring-offset-app" : ""}`}
     >
-      {book.ownBookId ? (
-        <Link to={`/read/${book.ownBookId}`} aria-label={`Read ${book.title}`} className="rounded-lg">
-          {cover}
-        </Link>
-      ) : (
-        cover
-      )}
+      <Link to={`/public/books/${book.id}`} aria-label={`About ${book.title}`} className="rounded-lg">
+        {cover}
+      </Link>
       <div className="mt-3 flex flex-1 flex-col">
         <h3 className="line-clamp-2 text-sm font-medium leading-snug" title={book.title}>
           {book.title}
@@ -173,15 +182,14 @@ export function PublicBookCard({
   );
 }
 
-/** A horizontal row of covers; a click opens the book's card with all its actions. */
-function Shelf({
+/** A horizontal row of covers; a click opens the book's page. */
+export function Shelf({
   title,
   icon,
   blurb,
   books,
   total,
   onSeeAll,
-  onOpen,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -189,7 +197,6 @@ function Shelf({
   books: PublicBook[];
   total: number;
   onSeeAll?: () => void;
-  onOpen: (b: PublicBook) => void;
 }) {
   return (
     <section className="animate-rise" aria-label={title}>
@@ -210,11 +217,11 @@ function Shelf({
       <ul className="-mx-1 flex snap-x gap-4 overflow-x-auto px-1 pb-3 [scrollbar-width:thin]">
         {books.map((b) => (
           <li key={b.id} className="w-28 shrink-0 snap-start sm:w-32">
-            <button className="group block w-full text-left" onClick={() => onOpen(b)} title={b.title}>
+            <Link to={`/public/books/${b.id}`} className="group block w-full text-left" title={b.title}>
               <BookCover book={b} coverPath={`/api/public/${b.id}/cover`} className="w-full transition duration-300 group-hover:-translate-y-1" />
               <span className="mt-2 line-clamp-2 block text-xs font-medium leading-snug">{b.title}</span>
               <span className="mt-0.5 block truncate text-xs text-muted">{b.author ?? "Unknown author"}</span>
-            </button>
+            </Link>
           </li>
         ))}
       </ul>
@@ -233,7 +240,6 @@ export function PublicLibraryPage() {
   const [language, setLanguage] = useState<string>("all");
   const [sort, setSort] = useState<Sort>("popular");
   const [shown, setShown] = useState(PAGE_SIZE);
-  const [opened, setOpened] = useState<PublicBook | null>(null);
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "requests" ? "requests" : "books";
   const theme = params.get("theme") ?? "all";
@@ -421,7 +427,6 @@ export function PublicLibraryPage() {
                     books={s.books.slice(0, SHELF_SIZE)}
                     total={s.books.length}
                     onSeeAll={s.id === "popular" || s.id === "readers" ? () => setParams({ all: "1" }) : () => setParams({ theme: s.id })}
-                    onOpen={setOpened}
                   />
                 ))}
               </div>
@@ -445,23 +450,6 @@ export function PublicLibraryPage() {
               </>
             )}
           </section>
-
-          {opened && (
-            <Modal title={opened.title} onClose={() => setOpened(null)}>
-              <div className="mx-auto w-48">
-                <PublicBookCard
-                  book={books?.find((b) => b.id === opened.id) ?? opened}
-                  onChanged={() => {
-                    setOpened(null);
-                    load();
-                  }}
-                  focused={false}
-                  showPublisher={false}
-                />
-              </div>
-              <PublisherInfo book={books?.find((b) => b.id === opened.id) ?? opened} />
-            </Modal>
-          )}
         </>
       )}
     </>

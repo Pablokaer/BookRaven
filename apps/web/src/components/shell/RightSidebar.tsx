@@ -95,7 +95,7 @@ function RecentUploads() {
         <ul className="space-y-3">
           {recent.map((b) => (
             <li key={b.id}>
-              <Link to={`/read/${b.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
+              <Link to={`/books/${b.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
                 <BookCover book={b} size="xs" className="w-9" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{b.title}</div>
@@ -133,7 +133,7 @@ function SharedWithYou() {
         <ul className="space-y-3">
           {shared.map((b) => (
             <li key={b.id}>
-              <Link to={`/read/${b.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
+              <Link to={`/books/${b.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
                 <BookCover book={b} size="xs" className="w-9" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">{b.title}</div>
@@ -166,7 +166,7 @@ function DiscoverBooks() {
           <ul className="grid grid-cols-4 gap-2.5">
             {unread.map((b) => (
               <li key={b.id}>
-                <Link to={`/read/${b.id}`} title={b.title} className="block transition hover:-translate-y-0.5">
+                <Link to={`/books/${b.id}`} title={b.title} className="block transition hover:-translate-y-0.5">
                   <BookCover book={b} size="xs" className="w-full" />
                 </Link>
               </li>
