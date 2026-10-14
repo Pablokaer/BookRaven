@@ -7,6 +7,7 @@ import { copyBookToUser } from "../lib/copies.js";
 import { broadcast, publish } from "../lib/events.js";
 import { BlockedFileError } from "../lib/moderation.js";
 import { QuotaExceededError } from "../lib/quota.js";
+import { SOURCE_NAMES } from "../lib/otherSources.js";
 import { themesFor } from "../lib/themes.js";
 import { bookKey } from "../lib/storage.js";
 import { adminUserIds } from "./admin.js";
@@ -19,6 +20,8 @@ type PublicRow = BookRow & {
   owner_name: string | null;
   language?: string | null;
   source_url?: string | null;
+  /** Catalog the book was imported from (gutenberg, standardebooks, wikisource). */
+  source?: string | null;
   themes?: string[];
   download_count?: number | null;
 };
@@ -33,7 +36,7 @@ const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id
   hasCover: r.has_cover,
   language: r.language ?? null,
   /** Where an imported public-domain book comes from. */
-  source: r.source_url ? { name: "Project Gutenberg", url: r.source_url } : null,
+  source: r.source_url ? { name: SOURCE_NAMES[r.source ?? ""] ?? "Public domain", url: r.source_url } : null,
   /** Library sections: from the catalog for imported books, from tags for the others. */
   themes: [...new Set([...(r.themes ?? []), ...themesFor(r.tags ?? [])])],
   /** Downloads at the source (Gutenberg), a popularity signal; null for books people published. */
@@ -77,7 +80,7 @@ export async function publicRoutes(app: FastifyInstance) {
     // The same file published by several people is listed once (earliest publication).
     const { rows } = await query<PublicRow & { own_book_id: string | null }>(
       `SELECT * FROM (
-         SELECT DISTINCT ON (b.sha256) b.*, u.name AS owner_name, cb.source_url, cb.download_count,
+         SELECT DISTINCT ON (b.sha256) b.*, u.name AS owner_name, cb.source, cb.source_url, cb.download_count,
                 (SELECT m.id FROM book m WHERE m.user_id = $1 AND m.sha256 = b.sha256) AS own_book_id
          FROM book b JOIN "user" u ON u.id = b.user_id
          LEFT JOIN catalog_book cb ON cb.book_id = b.id
@@ -95,7 +98,7 @@ export async function publicRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/api/public/:id", async (request, reply) => {
     if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
     const { rows } = await query<PublicRow & { own_book_id: string | null }>(
-      `SELECT b.*, u.name AS owner_name, cb.source_url, cb.download_count,
+      `SELECT b.*, u.name AS owner_name, cb.source, cb.source_url, cb.download_count,
               (SELECT m.id FROM book m WHERE m.user_id = $2 AND m.sha256 = b.sha256) AS own_book_id
        FROM book b JOIN "user" u ON u.id = b.user_id
        LEFT JOIN catalog_book cb ON cb.book_id = b.id

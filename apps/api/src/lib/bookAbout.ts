@@ -1,5 +1,6 @@
 import { query } from "../db.js";
 import { LIBRARY_EMAIL } from "./gutenbergImport.js";
+import { SOURCE_NAMES } from "./otherSources.js";
 
 /**
  * What the server knows about a file beyond one copy of it, for the book pages: how many
@@ -15,8 +16,8 @@ export async function aboutFile(sha256: string, excludeUserId: string | null) {
       [sha256, excludeUserId, LIBRARY_EMAIL],
     ),
     query<{ id: string }>("SELECT id FROM book WHERE sha256 = $1 AND is_public ORDER BY published_at LIMIT 1", [sha256]),
-    query<{ source_url: string; subjects: string[]; themes: string[] }>(
-      `SELECT cb.source_url, cb.subjects, cb.themes FROM catalog_book cb JOIN book b ON b.id = cb.book_id
+    query<{ source: string; source_url: string; subjects: string[]; themes: string[] }>(
+      `SELECT cb.source, cb.source_url, cb.subjects, cb.themes FROM catalog_book cb JOIN book b ON b.id = cb.book_id
        WHERE b.sha256 = $1 LIMIT 1`,
       [sha256],
     ),
@@ -27,7 +28,7 @@ export async function aboutFile(sha256: string, excludeUserId: string | null) {
     readers: Number(readers.rows[0]!.n),
     /** The public-library entry for this file, if it was published. */
     publicBookId: pub.rows[0]?.id ?? null,
-    source: c ? { name: "Project Gutenberg", url: c.source_url } : null,
+    source: c ? { name: SOURCE_NAMES[c.source] ?? "Public domain", url: c.source_url } : null,
     subjects: c?.subjects ?? [],
   };
 }

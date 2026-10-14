@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, Download, ExternalLink, Flag, Flame, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Trash2, User, Users } from "lucide-react";
+import { ArrowRight, BookOpen, Download, ExternalLink, Flag, Flame, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Sparkles, Trash2, User, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { EmptyState, BookGridSkeleton } from "../components/books/BookBrowser";
@@ -9,6 +9,7 @@ import { initials } from "../components/shell/TopBar";
 import { Menu } from "../components/ui/Menu";
 import { ApiError, type PublicBook } from "../lib/api";
 import { isComicFormat } from "../lib/comics";
+import { recommend } from "../lib/recommend";
 import { matchesText } from "../lib/search";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
@@ -233,7 +234,7 @@ const byPopularity = (a: PublicBook, b: PublicBook) => (b.popularity ?? -1) - (a
 
 /** "/public" — books shared with every account on this server, by theme. */
 export function PublicLibraryPage() {
-  const { query, publicVersion, me } = useLibrary();
+  const { query, publicVersion, me, books: library } = useLibrary();
   const [books, setBooks] = useState<PublicBook[] | null>(null);
   const [error, setError] = useState(false);
   const [format, setFormat] = useState<string>("all");
@@ -306,7 +307,13 @@ export function PublicLibraryPage() {
     if (!pool) return [];
     const popular = [...pool].filter((b) => b.popularity !== null).sort(byPopularity);
     const readers = pool.filter((b) => b.popularity === null);
+    // Suggestions from the reader's own library come first (see lib/recommend.ts).
+    const rec = recommend(library ?? [], pool);
     return [
+      ...(rec.forYou.length
+        ? [{ id: "for-you", title: "Recommended for you", blurb: "From the authors and sections of the books you read and like", icon: <Sparkles />, books: rec.forYou }]
+        : []),
+      ...rec.because.map((r) => ({ id: `because-${r.seed.id}`, title: `Because you read ${r.seed.title}`, icon: <BookOpen />, books: r.books })),
       ...(popular.length ? [{ id: "popular", title: "Most popular", icon: <Flame />, books: popular }] : []),
       ...THEME_ORDER.filter((t) => themeCounts.get(t)).map((t) => {
         const info = THEME_INFO[t]!;
@@ -315,7 +322,7 @@ export function PublicLibraryPage() {
       }),
       ...(readers.length ? [{ id: "readers", title: "Shared by readers", icon: <Users />, books: readers }] : []),
     ];
-  }, [pool, themeCounts]);
+  }, [pool, themeCounts, library]);
 
   return (
     <>
@@ -426,7 +433,14 @@ export function PublicLibraryPage() {
                     blurb={"blurb" in s ? s.blurb : undefined}
                     books={s.books.slice(0, SHELF_SIZE)}
                     total={s.books.length}
-                    onSeeAll={s.id === "popular" || s.id === "readers" ? () => setParams({ all: "1" }) : () => setParams({ theme: s.id })}
+                    onSeeAll={
+                      // Suggestion rows show everything they have; there is no page to see more.
+                      s.id === "for-you" || s.id.startsWith("because-")
+                        ? undefined
+                        : s.id === "popular" || s.id === "readers"
+                          ? () => setParams({ all: "1" })
+                          : () => setParams({ theme: s.id })
+                    }
                   />
                 ))}
               </div>
