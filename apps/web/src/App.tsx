@@ -6,6 +6,7 @@ import { startAppUpdates } from "./lib/appUpdate";
 import { authClient } from "./lib/auth";
 import { startEvents, stopEvents } from "./lib/events";
 import { installProgressFlushers } from "./lib/progress";
+import { AppLoading } from "./components/AppLoading";
 import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
@@ -75,7 +76,7 @@ export function App() {
   // login page with it would unmount the form and lose what was typed.
   if (!isPending) sessionChecked.current = true;
   if (isPending && !sessionChecked.current) {
-    return <div className="flex h-dvh items-center justify-center text-muted">Loading…</div>;
+    return <AppLoading />;
   }
 
   if (!signedIn) {
@@ -94,7 +95,7 @@ export function App() {
             <Route
               path="/read/:id"
               element={
-                <Suspense fallback={<div className="flex h-dvh items-center justify-center text-muted">Loading…</div>}>
+                <Suspense fallback={<AppLoading />}>
                   <ReaderPage />
                 </Suspense>
               }

@@ -202,7 +202,7 @@ The Google button only shows up when both values are set.
 
 ## Android app
 
-The Android app is the same React app wrapped with Capacitor: the interface ships inside the APK and talks to your server over HTTPS (bearer token in Capacitor Preferences; the API already allows the Capacitor origins `https://localhost` and `capacitor://localhost` for CORS). The app id is `app.readsync`.
+The Android app is the same React app wrapped with Capacitor: the interface ships inside the APK and talks to your server over HTTPS (bearer token in Capacitor Preferences; the API already allows the Capacitor origins `https://localhost` and `capacitor://localhost` for CORS). The app id is `app.readsync`. On launch it shows the raven logo on the navy icon background: the native splash (`res/drawable/splash.xml`, and the launcher icon on Android 12+), then the same logo while the web app checks the session.
 
 ### Distribution and updates (no Play Store)
 
