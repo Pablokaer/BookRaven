@@ -1,5 +1,5 @@
 import { CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock, CloudOff, Loader2, UploadCloud, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import { fileSize } from "../../lib/format";
 import { isActiveUpload, useLibrary, type UploadItem } from "../../lib/libraryStore";
@@ -136,6 +136,19 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
   const [layout, setLayout] = useState(loadLayout);
   const [mobileNav, setMobileNav] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const dragTimer = useRef<number | undefined>(undefined);
+  const stopDragging = () => {
+    window.clearTimeout(dragTimer.current);
+    setDragging(false);
+  };
+  // While files are dragged over the page the browser keeps firing dragover (several times a
+  // second, even without moving). If they stop, the drag left or was cancelled: hide the overlay.
+  const keepDragging = () => {
+    setDragging(true);
+    window.clearTimeout(dragTimer.current);
+    dragTimer.current = window.setTimeout(() => setDragging(false), 1000);
+  };
+  useEffect(() => () => window.clearTimeout(dragTimer.current), []);
   const location = useLocation();
 
   const online = useOnline();
@@ -168,11 +181,12 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
-        setDragging(true);
+        keepDragging();
       }}
-      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+      // No element being entered: the drag left the window or was cancelled (Esc).
+      onDragLeave={(e) => !e.relatedTarget && stopDragging()}
       onDrop={(e) => {
-        setDragging(false);
+        stopDragging();
         if (e.isDefaultPrevented()) return; // already handled by a drop target inside the page (a collection card)
         e.preventDefault();
         if (e.dataTransfer.files.length) lib.upload(e.dataTransfer.files, dropFolder?.id ?? null);
