@@ -180,11 +180,20 @@ export function BookBrowser({
 
       {books && books.length > 0 && (
         <div className="mb-6 flex flex-wrap items-center gap-2">
-          {chips.map((c) => (
-            <button key={c.id} className={`pill ${filter === c.id ? "pill-on" : ""}`} aria-pressed={filter === c.id} onClick={() => setFilter(c.id)}>
-              {c.label}
-            </button>
-          ))}
+          {/* On phones the filters scroll sideways in one row instead of wrapping onto two.
+              The tag menu stays outside: a scrolling box would clip its dropdown. */}
+          <div className="-mx-4 flex max-w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:max-w-none sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
+            {chips.map((c) => (
+              <button
+                key={c.id}
+                className={`pill shrink-0 ${filter === c.id ? "pill-on" : ""}`}
+                aria-pressed={filter === c.id}
+                onClick={() => setFilter(c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
           {allTags.length > 0 && (
             <Menu
               label="Filter by tag"

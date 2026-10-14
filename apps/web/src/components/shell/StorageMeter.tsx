@@ -32,7 +32,7 @@ export function StorageMeter() {
         </span>
       </div>
       <ProgressBar value={ratio} className={full ? "[&>div]:from-rose-500 [&>div]:to-rose-300" : ""} />
-      {full && <p className="text-[11px] text-rose-300">Almost full. Delete books to free up space.</p>}
+      {full && <p className="text-xs text-rose-300">Almost full. Delete books to free up space.</p>}
     </div>
   );
 }

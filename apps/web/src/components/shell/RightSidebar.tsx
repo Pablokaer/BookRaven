@@ -101,7 +101,7 @@ function RecentUploads() {
                   <div className="truncate text-sm font-medium">{b.title}</div>
                   <div className="truncate text-xs text-muted">{b.author ?? b.format.toUpperCase()}</div>
                 </div>
-                <time className="shrink-0 text-[11px] text-muted" dateTime={b.createdAt}>
+                <time className="shrink-0 text-xs text-muted" dateTime={b.createdAt}>
                   {shortDate(b.createdAt)}
                 </time>
               </Link>

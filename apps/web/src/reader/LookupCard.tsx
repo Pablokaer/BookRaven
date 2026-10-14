@@ -79,7 +79,7 @@ export function LookupCard({
                 </ol>
               </div>
             ))}
-            <a href={state.def.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-accent">
+            <a href={state.def.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted hover:text-accent">
               {state.def.source} <ExternalLink className="h-3 w-3" />
             </a>
           </div>
@@ -93,7 +93,7 @@ export function LookupCard({
           ) : (
             <p className="text-sm leading-relaxed">{state.tr?.text}</p>
           )}
-          <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
+          <div className="flex items-center justify-between gap-2 text-xs text-muted">
             <span>{state.tr?.source}</span>
             <select
               className="rounded-lg border border-line bg-elevated px-2 py-1 text-xs text-fg"

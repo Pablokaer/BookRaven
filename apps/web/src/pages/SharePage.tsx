@@ -68,7 +68,8 @@ export function SharePage() {
             )}
           </>
         )}
-        <Link to="/" className="btn-ghost">
+        {/* The only way on when the link is broken, so it looks like a button there. */}
+        <Link to="/" className={error ? "btn-outline" : "btn-ghost"}>
           Back to library
         </Link>
       </div>

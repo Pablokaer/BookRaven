@@ -2,7 +2,7 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { Search, ZoomIn } from "lucide-react";
+import { Highlighter, Search, TableOfContents, ZoomIn } from "lucide-react";
 import { apiJson, type Book, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { getBook } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
@@ -383,12 +383,13 @@ export function ReaderPage() {
           )}
           {canAnnotate && (
             <button
-              className="btn-icon text-base"
+              className="btn-icon"
               aria-label="Highlights"
               title="Highlights"
               onClick={() => setPanel(panel === "highlights" ? null : "highlights")}
             >
-              🖍{highlights.length > 0 && <span className="ml-0.5 text-xs tabular-nums opacity-70">{highlights.length}</span>}
+              <Highlighter className="h-[18px] w-[18px]" />
+              {highlights.length > 0 && <span className="ml-0.5 text-xs tabular-nums opacity-70">{highlights.length}</span>}
             </button>
           )}
           {isComic && (
@@ -409,7 +410,7 @@ export function ReaderPage() {
               title={isComic ? "Pages" : "Contents"}
               onClick={() => setPanel(panel === "toc" ? null : "toc")}
             >
-              ☰
+              <TableOfContents className="h-[18px] w-[18px]" />
             </button>
           )}
           <button className="btn-icon" aria-label="Display settings" onClick={() => setPanel(panel === "settings" ? null : "settings")}>

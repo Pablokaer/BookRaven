@@ -128,12 +128,12 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium">{u.name || "—"}</span>
                   {u.isAdmin && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-[11px] text-accent">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-xs text-accent">
                       <ShieldCheck className="h-3 w-3" /> Admin
                     </span>
                   )}
                   {u.blocked && (
-                    <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] text-rose-300" title={u.blockedReason ?? undefined}>
+                    <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-xs text-rose-300" title={u.blockedReason ?? undefined}>
                       Blocked
                     </span>
                   )}
@@ -245,10 +245,10 @@ function ReportsTab({ onChanged }: { onChanged: () => void }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-medium">{r.title}</h3>
-                    <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-[11px] text-amber-300">{REASONS[r.reason]}</span>
-                    {r.status !== "open" && <span className="rounded-full bg-white/8 px-2 py-0.5 text-[11px] text-muted">{r.status}: {r.resolution}</span>}
-                    {r.blocked && <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] text-rose-300">File blocked</span>}
-                    {r.stillPublic && <span className="rounded-full bg-accent/12 px-2 py-0.5 text-[11px] text-accent">Still public</span>}
+                    <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300">{REASONS[r.reason]}</span>
+                    {r.status !== "open" && <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-muted">{r.status}: {r.resolution}</span>}
+                    {r.blocked && <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-xs text-rose-300">File blocked</span>}
+                    {r.stillPublic && <span className="rounded-full bg-accent/12 px-2 py-0.5 text-xs text-accent">Still public</span>}
                   </div>
                   {r.details && <p className="mt-2 whitespace-pre-wrap text-sm text-fg/90">“{r.details}”</p>}
                   <p className="mt-2 text-xs text-muted">
@@ -369,7 +369,7 @@ export function AdminPage() {
         {tabs.map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} className={`pill ${tab === t.id ? "pill-on" : ""}`} onClick={() => setTab(t.id)}>
             {t.icon} {t.label}
-            {t.count ? <span className="rounded-full bg-rose-500/80 px-1.5 text-[11px] text-white">{t.count}</span> : null}
+            {t.count ? <span className="rounded-full bg-rose-500/80 px-1.5 text-xs text-white">{t.count}</span> : null}
           </button>
         ))}
       </div>

@@ -149,7 +149,7 @@ export function RequestsTab() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium">{r.title}</h3>
                   {r.status === "fulfilled" && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-[11px] text-accent">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-xs text-accent">
                       <CheckCircle2 className="h-3 w-3" /> Added by {r.fulfilledBy ?? "someone"}
                     </span>
                   )}
