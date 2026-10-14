@@ -6,3 +6,7 @@ onlyBuiltDependencies:
 
 patchedDependencies:
   foliate-js: patches/foliate-js.patch
+
+# The API image installs only its own deps, which exclude foliate-js; its patch is web-only,
+# so a filtered install legitimately leaves it unused.
+allowUnusedPatches: true
