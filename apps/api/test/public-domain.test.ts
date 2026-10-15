@@ -1,5 +1,6 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { query } from "../src/db.js";
 import { importPublicDomain } from "../src/lib/gutenbergImport.js";
 import {
   catalogEntries,
@@ -233,10 +234,16 @@ describe("Gutenberg import", () => {
       return new Response("not found", { status: 404 });
     }) as typeof fetch;
 
-    // The step's quota counts English literature already in the library.
-    const before = (await api(await signUp(), "GET", "/api/public"))
-      .json()
-      .filter((b: { language: string; themes: string[] }) => b.language === "en" && b.themes.includes("literature")).length;
+    // The step's quota counts the English literature already imported from Gutenberg (counted the
+    // same way here: the public library also holds books from other sources, depending on which
+    // test files ran first).
+    const before = Number(
+      (
+        await query<{ n: string }>(
+          "SELECT count(*) AS n FROM catalog_book WHERE source = 'gutenberg' AND language = 'en' AND book_id IS NOT NULL AND 'literature' = ANY(themes)",
+        )
+      ).rows[0]!.n,
+    );
     const plan = [{ theme: "literature" as const, topic: "Classics of Literature", quota: { en: before + 2 } }];
     const result = await importPublicDomain({ languages: ["en"], perLanguage: 1, plan, fetch: fakeFetch, delayMs: 0 });
     expect(result).toMatchObject({ imported: 2, failed: 0 });
