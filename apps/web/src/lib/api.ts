@@ -155,6 +155,20 @@ export type Highlight = {
   createdAt: string;
 };
 
+/** A bookmarked page. */
+export type Bookmark = {
+  id: string;
+  bookId: string;
+  /** The page: "page:N" (PDFs) or where the page starts (EPUB CFI; comics too). */
+  locator: string;
+  percentage: number;
+  /** Where it is: "Page 3 of 120" or the chapter title. */
+  label: string | null;
+  /** The reader's own name for it. */
+  title: string | null;
+  createdAt: string;
+};
+
 export type ServerConfig = {
   googleEnabled: boolean;
   allowSignup: boolean;

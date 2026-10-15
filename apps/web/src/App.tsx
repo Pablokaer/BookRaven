@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { isNative } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
 import { authClient } from "./lib/auth";
+import { installBookmarkFlushers } from "./lib/bookmarks";
 import { startEvents, stopEvents } from "./lib/events";
 import { installProgressFlushers } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
@@ -63,6 +64,7 @@ export function App() {
     if (!signedIn) return;
     startEvents();
     installProgressFlushers();
+    installBookmarkFlushers();
     return () => stopEvents();
   }, [signedIn]);
 

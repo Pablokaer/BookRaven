@@ -7,6 +7,7 @@ import { pool } from "./db.js";
 import { mailEnabled } from "./lib/mailer.js";
 import { connectionCount } from "./lib/events.js";
 import { authRoutes } from "./routes/auth.js";
+import { bookmarkRoutes } from "./routes/bookmarks.js";
 import { bookRoutes } from "./routes/books.js";
 import { eventRoutes } from "./routes/events.js";
 import { progressRoutes } from "./routes/progress.js";
@@ -72,6 +73,7 @@ export async function buildServer() {
   await app.register(collectionShareRoutes);
   await app.register(folderRoutes);
   await app.register(highlightRoutes);
+  await app.register(bookmarkRoutes);
   await app.register(publicRoutes);
   await app.register(meRoutes);
   await app.register(adminRoutes);

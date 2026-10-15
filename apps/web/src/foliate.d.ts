@@ -59,6 +59,8 @@ declare module "foliate-js/overlayer.js" {
 
 declare module "foliate-js/epubcfi.js" {
   export function compare(a: string, b: string): number;
+  /** The start (or, with `toEnd`, the end) of a range CFI, as a plain CFI. */
+  export function collapse(cfi: string, toEnd?: boolean): string;
 }
 
 declare module "foliate-js/vendor/zip.js" {

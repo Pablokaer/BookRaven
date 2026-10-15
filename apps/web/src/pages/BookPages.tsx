@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Bookmark as BookmarkIcon,
   BookOpen,
   Download,
   ExternalLink,
@@ -20,7 +21,8 @@ import { EmptyState } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
 import { ProgressBar } from "../components/books/ProgressBar";
 import { ReportDialog } from "../components/ReportDialog";
-import type { Book, BookAbout, Highlight, PublicBook, PublicBookDetails } from "../lib/api";
+import type { Book, BookAbout, Bookmark, Highlight, PublicBook, PublicBookDetails } from "../lib/api";
+import { loadBookmarks } from "../lib/bookmarks";
 import { isFinished, readingStatus, shortDate } from "../lib/bookStats";
 import { getBook, getBookAbout } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
@@ -119,6 +121,7 @@ export function BookPage() {
   const [fetched, setFetched] = useState<Book | null | "missing">(null);
   const [about, setAbout] = useState<BookAbout | null>(null);
   const [highlights, setHighlights] = useState<Highlight[] | null>(null);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [clubs, setClubs] = useState<ClubSummary[]>([]);
 
   // The library list is the live copy (favorites, tags… update it); fetch only if it isn't loaded.
@@ -134,6 +137,8 @@ export function BookPage() {
     setHighlights(null);
     getBookAbout(id).then(setAbout, () => {});
     listHighlights(id).then(setHighlights, () => setHighlights([]));
+    setBookmarks([]);
+    loadBookmarks(id).then(setBookmarks, () => {});
     listClubs(id).then(setClubs, () => {});
   }, [id]);
 
@@ -261,6 +266,32 @@ export function BookPage() {
           </ul>
         )}
       </section>
+
+      {bookmarks.length > 0 && (
+        <section aria-labelledby="bookmarks-heading">
+          <h2 id="bookmarks-heading" className="mb-3 flex items-center gap-2 font-display text-xl font-semibold">
+            <BookmarkIcon className="h-5 w-5 text-accent" /> Bookmarks
+            <span className="font-sans text-sm font-normal text-muted">{bookmarks.length}</span>
+          </h2>
+          <ul className="space-y-2">
+            {bookmarks.map((b) => (
+              <li key={b.locator}>
+                <Link
+                  to={`/read/${book.id}?at=${encodeURIComponent(b.locator)}`}
+                  className="surface flex items-center gap-3 px-4 py-3 text-sm transition hover:border-accent/40"
+                >
+                  <BookmarkIcon className="h-4 w-4 shrink-0 fill-red-500 text-red-500" />
+                  <span className="min-w-0 flex-1 truncate font-medium">{b.title || b.label || "Bookmark"}</span>
+                  <span className="shrink-0 text-xs text-muted">
+                    {b.title && b.label ? `${b.label} · ` : ""}
+                    {Math.round(b.percentage * 100)}%
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {clubs.length > 0 && (
         <section aria-labelledby="clubs-heading">
