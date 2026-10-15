@@ -28,6 +28,10 @@ export type ReaderSettings = {
   /** Max columns on wide screens (two-page spread). */
   columns: 1 | 2;
   pdfFit: "width" | "page";
+  /** PDFs: space between the page and the screen edges, px. */
+  pdfMargin: number;
+  /** PDFs: hide the white margins around each page's content. */
+  pdfCrop: boolean;
   /** Books the reader wants to finish this year (dashboard reading goal). */
   readingGoal: number;
   /** Comics: fit the whole page on screen, or fill the width and scroll. */
@@ -56,6 +60,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   contrast: 100,
   columns: 2,
   pdfFit: "page",
+  pdfMargin: 16,
+  pdfCrop: false,
   readingGoal: 12,
   comicFit: "page",
   comicSpreads: true,

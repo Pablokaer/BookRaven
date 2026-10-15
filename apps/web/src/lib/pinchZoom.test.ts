@@ -66,4 +66,16 @@ describe("pinchController", () => {
     touch(el, "touchstart", [[200, 400]]);
     expect(touch(el, "touchmove", [[100, 400]]).defaultPrevented).toBe(false);
   });
+
+  it("toggles a close-up on double-click, unless told to leave double-click alone (PDF text selection)", () => {
+    const el = frame();
+    pinchController(transformSurface(el)).attach(el);
+    el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 100, clientY: 100 }));
+    expect(el.style.transform).toContain("scale(2.5)");
+
+    const plain = frame();
+    pinchController(transformSurface(plain), { dblClick: false }).attach(plain);
+    plain.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 100, clientY: 100 }));
+    expect(plain.style.transform).toBe("");
+  });
 });
