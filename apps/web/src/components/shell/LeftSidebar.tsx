@@ -39,7 +39,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
     { to: "/favorites", label: "Favorites", icon: <Heart />, count: counts.favorites },
     { to: "/profile", label: "Profile", icon: <User /> },
     ...(me?.isAdmin ? [{ to: "/admin", label: "Admin", icon: <ShieldCheck /> }] : []),
-    { to: "/download", label: isNative ? "App updates" : "Download", icon: <Download /> },
+    { to: "/download", label: isNative ? "App updates" : "Download APK", icon: <Download /> },
   ];
 
   // Labels are hidden when compact; `hide` is the class for that.
