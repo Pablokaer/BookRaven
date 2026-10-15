@@ -2,9 +2,10 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { Bookmark as BookmarkIcon, NotebookText, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
+import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
 import { apiJson, type Book, type Bookmark, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { bookmarkLocator, deleteBookmark, isOnPage, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks, type BookKind } from "../lib/bookmarks";
+import { applyChange, inverseChange, loadInk, overlayPending, recordInk, rememberInk, type InkChange, type InkPages, type Stroke } from "../lib/ink";
 import { getBook } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comics";
@@ -20,6 +21,7 @@ import { EpubReader } from "../reader/EpubReader";
 import { HighlightMenu } from "../reader/HighlightMenu";
 import { LookupCard } from "../reader/LookupCard";
 import { NoteDialog } from "../reader/NoteDialog";
+import { InkToolbar, useInkTools } from "../reader/InkToolbar";
 import { NotebookPanel, type NotebookTab } from "../reader/NotebookPanel";
 import { PdfReader } from "../reader/PdfReader";
 import { SearchPanel } from "../reader/SearchPanel";
@@ -86,6 +88,15 @@ export function ReaderPage() {
   const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  /** PDFs: handwriting per page, and whether the pen is out. */
+  const [ink, setInk] = useState<InkPages>({});
+  const inkRef = useRef(ink);
+  inkRef.current = ink;
+  const [inking, setInking] = useState(false);
+  const inkTools = useInkTools();
+  /** Undo and redo stacks of this session's handwriting changes (each with the change that reverts it). */
+  const inkHistory = useRef<{ undo: { page: number; change: InkChange }[]; redo: { page: number; change: InkChange }[] }>({ undo: [], redo: [] });
+  const [inkHistorySize, setInkHistorySize] = useState({ undo: 0, redo: 0 });
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [activeHighlight, setActiveHighlight] = useState<{ highlight: Highlight; rect: DOMRect } | null>(null);
   const [remote, setRemote] = useState<Remote | null>(null);
@@ -148,6 +159,104 @@ export function ReaderPage() {
     };
   }, [book]);
 
+  // PDF handwriting, kept in sync with other devices; changes work offline (lib/ink).
+  useEffect(() => {
+    if (book?.format !== "pdf") return;
+    let cancelled = false;
+    loadInk(book.id)
+      .then((pages) => !cancelled && setInk(pages))
+      .catch(() => {});
+    const off = onServerEvent((event, data) => {
+      if (event !== "ink.updated" || data?.bookId !== book.id) return;
+      const strokes = data.strokes as Stroke[];
+      void overlayPending(book.id, { [data.page]: strokes }).then((pages) => {
+        if (cancelled) return;
+        setInk((prev) => {
+          const next = { ...prev };
+          if (pages[data.page]?.length) next[data.page] = pages[data.page]!;
+          else delete next[data.page];
+          return next;
+        });
+      });
+    });
+    const onRejected = (e: Event) =>
+      window.alert(`Page ${(e as CustomEvent<{ page: number }>).detail.page} has too much handwriting to save. Erase some strokes and try again.`);
+    window.addEventListener("readsync:ink-rejected", onRejected);
+    return () => {
+      cancelled = true;
+      off();
+      window.removeEventListener("readsync:ink-rejected", onRejected);
+    };
+  }, [book]);
+
+  useEffect(() => {
+    if (book?.format === "pdf") rememberInk(book.id, ink);
+  }, [book, ink]);
+
+  /** Applies a handwriting change here and queues it for the server. */
+  const applyInk = useCallback(
+    (page: number, change: InkChange) => {
+      if (!book) return;
+      setInk((prev) => {
+        const next = { ...prev, [page]: applyChange(prev[page] ?? [], change) };
+        if (!next[page]!.length) delete next[page];
+        return next;
+      });
+      void recordInk(book.id, page, change);
+    },
+    [book],
+  );
+
+  const onInkChange = useCallback(
+    (page: number, change: InkChange) => {
+      const h = inkHistory.current;
+      h.undo.push({ page, change: inverseChange(inkRef.current[page] ?? [], change) });
+      h.redo = [];
+      setInkHistorySize({ undo: h.undo.length, redo: 0 });
+      applyInk(page, change);
+    },
+    [applyInk],
+  );
+
+  /** Undo (or redo): applies the stored change, keeping the one that reverts it on the other stack. */
+  const stepInkHistory = useCallback(
+    (from: "undo" | "redo") => {
+      const h = inkHistory.current;
+      const step = h[from].pop();
+      if (!step) return;
+      h[from === "undo" ? "redo" : "undo"].push({ page: step.page, change: inverseChange(inkRef.current[step.page] ?? [], step.change) });
+      setInkHistorySize({ undo: h.undo.length, redo: h.redo.length });
+      applyInk(step.page, step.change);
+      // Show the page that changed.
+      if (positionRef.current?.locator !== `page:${step.page}`) reader.current?.goToHref?.(`page:${step.page}`);
+    },
+    [applyInk],
+  );
+
+  // Ctrl/⌘ + Z undoes, Ctrl/⌘ + Y or Ctrl/⌘ + Shift + Z redoes, while annotating.
+  useEffect(() => {
+    if (!inking) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        stepInkHistory(e.shiftKey ? "redo" : "undo");
+      } else if (key === "y") {
+        e.preventDefault();
+        stepInkHistory("redo");
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [inking, stepInkHistory]);
+
+  const startInking = () => {
+    setPanel(null);
+    setChrome(false);
+    setInking(true);
+  };
+
   // Bookmarks (every format), kept in sync with other devices; changes work offline (lib/bookmarks).
   useEffect(() => {
     if (!book) return;
@@ -193,6 +302,8 @@ export function ReaderPage() {
       ]),
     );
   };
+  const inkingRef = useRef(inking);
+  inkingRef.current = inking;
   const toggleBookmarkRef = useRef(toggleBookmark);
   toggleBookmarkRef.current = toggleBookmark;
 
@@ -349,7 +460,8 @@ export function ReaderPage() {
         break;
       case "Escape":
         setPanel(null);
-        setChrome((c) => !c);
+        if (inkingRef.current) setInking(false);
+        else setChrome((c) => !c);
         break;
       case "b":
       case "B":
@@ -372,9 +484,9 @@ export function ReaderPage() {
       if (activeHighlight) return setActiveHighlight(null);
       if (zone === "left") reader.current?.prev();
       else if (zone === "right") reader.current?.next();
-      else setChrome((c) => !c);
+      else if (!inking) setChrome((c) => !c); // while writing, the toolbar stays alone on top
     },
-    [panel, activeHighlight, lookup],
+    [panel, activeHighlight, lookup, inking],
   );
 
   const onReady = useCallback((info: { toc?: TocItem[]; language?: string | null }) => {
@@ -426,6 +538,9 @@ export function ReaderPage() {
             onHighlightClick={onHighlightClick}
             magnifier={isComic && magnifier}
             onZoom={setPdfZoom}
+            ink={isPdf ? ink : undefined}
+            inkMode={isPdf && inking ? inkTools.mode : null}
+            onInkChange={onInkChange}
           />
         )}
       </div>
@@ -445,8 +560,8 @@ export function ReaderPage() {
         </svg>
       )}
 
-      {/* Invisible strip at the top: tapping it brings the chrome back */}
-      {!chrome && (
+      {/* Invisible strip at the top: tapping it brings the chrome back (not while writing: the pen needs the whole page) */}
+      {!chrome && !inking && (
         <div
           className="absolute inset-x-0 top-0 z-10 h-[calc(env(safe-area-inset-top)+64px)]"
           aria-label="Show menu"
@@ -481,6 +596,11 @@ export function ReaderPage() {
           >
             <BookmarkIcon className={`h-[18px] w-[18px] ${pageBookmark ? "fill-current" : ""}`} />
           </button>
+          {isPdf && (
+            <button className="btn-icon" aria-label="Write on the page" title="Write on the page (pen, highlighter)" onClick={startInking}>
+              <PenLine className="h-[18px] w-[18px]" />
+            </button>
+          )}
           <button
             className="btn-icon"
             aria-label="Notebook: highlights and bookmarks"
@@ -649,6 +769,17 @@ export function ReaderPage() {
           onDelete={() => void removeHighlight(activeHighlight.highlight)}
         />
       )}
+      {isPdf && inking && (
+        <InkToolbar
+          tools={inkTools.tools}
+          update={inkTools.update}
+          canUndo={inkHistorySize.undo > 0}
+          canRedo={inkHistorySize.redo > 0}
+          onUndo={() => stepInkHistory("undo")}
+          onRedo={() => stepInkHistory("redo")}
+          onDone={() => setInking(false)}
+        />
+      )}
       {discuss && clubs.length > 0 && <DiscussDialog clubs={clubs} quote={discuss.quote} locator={discuss.locator} onClose={() => setDiscuss(null)} />}
       {lookup && <LookupCard mode={lookup.mode} text={lookup.text} bookLanguage={bookLanguage} rect={lookup.rect} onClose={() => setLookup(null)} />}
       {noteFor && (
@@ -690,6 +821,18 @@ export function ReaderPage() {
           }}
           onRenameBookmark={renameBookmark}
           onDeleteBookmark={removeBookmark}
+          inkPages={
+            isPdf
+              ? Object.entries(ink)
+                  .map(([page, strokes]) => ({ page: Number(page), strokes: strokes.length }))
+                  .sort((a, b) => a.page - b.page)
+              : undefined
+          }
+          thumbnail={(page) => reader.current?.thumbnail?.(page, 240) ?? Promise.resolve(null)}
+          onSelectInkPage={(page) => {
+            reader.current?.goToHref?.(`page:${page}`);
+            setPanel(null);
+          }}
         />
       )}
       {panel === "settings" && <SettingsPanel kind={isPdf ? "pdf" : isComic ? "comic" : "text"} onClose={() => setPanel(null)} />}

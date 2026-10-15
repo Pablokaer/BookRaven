@@ -19,6 +19,7 @@ import { deviceRoutes } from "./routes/devices.js";
 import { folderRoutes } from "./routes/folders.js";
 import { kosyncRoutes } from "./routes/kosync.js";
 import { highlightRoutes } from "./routes/highlights.js";
+import { inkRoutes } from "./routes/ink.js";
 import { meRoutes } from "./routes/me.js";
 import { publicRoutes } from "./routes/public.js";
 import { lookupRoutes } from "./routes/lookup.js";
@@ -74,6 +75,7 @@ export async function buildServer() {
   await app.register(folderRoutes);
   await app.register(highlightRoutes);
   await app.register(bookmarkRoutes);
+  await app.register(inkRoutes);
   await app.register(publicRoutes);
   await app.register(meRoutes);
   await app.register(adminRoutes);

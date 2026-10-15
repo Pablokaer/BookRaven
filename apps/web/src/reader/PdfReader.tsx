@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { authHeaders, type Highlight } from "../lib/api";
 import { bookFileUrl, cachedBookFile } from "../lib/books";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
+import { drawStrokes, strokePoint, touchesStroke, type InkTool, type Stroke } from "../lib/ink";
 import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
 import { canvasPixelRatio, contentBox, fitScale, FULL_PAGE, type PageBox } from "../lib/pdfLayout";
 import { MAX_ZOOM, pinchController, type PinchController } from "../lib/pinchZoom";
@@ -101,6 +102,10 @@ async function detectContent(pdfPage: PDFPageProxy): Promise<PageBox> {
 
 /** Zoom factor of one step of the + and − buttons and keys. */
 const ZOOM_STEP = 1.25;
+/** How far the eraser reaches, as a fraction of the page width. */
+const ERASER_RADIUS = 0.012;
+/** Handwriting canvases stay under this many pixels each (they are redrawn at every zoom). */
+const MAX_INK_PIXELS = 6_000_000;
 
 export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReader(props, ref) {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -111,6 +116,11 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
    */
   const pageEl = useRef<HTMLDivElement | null>(null);
   const sheetEl = useRef<HTMLDivElement | null>(null);
+  /** Handwriting: the page's strokes, and on top the stroke being drawn. */
+  const inkEl = useRef<HTMLCanvasElement | null>(null);
+  const wetEl = useRef<HTMLCanvasElement | null>(null);
+  /** The pen stroke (or eraser pass) in progress. */
+  const drawing = useRef<{ id: number; rect: DOMRect; stroke: Stroke | null; removed: Set<string> } | null>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(() => parsePage(props.initialLocator));
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -231,6 +241,19 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     },
     clearSearch: () => setSearchHit(null),
     zoom: zoomStep,
+    thumbnail: async (p, width) => {
+      if (!doc) return null;
+      const pdfPage = await doc.getPage(p);
+      const viewport = pdfPage.getViewport({ scale: width / pdfPage.getViewport({ scale: 1 }).width });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await pdfPage.render({ canvas, viewport }).promise;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      drawStrokes(ctx, propsRef.current.ink?.[p] ?? [], canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.75);
+    },
     search: async (query, onResult, signal) => {
       if (!doc) return;
       const q = fold(query.trim());
@@ -368,7 +391,16 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       hl.className = "pdf-highlights";
       const text = document.createElement("div");
       text.className = "textLayer";
-      sheet.append(canvas, hl, text);
+      // Handwriting (lib/ink.ts): the page's strokes, and on top the one being drawn.
+      const inkRatio = Math.min(dpr, 2, Math.sqrt(MAX_INK_PIXELS / (base.width * scale * base.height * scale)));
+      const [inkCanvas, wetCanvas] = ["pdf-ink", "pdf-ink pdf-ink-wet"].map((cls) => {
+        const c = document.createElement("canvas");
+        c.width = Math.floor(base.width * scale * inkRatio);
+        c.height = Math.floor(base.height * scale * inkRatio);
+        c.className = cls;
+        return c;
+      });
+      sheet.append(canvas, hl, text, inkCanvas!, wetCanvas!);
       wrap.append(sheet);
 
       renderTask = pdfPage.render({ canvas, viewport });
@@ -381,6 +413,8 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       holderRef.current.replaceChildren(wrap);
       pageEl.current = wrap;
       sheetEl.current = sheet;
+      inkEl.current = inkCanvas!;
+      wetEl.current = wetCanvas!;
       // A new page starts at its top-left corner; a sharper redraw of the same one stays put.
       if (shownPage.current !== page) stageRef.current?.scrollTo({ top: 0, left: 0 });
       shownPage.current = page;
@@ -446,6 +480,152 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       }
     }
   }, [props.highlights, rendered, page, searchHit]);
+
+  /** Draws the page's strokes, minus those the eraser is going over. */
+  const drawInk = useCallback(() => {
+    const c = inkEl.current;
+    const ctx = c?.getContext("2d");
+    if (!c || !ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+    const hidden = drawing.current?.removed;
+    drawStrokes(ctx, (propsRef.current.ink?.[pageRef.current] ?? []).filter((s) => !hidden?.has(s.id)), c.width, c.height);
+  }, []);
+
+  const clearWet = () => {
+    const c = wetEl.current;
+    c?.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+  };
+
+  // Redraw the handwriting when the page is drawn or its strokes change. A stroke just
+  // finished stays on the top canvas until then, so it never blinks.
+  const pageInk = props.ink?.[page];
+  useEffect(() => {
+    drawInk();
+    if (!drawing.current) clearWet();
+  }, [rendered, pageInk, drawInk]);
+
+  // Annotating: a pen or a mouse (or a finger, when allowed) draws; other fingers still scroll,
+  // pinch and turn pages. While the pen is down, touches (a resting palm) are ignored.
+  const inking = !!props.inkMode;
+  useEffect(() => {
+    const wet = wetEl.current;
+    const stage = stageRef.current;
+    if (!inking || !wet || !stage) return;
+    let frame = 0;
+    /** Fingers on the page that don't draw; one of them scrolls it. */
+    const fingers = new Set<number>();
+    let pan: { id: number; x: number; y: number } | null = null;
+
+    const paintWet = () => {
+      frame = 0;
+      const ctx = wet.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, wet.width, wet.height);
+      const stroke = drawing.current?.stroke;
+      if (stroke) drawStrokes(ctx, [stroke], wet.width, wet.height);
+    };
+
+    const add = (ev: PointerEvent) => {
+      const d = drawing.current;
+      if (!d) return;
+      const coalesced = ev.getCoalescedEvents?.() ?? [];
+      let erased = false;
+      for (const e of coalesced.length ? coalesced : [ev]) {
+        const x = (e.clientX - d.rect.left) / d.rect.width;
+        const y = (e.clientY - d.rect.top) / d.rect.height;
+        if (d.stroke) {
+          d.stroke.points.push(...strokePoint(x, y, e.pointerType === "pen" ? e.pressure : 0.5));
+          continue;
+        }
+        const aspect = d.rect.height / d.rect.width;
+        for (const s of propsRef.current.ink?.[pageRef.current] ?? []) {
+          if (!d.removed.has(s.id) && touchesStroke(s, x, y, ERASER_RADIUS, aspect)) {
+            d.removed.add(s.id);
+            erased = true;
+          }
+        }
+      }
+      if (d.stroke) frame ||= requestAnimationFrame(paintWet);
+      else if (erased) drawInk();
+    };
+
+    const onDown = (ev: PointerEvent) => {
+      const mode = propsRef.current.inkMode;
+      const sheet = sheetEl.current;
+      if (!mode || !sheet) return;
+      if (drawing.current) return void ev.stopPropagation();
+      const draws = ev.pointerType === "pen" || (ev.pointerType === "mouse" ? ev.button === 0 : mode.fingerDraws);
+      if (!draws) {
+        fingers.add(ev.pointerId);
+        pan = fingers.size === 1 ? { id: ev.pointerId, x: ev.clientX, y: ev.clientY } : null; // two fingers: a pinch
+        return;
+      }
+      ev.stopPropagation();
+      ev.preventDefault();
+      pan = null;
+      wet.setPointerCapture(ev.pointerId);
+      const eraser = mode.tool === "eraser" || (ev.buttons & 32) !== 0; // 32: the pen's eraser end
+      drawing.current = {
+        id: ev.pointerId,
+        rect: sheet.getBoundingClientRect(),
+        removed: new Set(),
+        stroke: eraser ? null : { id: crypto.randomUUID(), tool: mode.tool as InkTool, color: mode.color, width: mode.width, points: [] },
+      };
+      add(ev);
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      if (pan?.id === ev.pointerId) {
+        // Annotating turns the browser's own panning off (a pen must not scroll), so fingers scroll here.
+        stage.scrollBy(pan.x - ev.clientX, pan.y - ev.clientY);
+        pan = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+        return;
+      }
+      if (drawing.current?.id !== ev.pointerId) return;
+      ev.stopPropagation();
+      add(ev);
+    };
+
+    const onEnd = (ev: PointerEvent) => {
+      fingers.delete(ev.pointerId);
+      if (pan?.id === ev.pointerId) pan = null;
+      const d = drawing.current;
+      if (d?.id !== ev.pointerId) return;
+      ev.stopPropagation();
+      cancelAnimationFrame(frame);
+      paintWet();
+      drawing.current = null;
+      const change = d.stroke ? (d.stroke.points.length >= 3 ? { add: [d.stroke], remove: [] } : null) : d.removed.size ? { add: [], remove: [...d.removed] } : null;
+      if (change) propsRef.current.onInkChange?.(pageRef.current, change);
+      else {
+        clearWet();
+        drawInk();
+      }
+    };
+
+    // A pen's touches, and any touch while it draws, stay away from the pinch-zoom.
+    const onTouch = (ev: TouchEvent) => {
+      const stylus = Array.from(ev.changedTouches).some((t) => (t as Touch & { touchType?: string }).touchType === "stylus");
+      if (drawing.current || stylus) ev.stopPropagation();
+    };
+
+    wet.addEventListener("pointerdown", onDown);
+    wet.addEventListener("pointermove", onMove);
+    wet.addEventListener("pointerup", onEnd);
+    wet.addEventListener("pointercancel", onEnd);
+    for (const t of ["touchstart", "touchmove", "touchend"] as const) wet.addEventListener(t, onTouch, { passive: true });
+    return () => {
+      wet.removeEventListener("pointerdown", onDown);
+      wet.removeEventListener("pointermove", onMove);
+      wet.removeEventListener("pointerup", onEnd);
+      wet.removeEventListener("pointercancel", onEnd);
+      for (const t of ["touchstart", "touchmove", "touchend"] as const) wet.removeEventListener(t, onTouch);
+      cancelAnimationFrame(frame);
+      drawing.current = null;
+      clearWet();
+      drawInk();
+    };
+  }, [inking, rendered, drawInk]);
 
   // Report text selections (debounced, like the ebook reader).
   useEffect(() => {
@@ -560,7 +740,11 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       onPointerCancel={onPointerEnd}
     >
       {/* The page centers with m-auto (not justify-center), so a zoomed page still scrolls to its left edge. */}
-      <div ref={holderRef} className="flex min-h-full w-max min-w-full" style={{ padding: props.settings.pdfMargin, filter: pageFilter(props.settings) }} />
+      <div
+        ref={holderRef}
+        className={`flex min-h-full w-max min-w-full ${inking ? "pdf-inking" : ""}`}
+        style={{ padding: props.settings.pdfMargin, filter: pageFilter(props.settings) }}
+      />
     </div>
   );
 });

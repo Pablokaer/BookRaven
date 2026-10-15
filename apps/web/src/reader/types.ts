@@ -1,5 +1,6 @@
 import type { TocItem } from "foliate-js/view.js";
 import type { Book, Highlight } from "../lib/api";
+import type { InkChange, InkPages, InkTool } from "../lib/ink";
 import type { Position } from "../lib/progress";
 import type { ReaderSettings } from "../lib/settings";
 
@@ -21,6 +22,18 @@ export type ReaderHandle = {
   clearSearch?(): void;
   /** PDFs: zoom in or out a step, or back to the fitted page. */
   zoom?(action: "in" | "out" | "reset"): void;
+  /** PDFs: a small picture of a page with its handwriting (data URL), for the notebook. */
+  thumbnail?(page: number, width: number): Promise<string | null>;
+};
+
+/** PDFs: what the pen does while annotating. */
+export type InkMode = {
+  tool: InkTool | "eraser";
+  color: string;
+  /** Fraction of the page width. */
+  width: number;
+  /** Fingers draw too (otherwise they scroll, zoom and turn pages, and only a pen or mouse draws). */
+  fingerDraws: boolean;
 };
 
 /** One search match: `locator` is passed back to goToHref to show it. */
@@ -47,6 +60,12 @@ export type ReaderProps = {
   onHighlightClick?(highlight: Highlight, rect: DOMRect): void;
   /** PDFs: the zoom level changed (1 = the fitted page). */
   onZoom?(zoom: number): void;
+  /** PDFs: handwritten strokes of each page. */
+  ink?: InkPages;
+  /** PDFs: annotating with the pen (null: reading). */
+  inkMode?: InkMode | null;
+  /** PDFs: strokes were drawn or erased on `page`. */
+  onInkChange?(page: number, change: InkChange): void;
 };
 
 export function zoneFromX(x: number, width: number): TapZone {
