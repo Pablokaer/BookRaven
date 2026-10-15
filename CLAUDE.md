@@ -20,3 +20,6 @@ See README.md for setup, features and the API overview.
   database, see README → Tests).
 - New database changes go in a new numbered file in `apps/api/src/migrations/`; never edit an
   existing migration.
+- **Every user-visible change adds a "What's new" note** at the top of `RELEASE_NOTES` in
+  `apps/web/src/lib/whatsNew.ts` (new unique id, today's date, a title and a few short items written
+  for readers, in English), in the same commit. It is shown once after the update reaches each user.
