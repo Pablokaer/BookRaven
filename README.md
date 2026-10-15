@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/web/src/assets/logo.png" alt="BookRaven logo" width="160">
+</p>
+
 # BookRaven
 
 Self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT) that saves your exact reading position and lets you continue on any device: web browser, Android app, or e-ink readers through KOReader.
