@@ -1,5 +1,6 @@
 import { apiFetch, apiJson, type Progress } from "./api";
 import { deviceId, deviceName } from "./device";
+import { retryDelay, settle } from "./outbox";
 
 /**
  * Saves reading positions to the server.
@@ -7,6 +8,8 @@ import { deviceId, deviceName } from "./device";
  *  - Every position is first written to localStorage ("outbox"), so nothing is lost
  *    when offline or when the tab is closed; the outbox is flushed when back online.
  *  - Each position carries the time it was reached; the server keeps the newest one.
+ *  - Responses follow the outbox rules (lib/outbox): 429, 5xx and network errors are tried again
+ *    after a growing delay; a refusal that can't succeed later is dropped.
  */
 
 export type Position = { locator: string; percentage: number; label: string | null };
@@ -37,6 +40,14 @@ export function getLocalPending(bookId: string): Pending | null {
 }
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let attempt = 0;
+
+function retryLater(retryAfter?: string | null) {
+  attempt++;
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => flushProgress(), retryDelay(attempt, retryAfter));
+}
 /** Time (ms) of the last position this device produced for a book. */
 const lastLocal = new Map<string, number>();
 
@@ -72,16 +83,16 @@ async function send(bookId: string, keepalive = false) {
         clientUpdatedAt: pending.clientUpdatedAt,
       }),
     });
-    if (res.ok || res.status === 404) {
-      // Remove only if nothing newer was queued meanwhile.
-      const outbox = readOutbox();
-      if (outbox[bookId]?.clientUpdatedAt === pending.clientUpdatedAt) {
-        delete outbox[bookId];
-        writeOutbox(outbox);
-      }
+    if (settle(res.status) === "retry") return retryLater(res.headers.get("Retry-After"));
+    attempt = 0;
+    // Saved (or refused for good): remove it, unless something newer was queued meanwhile.
+    const outbox = readOutbox();
+    if (outbox[bookId]?.clientUpdatedAt === pending.clientUpdatedAt) {
+      delete outbox[bookId];
+      writeOutbox(outbox);
     }
   } catch {
-    /* offline: stays in the outbox */
+    retryLater(); // offline: stays in the outbox
   }
 }
 

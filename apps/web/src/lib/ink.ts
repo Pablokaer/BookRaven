@@ -1,16 +1,18 @@
 import getStroke from "perfect-freehand";
 import { apiFetch, apiJson } from "./api";
 import { deviceId } from "./device";
+import { cacheStore, createOutbox, type Queued } from "./outbox";
 
 /**
  * Handwritten annotations on PDF pages (pen and highlighter).
  *  - A stroke's points are fractions of the page (x, y) plus pen pressure, so ink fits any
  *    screen, zoom, margin or crop. The PDF file is never changed.
  *  - Devices exchange changes ("added these strokes, erased those"), never whole pages, so
- *    pages annotated on two devices (even offline) keep everyone's strokes.
- *  - Changes are saved on the device first (an outbox) and sent in order when online; the
- *    last ink seen for each book is kept for reading offline. Both live in Cache Storage,
- *    which has room for a lot of handwriting (localStorage would fill up).
+ *    pages annotated on two devices (even offline) keep everyone's strokes. Each change raises
+ *    the page's version on the server; live changes carry it, so they are applied in order.
+ *  - Changes wait in an outbox (lib/outbox) and are sent in order, several strokes of a page
+ *    per request. The last ink seen is kept per page for reading offline. Both live in Cache
+ *    Storage, which has room for a lot of handwriting.
  */
 
 export type InkTool = "pen" | "highlighter";
@@ -28,9 +30,11 @@ export type Stroke = {
 
 /** Strokes of each annotated page. */
 export type InkPages = Record<number, Stroke[]>;
+/** Server version of each page (pages never written on are at 0). */
+export type InkVersions = Record<number, number>;
 
 export type InkChange = { add: Stroke[]; remove: string[] };
-type QueuedChange = InkChange & { id: string; bookId: string; page: number; at: number };
+type PendingChange = InkChange & { bookId: string; page: number };
 
 /** Pen and highlighter colors offered in the toolbar. */
 export const PEN_COLORS = ["#111827", "#1d4ed8", "#dc2626", "#15803d"];
@@ -38,10 +42,12 @@ export const HIGHLIGHTER_COLORS = ["#facc15", "#4ade80", "#f472b6", "#60a5fa"];
 /** Line widths (fractions of the page width): fine, medium, bold. */
 export const PEN_WIDTHS = [0.002, 0.0035, 0.006];
 export const HIGHLIGHTER_WIDTHS = [0.012, 0.02, 0.032];
+/** The server takes up to 10,000 points per stroke; longer ones are split (see PdfReader). */
+export const MAX_STROKE_POINTS = 9000;
 
 // ---------- Changes ----------
 
-/** `strokes` with `change` applied: erased strokes go, added ones replace any with the same id. */
+/** `strokes` with `change` applied: erased strokes go, added ones replace any with the same id (and go on top). */
 export function applyChange(strokes: Stroke[], change: InkChange): Stroke[] {
   const remove = new Set(change.remove);
   const added = new Set(change.add.map((s) => s.id));
@@ -57,122 +63,92 @@ export function inverseChange(before: Stroke[], change: InkChange): InkChange {
   };
 }
 
-/** Pages with this device's not-yet-sent changes applied on top. */
-export function withPendingInk(bookId: string, pages: InkPages, outbox: QueuedChange[]): InkPages {
-  const out: InkPages = { ...pages };
-  for (const c of outbox) {
-    if (c.bookId !== bookId) continue;
-    out[c.page] = applyChange(out[c.page] ?? [], c);
+/**
+ * Several changes as one, with the same result: the server erases `remove` and the ids in `add`
+ * first, then adds `add`.
+ */
+export function mergeChanges(changes: InkChange[]): InkChange {
+  let add: Stroke[] = [];
+  const remove = new Set<string>();
+  for (const c of changes) {
+    add = applyChange(add, c);
+    for (const id of c.remove) remove.add(id);
   }
-  for (const p of Object.keys(out)) if (!out[Number(p)]!.length) delete out[Number(p)];
-  return out;
+  return { add, remove: [...remove] };
 }
 
-// ---------- Storage (Cache Storage, or memory where it is missing) ----------
+/** What to do with a live change at `version` for a page whose known version is `known`. */
+export function liveChangeAction(known: number, version: number): "ignore" | "apply" | "refetch" {
+  if (version <= known) return "ignore"; // already seen (our own change, or an older one arriving late)
+  return version === known + 1 ? "apply" : "refetch"; // a gap: a change was missed
+}
+
+/** A short signature of a page's strokes (changes whenever any stroke is added or erased). */
+export function inkSignature(strokes: Stroke[]) {
+  let h = 5381;
+  for (const s of strokes) for (let i = 0; i < s.id.length; i++) h = ((h << 5) + h + s.id.charCodeAt(i)) | 0;
+  return `${strokes.length}:${(h >>> 0).toString(36)}`;
+}
+
+// ---------- Outbox ----------
 
 const STORE = "readsync-ink-v1";
-const memory = new Map<string, unknown>();
-let writes: Promise<unknown> = Promise.resolve();
+/** One request carries at most this much (the server allows 500 strokes and 4 MB). */
+const BATCH_STROKES = 200;
+const BATCH_NUMBERS = 300_000;
 
-async function load<T>(key: string, fallback: T): Promise<T> {
-  if (typeof caches === "undefined") return (memory.get(key) as T) ?? fallback;
-  try {
-    const hit = await (await caches.open(STORE)).match(`/ink-store/${key}`);
-    return hit ? ((await hit.json()) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+/** Changes queued by the first version of this feature (one "outbox" entry), brought over once. */
+async function legacyOutbox(): Promise<PendingChange[]> {
+  const cache = await caches.open(STORE);
+  const res = await cache.match("/ink-store/outbox");
+  if (!res) return [];
+  const old = (await res.json()) as PendingChange[];
+  await cache.delete("/ink-store/outbox");
+  return old.map(({ bookId, page, add, remove }) => ({ bookId, page, add, remove }));
 }
 
-/** Writes in call order, so an older value never overwrites a newer one. */
-function save(key: string, value: unknown) {
-  if (typeof caches === "undefined") {
-    memory.set(key, value);
-    return Promise.resolve();
-  }
-  const body = JSON.stringify(value);
-  writes = writes
-    .then(async () => (await caches.open(STORE)).put(`/ink-store/${key}`, new Response(body, { headers: { "Content-Type": "application/json" } })))
-    .catch(() => {});
-  return writes;
-}
-
-let outbox: QueuedChange[] | null = null;
-async function getOutbox() {
-  outbox ??= await load<QueuedChange[]>("outbox", []);
-  return outbox;
-}
-
-// ---------- Sync ----------
-
-/** The book's ink: from the server when reachable, else the last copy seen; plus pending changes. */
-export async function loadInk(bookId: string): Promise<InkPages> {
-  let pages: InkPages;
-  try {
-    const list = await apiJson<{ page: number; strokes: Stroke[] }[]>(`/api/books/${bookId}/ink`);
-    pages = Object.fromEntries(list.map((p) => [p.page, p.strokes]));
-    void save(`book-${bookId}`, pages);
-  } catch {
-    pages = await load<InkPages>(`book-${bookId}`, {});
-  }
-  return withPendingInk(bookId, pages, await getOutbox());
-}
-
-/** Keeps the offline copy in step with what the reader shows. */
-export function rememberInk(bookId: string, pages: InkPages) {
-  void save(`book-${bookId}`, pages);
-}
-
-/** Pages as the server sent them, with this device's unsent changes applied. */
-export async function overlayPending(bookId: string, pages: InkPages) {
-  return withPendingInk(bookId, pages, await getOutbox());
-}
-
-/** Saves a change made on this device and sends it as soon as possible. */
-export async function recordInk(bookId: string, page: number, change: InkChange) {
-  const box = await getOutbox();
-  box.push({ ...change, id: crypto.randomUUID(), bookId, page, at: Date.now() });
-  await save("outbox", box);
-  if (flushing) queuedWhileFlushing = true;
-  void flushInk();
-}
-
-let flushing: Promise<void> | null = null;
-let queuedWhileFlushing = false;
-
-async function sendOutbox() {
-  const box = await getOutbox();
-  while (box.length) {
-    const c = box[0]!;
-    let res: Response;
-    try {
-      res = await apiFetch(`/api/books/${c.bookId}/ink/${c.page}`, {
-        method: "POST",
-        body: JSON.stringify({ add: c.add, remove: c.remove, deviceId }),
-      });
-    } catch {
-      return; // offline
+const outbox = createOutbox<PendingChange>({
+  store: cacheStore(STORE, "/ink-store/queue/", legacyOutbox),
+  // Consecutive changes to the same page go together, within the server's limits.
+  batch: (queue) => {
+    const first = queue[0]!;
+    let n = 0;
+    let strokes = 0;
+    let numbers = 0;
+    for (const c of queue) {
+      if (c.bookId !== first.bookId || c.page !== first.page) break;
+      strokes += c.add.length;
+      numbers += c.add.reduce((sum, s) => sum + s.points.length, 0);
+      if (n && (strokes > BATCH_STROKES || numbers > BATCH_NUMBERS)) break;
+      n++;
     }
-    if (res.status >= 500 || res.status === 401) return;
-    // Done, or refused for good (book deleted, page too full): either way it leaves the outbox.
-    if (res.status === 413) window.dispatchEvent(new CustomEvent("readsync:ink-rejected", { detail: { page: c.page } }));
-    box.shift();
-    await save("outbox", box);
-  }
+    return n;
+  },
+  send: (items) => {
+    const { bookId, page } = items[0]!;
+    const change = mergeChanges(items);
+    return apiFetch(`/api/books/${bookId}/ink/${page}`, { method: "POST", body: JSON.stringify({ ...change, deviceId }) });
+  },
+  // Refused for good (page full, invalid stroke): the reader shows the server's page again.
+  onRejected: (items, status) => {
+    const pages = new Map(items.map((c) => [`${c.bookId}:${c.page}`, c]));
+    for (const c of pages.values()) {
+      window.dispatchEvent(new CustomEvent("readsync:ink-rejected", { detail: { bookId: c.bookId, page: c.page, status } }));
+    }
+  },
+});
+
+/** Saves a change made on this device (synchronously, so it already counts as pending) and sends it soon. */
+export function recordInk(bookId: string, page: number, change: InkChange) {
+  outbox.push({ bookId, page, add: change.add, remove: change.remove });
 }
 
-/** Sends the outbox in order; stops at the first network failure and tries again later. */
-export function flushInk(): Promise<void> {
-  // .finally runs after `flushing` is set, even when there is nothing to send.
-  flushing ??= sendOutbox().finally(() => {
-    flushing = null;
-    if (queuedWhileFlushing) {
-      queuedWhileFlushing = false;
-      void flushInk();
-    }
-  });
-  return flushing;
+/** `strokes` (the server's page) with this device's unsent changes to it on top. */
+export function withPendingInk(bookId: string, page: number, strokes: Stroke[], pending: Queued<PendingChange>[] = outbox.pending()) {
+  return pending.reduce((acc, c) => (c.bookId === bookId && c.page === page ? applyChange(acc, c) : acc), strokes);
 }
+
+export const flushInk = () => outbox.flush();
 
 let installed = false;
 export function installInkFlushers() {
@@ -182,16 +158,118 @@ export function installInkFlushers() {
   void flushInk();
 }
 
-/** For tests: forget the in-memory outbox and stored values. */
-export function resetInkStore() {
-  outbox = null;
-  memory.clear();
+// ---------- Offline copy, one entry per page ----------
+
+type CachedPage = { strokes: Stroke[]; version: number };
+const pageUrl = (bookId: string, page: number) => `/ink-store/book-${bookId}/page-${page}`;
+
+async function openStore() {
+  return typeof caches === "undefined" ? null : caches.open(STORE).catch(() => null);
+}
+
+async function readCachedPages(bookId: string): Promise<Record<number, CachedPage>> {
+  const cache = await openStore();
+  if (!cache) return {};
+  const out: Record<number, CachedPage> = {};
+  const prefix = `/ink-store/book-${bookId}/page-`;
+  for (const req of await cache.keys()) {
+    const path = new URL(req.url).pathname;
+    if (!path.startsWith(prefix)) continue;
+    const res = await cache.match(req);
+    if (res) out[Number(path.slice(prefix.length))] = await res.json();
+  }
+  // The first version kept a whole book in one entry.
+  const legacy = await cache.match(`/ink-store/book-${bookId}`);
+  if (legacy && !Object.keys(out).length) {
+    for (const [p, strokes] of Object.entries((await legacy.json()) as InkPages)) out[Number(p)] = { strokes, version: 0 };
+  }
+  return out;
+}
+
+const writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Keeps the offline copy of one page in step with what the reader shows. Writes wait a moment,
+ * so a burst of strokes costs one write (unsent strokes are safe in the outbox meanwhile).
+ */
+export function rememberInkPage(bookId: string, page: number, strokes: Stroke[], version: number) {
+  const url = pageUrl(bookId, page);
+  clearTimeout(writeTimers.get(url));
+  writeTimers.set(
+    url,
+    setTimeout(() => {
+      writeTimers.delete(url);
+      void (async () => {
+        const cache = await openStore();
+        if (!cache) return;
+        if (strokes.length || version) {
+          await cache.put(url, new Response(JSON.stringify({ strokes, version } satisfies CachedPage), { headers: { "Content-Type": "application/json" } }));
+        } else await cache.delete(url);
+      })().catch(() => {});
+    }, 600),
+  );
+}
+
+type ServerPage = { page: number; version: number; strokes: Stroke[] };
+
+/**
+ * The book's handwriting: from the server when reachable (then also kept offline), else the
+ * last copy seen; with this device's unsent changes on top.
+ */
+export async function loadInk(bookId: string): Promise<{ pages: InkPages; versions: InkVersions }> {
+  let server: Record<number, CachedPage> | null = null;
+  try {
+    const list = await apiJson<ServerPage[]>(`/api/books/${bookId}/ink`);
+    server = Object.fromEntries(list.map((p) => [p.page, { strokes: p.strokes, version: p.version }]));
+  } catch {
+    /* offline: use the copy on this device */
+  }
+  const saved = server ?? (await readCachedPages(bookId));
+  if (server) void replaceCachedBook(bookId, server);
+  await outbox.ready;
+  const pages: InkPages = {};
+  const versions: InkVersions = {};
+  const touched = new Set([...Object.keys(saved).map(Number), ...outbox.pending().filter((c) => c.bookId === bookId).map((c) => c.page)]);
+  for (const page of touched) {
+    versions[page] = saved[page]?.version ?? 0;
+    const strokes = withPendingInk(bookId, page, saved[page]?.strokes ?? []);
+    if (strokes.length) pages[page] = strokes;
+  }
+  return { pages, versions };
+}
+
+/** One page from the server (after a missed live change, or a refused one); null when offline. */
+export async function fetchInkPage(bookId: string, page: number): Promise<{ strokes: Stroke[]; version: number } | null> {
+  try {
+    const p = await apiJson<ServerPage>(`/api/books/${bookId}/ink/${page}`);
+    return { strokes: p.strokes, version: p.version };
+  } catch {
+    return null;
+  }
+}
+
+/** Stores the server's copy of a book's pages, dropping pages it no longer has. */
+async function replaceCachedBook(bookId: string, pages: Record<number, CachedPage>) {
+  const cache = await openStore();
+  if (!cache) return;
+  try {
+    const prefix = `/ink-store/book-${bookId}/`;
+    for (const req of await cache.keys()) {
+      const path = new URL(req.url).pathname;
+      if (path.startsWith(prefix) && !(Number(path.slice(`${prefix}page-`.length)) in pages)) await cache.delete(req);
+    }
+    await cache.delete(`/ink-store/book-${bookId}`); // the first version's single entry
+    for (const [p, data] of Object.entries(pages)) {
+      await cache.put(pageUrl(bookId, Number(p)), new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
+    }
+  } catch {
+    /* storage full: the reader still works online */
+  }
 }
 
 // ---------- Geometry ----------
 
 const round = (v: number, digits: number) => Math.round(v * 10 ** digits) / 10 ** digits;
-
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /**

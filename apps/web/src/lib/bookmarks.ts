@@ -1,13 +1,14 @@
 import { collapse, compare } from "foliate-js/epubcfi.js";
 import { apiFetch, apiJson, type Bookmark } from "./api";
 import { comicIndexFromLocator } from "./comics";
+import { createOutbox, localStorageStore, type Queued } from "./outbox";
 
 /**
  * Bookmarked pages ("save this page", like a Kindle bookmark).
  *  - A page is identified by its locator, so the latest change to a page wins and replaying
  *    a change is harmless.
- *  - Changes go to an outbox in localStorage first, so bookmarking works offline; the outbox
- *    is sent when back online. The last list seen for each book is kept for offline reading.
+ *  - Changes wait in an outbox (lib/outbox) so bookmarking works offline, and are sent in order
+ *    when possible. The last list seen for each book is kept for offline reading.
  */
 
 export type BookKind = "pdf" | "comic" | "text";
@@ -16,9 +17,7 @@ type Change =
   | { op: "put"; bookId: string; locator: string; percentage: number; label: string | null; title?: string | null; at: number }
   | { op: "delete"; bookId: string; locator: string; at: number };
 
-const OUTBOX_KEY = "readsync.bookmarkOutbox";
 const cacheKey = (bookId: string) => `readsync.bookmarks.${bookId}`;
-const changeKey = (c: { bookId: string; locator: string }) => `${c.bookId} ${c.locator}`;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -36,7 +35,31 @@ function write(key: string, value: unknown) {
   }
 }
 
-const readOutbox = () => read<Record<string, Change>>(OUTBOX_KEY, {});
+const outbox = createOutbox<Change>({
+  // The first version kept one change per page in an object; it is brought over once.
+  store: localStorageStore<Change>("readsync.bookmarkQueue", {
+    key: "readsync.bookmarkOutbox",
+    convert: (old) => Object.values(old as Record<string, Change>).sort((a, b) => a.at - b.at),
+  }),
+  key: (c) => `${c.bookId} ${c.locator}`,
+  // Renaming keeps a waiting bookmark's other details, and a later save without a name keeps the name.
+  combine: (older, newer) => (older.op === "put" && newer.op === "put" && newer.title === undefined ? { ...newer, title: older.title } : newer),
+  send: ([c]) => {
+    const url = `/api/books/${c!.bookId}/bookmarks`;
+    return c!.op === "put"
+      ? apiFetch(url, {
+          method: "PUT",
+          body: JSON.stringify({ locator: c!.locator, percentage: c!.percentage, label: c!.label, ...(c!.title !== undefined ? { title: c!.title } : {}) }),
+        })
+      : apiFetch(`${url}?locator=${encodeURIComponent(c!.locator)}`, { method: "DELETE" });
+  },
+  // Refused for good (e.g. too many bookmarks): the reader shows the server's list again.
+  onRejected: (items, status) => {
+    for (const bookId of new Set(items.map((c) => c.bookId))) {
+      window.dispatchEvent(new CustomEvent("readsync:bookmarks-rejected", { detail: { bookId, status } }));
+    }
+  },
+});
 
 /** Page order, then creation order. */
 export function sortBookmarks(list: Bookmark[]) {
@@ -44,9 +67,9 @@ export function sortBookmarks(list: Bookmark[]) {
 }
 
 /** `list` with this device's not-yet-sent changes applied on top. */
-export function withPending(bookId: string, list: Bookmark[], outbox: Record<string, Change> = readOutbox()) {
+export function withPending(bookId: string, list: Bookmark[], pending: Queued<Change>[] = outbox.pending()) {
   const byLocator = new Map(list.map((b) => [b.locator, b]));
-  for (const c of Object.values(outbox).sort((a, b) => a.at - b.at)) {
+  for (const c of pending) {
     if (c.bookId !== bookId) continue;
     if (c.op === "delete") {
       byLocator.delete(c.locator);
@@ -75,10 +98,14 @@ export async function loadBookmarks(bookId: string) {
   } catch {
     list = read<Bookmark[]>(cacheKey(bookId), []);
   }
+  await outbox.ready;
   return withPending(bookId, list);
 }
 
-/** Keeps the offline copy in step with what the reader shows (server events, local changes). */
+/**
+ * Keeps the offline copy in step with what the reader shows (server events, local changes).
+ * Call it only once the book's list is loaded: before that, the reader's list is just empty.
+ */
 export function rememberBookmarks(bookId: string, list: Bookmark[]) {
   write(
     cacheKey(bookId),
@@ -86,64 +113,16 @@ export function rememberBookmarks(bookId: string, list: Bookmark[]) {
   );
 }
 
-function queue(change: Change) {
-  const outbox = readOutbox();
-  outbox[changeKey(change)] = change;
-  write(OUTBOX_KEY, outbox);
-  if (flushing) queuedWhileFlushing = true;
-  void flushBookmarks();
-}
-
 /** Bookmarks a page, or renames its bookmark (`title`: null clears it, undefined keeps it). */
 export function putBookmark(bookId: string, b: { locator: string; percentage: number; label: string | null; title?: string | null }) {
-  queue({ op: "put", bookId, ...b, percentage: Math.min(1, Math.max(0, b.percentage || 0)), at: Date.now() });
+  outbox.push({ op: "put", bookId, ...b, percentage: Math.min(1, Math.max(0, b.percentage || 0)), at: Date.now() });
 }
 
 export function deleteBookmark(bookId: string, locator: string) {
-  queue({ op: "delete", bookId, locator, at: Date.now() });
+  outbox.push({ op: "delete", bookId, locator, at: Date.now() });
 }
 
-let flushing: Promise<void> | null = null;
-/** A change made while sending: send again afterwards, it may have missed this round. */
-let queuedWhileFlushing = false;
-
-async function sendOutbox() {
-  for (const c of Object.values(readOutbox()).sort((a, b) => a.at - b.at)) {
-    const url = `/api/books/${c.bookId}/bookmarks`;
-    let res: Response;
-    try {
-      res =
-        c.op === "put"
-          ? await apiFetch(url, {
-              method: "PUT",
-              body: JSON.stringify({ locator: c.locator, percentage: c.percentage, label: c.label, ...(c.title !== undefined ? { title: c.title } : {}) }),
-            })
-          : await apiFetch(`${url}?locator=${encodeURIComponent(c.locator)}`, { method: "DELETE" });
-    } catch {
-      return; // offline
-    }
-    // Server errors are retried later; anything else (done, book gone, invalid) leaves the outbox.
-    if (res.status >= 500 || res.status === 401) return;
-    const outbox = readOutbox();
-    if (outbox[changeKey(c)]?.at === c.at) {
-      delete outbox[changeKey(c)];
-      write(OUTBOX_KEY, outbox);
-    }
-  }
-}
-
-/** Sends the outbox in order; stops at the first network failure and tries again later. */
-export function flushBookmarks(): Promise<void> {
-  // .finally runs after `flushing` is set, even when there is nothing to send.
-  flushing ??= sendOutbox().finally(() => {
-    flushing = null;
-    if (queuedWhileFlushing) {
-      queuedWhileFlushing = false;
-      void flushBookmarks();
-    }
-  });
-  return flushing;
-}
+export const flushBookmarks = () => outbox.flush();
 
 let installed = false;
 export function installBookmarkFlushers() {

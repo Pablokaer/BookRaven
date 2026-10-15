@@ -32,13 +32,32 @@ const strokeSchema = {
   },
 };
 
-type InkRow = { page: number; strokes: Stroke[]; updated_at: Date };
-const toDto = (bookId: string, r: InkRow) => ({ bookId, page: r.page, strokes: r.strokes, updatedAt: r.updated_at.toISOString() });
+const pageParams = {
+  type: "object",
+  required: ["id", "page"],
+  properties: { id: { type: "string" }, page: { type: "string", pattern: "^[1-9][0-9]{0,5}$" } },
+};
+
+type PageRow = { page: number; version: number; updated_at: Date; strokes: Stroke[] };
+
+/** Pages of a book (or one page) with their strokes in drawing order. Pages emptied by the eraser stay, with their version. */
+const PAGES_SQL = `
+  SELECT p.page, p.version, p.updated_at,
+         COALESCE(jsonb_agg(s.stroke ORDER BY s.seq) FILTER (WHERE s.id IS NOT NULL), '[]'::jsonb) AS strokes
+  FROM pdf_ink_page p
+  LEFT JOIN pdf_ink_stroke s ON s.user_id = p.user_id AND s.book_id = p.book_id AND s.page = p.page
+  WHERE p.user_id = $1 AND p.book_id = $2 AND ($3::int IS NULL OR p.page = $3)
+  GROUP BY p.page, p.version, p.updated_at
+  ORDER BY p.page`;
+
+const toDto = (bookId: string, r: PageRow) => ({ bookId, page: r.page, version: r.version, strokes: r.strokes, updatedAt: r.updated_at.toISOString() });
 
 /**
- * Pen annotations on PDF pages. Devices send changes ("these strokes were added, those were
- * erased") rather than whole pages, so two devices annotating the same page offline both keep
- * their strokes, and replaying a change is harmless.
+ * Pen annotations on PDF pages, stored one row per stroke. Devices send changes ("these strokes
+ * were added, those were erased"), so two devices annotating a page (even offline) both keep their
+ * strokes and replaying a change is harmless. Every change raises the page's version; the live
+ * event carries the change and that version, so other devices apply changes in order and fetch
+ * the page again when they missed one.
  */
 export async function inkRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
@@ -46,11 +65,16 @@ export async function inkRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/api/books/:id/ink", async (request, reply) => {
     const book = await loadOwnedBook(request, reply);
     if (!book) return;
-    const { rows } = await query<InkRow>("SELECT page, strokes, updated_at FROM pdf_ink WHERE book_id = $1 AND user_id = $2 ORDER BY page", [
-      book.id,
-      request.user.id,
-    ]);
+    const { rows } = await query<PageRow>(PAGES_SQL, [request.user.id, book.id, null]);
     return rows.map((r) => toDto(book.id, r));
+  });
+
+  app.get<{ Params: { id: string; page: string } }>("/api/books/:id/ink/:page", { schema: { params: pageParams } }, async (request, reply) => {
+    const book = await loadOwnedBook(request, reply);
+    if (!book) return;
+    const page = Number(request.params.page);
+    const { rows } = await query<PageRow>(PAGES_SQL, [request.user.id, book.id, page]);
+    return toDto(book.id, rows[0] ?? { page, version: 0, updated_at: new Date(0), strokes: [] });
   });
 
   app.post<{
@@ -61,11 +85,7 @@ export async function inkRoutes(app: FastifyInstance) {
     {
       bodyLimit: 4 * 1024 * 1024,
       schema: {
-        params: {
-          type: "object",
-          required: ["id", "page"],
-          properties: { id: { type: "string" }, page: { type: "string", pattern: "^[1-9][0-9]{0,5}$" } },
-        },
+        params: pageParams,
         body: {
           type: "object",
           additionalProperties: false,
@@ -81,45 +101,44 @@ export async function inkRoutes(app: FastifyInstance) {
       const book = await loadOwnedBook(request, reply);
       if (!book) return;
       const page = Number(request.params.page);
-      const add = request.body.add ?? [];
-      const remove = new Set(request.body.remove ?? []);
-      if (add.some((s) => s.points.length % 3 !== 0)) return reply.code(400).send({ error: "points_must_be_triples" });
+      if ((request.body.add ?? []).some((s) => s.points.length % 3 !== 0)) return reply.code(400).send({ error: "points_must_be_triples" });
+      // The last stroke with a given id wins, as on the devices.
+      const add = [...new Map((request.body.add ?? []).map((s) => [s.id, { id: s.id, tool: s.tool, color: s.color.toLowerCase(), width: s.width, points: s.points }])).values()];
+      const remove = [...new Set(request.body.remove ?? [])];
+      const key = [request.user.id, book.id, page];
 
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        // One change at a time per page, so concurrent devices can't drop each other's strokes.
-        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`ink:${request.user.id}:${book.id}:${page}`]);
-        const { rows } = await client.query<{ strokes: Stroke[] }>(
-          "SELECT strokes FROM pdf_ink WHERE user_id = $1 AND book_id = $2 AND page = $3",
-          [request.user.id, book.id, page],
+        // Raising the version also locks the page: changes to one page run one at a time.
+        const { rows } = await client.query<{ version: number; updated_at: Date }>(
+          `INSERT INTO pdf_ink_page (user_id, book_id, page, version) VALUES ($1, $2, $3, 1)
+           ON CONFLICT (user_id, book_id, page) DO UPDATE SET version = pdf_ink_page.version + 1, updated_at = now()
+           RETURNING version, updated_at`,
+          key,
         );
-        const byId = new Map((rows[0]?.strokes ?? []).map((s) => [s.id, s]));
-        for (const id of remove) byId.delete(id);
-        for (const s of add) byId.set(s.id, { id: s.id, tool: s.tool, color: s.color.toLowerCase(), width: s.width, points: s.points });
-        const strokes = [...byId.values()];
-        const json = JSON.stringify(strokes);
-        if (strokes.length > MAX_STROKES_PER_PAGE || json.length > MAX_PAGE_INK_BYTES) {
+        // Erased strokes go, and re-added ones are replaced (they move on top, like on the devices).
+        const gone = [...new Set([...remove, ...add.map((s) => s.id)])];
+        if (gone.length) await client.query("DELETE FROM pdf_ink_stroke WHERE user_id = $1 AND book_id = $2 AND page = $3 AND id = ANY($4)", [...key, gone]);
+        if (add.length) {
+          await client.query(
+            `INSERT INTO pdf_ink_stroke (user_id, book_id, page, id, stroke)
+             SELECT $1, $2, $3, s.value ->> 'id', s.value FROM jsonb_array_elements($4::jsonb) WITH ORDINALITY AS s(value, n) ORDER BY s.n`,
+            [...key, JSON.stringify(add)],
+          );
+        }
+        const { rows: size } = await client.query<{ n: number; bytes: string }>(
+          "SELECT count(*)::int AS n, COALESCE(sum(octet_length(stroke::text)), 0) AS bytes FROM pdf_ink_stroke WHERE user_id = $1 AND book_id = $2 AND page = $3",
+          key,
+        );
+        if (size[0]!.n > MAX_STROKES_PER_PAGE || Number(size[0]!.bytes) > MAX_PAGE_INK_BYTES) {
           await client.query("ROLLBACK");
           return reply.code(413).send({ error: "page_ink_too_large" });
         }
-        let row: InkRow;
-        if (strokes.length) {
-          const res = await client.query<InkRow>(
-            `INSERT INTO pdf_ink (user_id, book_id, page, strokes, updated_at) VALUES ($1, $2, $3, $4, now())
-             ON CONFLICT (user_id, book_id, page) DO UPDATE SET strokes = EXCLUDED.strokes, updated_at = now()
-             RETURNING page, strokes, updated_at`,
-            [request.user.id, book.id, page, json],
-          );
-          row = res.rows[0]!;
-        } else {
-          await client.query("DELETE FROM pdf_ink WHERE user_id = $1 AND book_id = $2 AND page = $3", [request.user.id, book.id, page]);
-          row = { page, strokes: [], updated_at: new Date() };
-        }
         await client.query("COMMIT");
-        const dto = toDto(book.id, row);
-        publish(request.user.id, "ink.updated", { ...dto, deviceId: request.body.deviceId ?? null });
-        return dto;
+        const done = { bookId: book.id, page, version: rows[0]!.version, updatedAt: rows[0]!.updated_at.toISOString() };
+        publish(request.user.id, "ink.updated", { ...done, add, remove, deviceId: request.body.deviceId ?? null });
+        return done;
       } catch (err) {
         await client.query("ROLLBACK").catch(() => {});
         throw err;
