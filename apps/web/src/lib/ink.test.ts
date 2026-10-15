@@ -5,13 +5,11 @@ import {
   inverseChange,
   liveChangeAction,
   mergeChanges,
-  strokeOutline,
-  strokePoint,
-  touchesStroke,
   withPendingInk,
   type InkChange,
   type Stroke,
 } from "./ink";
+import { strokeOutline, strokePath, strokePoint, touchesStroke } from "./inkDraw";
 
 const stroke = (id: string, points = [0.1, 0.1, 0.5, 0.5, 0.1, 0.5], extra: Partial<Stroke> = {}): Stroke => ({
   id,
@@ -94,6 +92,23 @@ describe("ink geometry", () => {
     expect(touchesStroke(stroke("dot", [0.3, 0.3, 0.5]), 0.305, 0.3, 0.01, 1)).toBe(true);
   });
 
+  it("reuses a stroke's outline, but not for the stroke still being drawn (it grows)", () => {
+    vi.stubGlobal(
+      "Path2D",
+      class {
+        moveTo() {}
+        quadraticCurveTo() {}
+        closePath() {}
+      },
+    );
+    const s = stroke("live", [0.1, 0.1, 0.5, 0.2, 0.1, 0.5]);
+    const first = strokePath(s, 1.3);
+    expect(strokePath(s, 1.3)).toBe(first); // same stroke: cached
+    s.points.push(0.3, 0.1, 0.5); // the pen moved on
+    expect(strokePath(s, 1.3)).not.toBe(first);
+    vi.unstubAllGlobals();
+  });
+
   it("outlines pen strokes thicker where pressed harder", () => {
     const light = strokeOutline(stroke("l", [0.1, 0.5, 0.1, 0.5, 0.5, 0.1, 0.9, 0.5, 0.1]), 1000, 1300);
     const hard = strokeOutline(stroke("h", [0.1, 0.5, 0.9, 0.5, 0.5, 0.9, 0.9, 0.5, 0.9]), 1000, 1300);
@@ -128,8 +143,9 @@ describe("ink sync", () => {
 
   it("keeps strokes while offline, shows them over the server's copy, then sends a page's strokes together", async () => {
     let online = false;
-    const { lib, posts } = await fresh((method) => {
+    const { lib, posts } = await fresh((method, url) => {
       if (!online) throw new TypeError("offline");
+      if (method === "GET" && url.includes("summary=1")) return new Response(JSON.stringify([{ page: 1, version: 3, count: 1 }]), { status: 200 });
       if (method === "GET") return new Response(JSON.stringify([{ page: 1, version: 3, strokes: [stroke("server")] }]), { status: 200 });
       return new Response("{}", { status: 200 });
     });
@@ -141,9 +157,15 @@ describe("ink sync", () => {
     expect(posts).toEqual([]);
 
     online = true;
-    const loaded = await lib.loadInk("bk");
-    expect(loaded.versions).toEqual({ 1: 3, 2: 0 });
-    expect(Object.fromEntries(Object.entries(loaded.pages).map(([p, s]) => [p, ids(s)]))).toEqual({ 1: ["x", "y"], 2: ["z"] });
+    // Opening the book: the summary, then the pages around the one being read.
+    expect(await lib.loadInkSummary("bk")).toEqual({ 1: { count: 1, version: 3 } });
+    expect(lib.pendingInkPages("bk").sort()).toEqual([1, 2]);
+    const loaded = await lib.loadInkPages("bk", [1, 2]);
+    expect(loaded[1]!.version).toBe(3);
+    expect(loaded[2]).toEqual({ strokes: [], version: 0 });
+    // The server's strokes with the unsent changes on top.
+    expect(ids(lib.withPendingInk("bk", 1, loaded[1]!.strokes))).toEqual(["x", "y"]);
+    expect(ids(lib.withPendingInk("bk", 2, loaded[2]!.strokes))).toEqual(["z"]);
 
     await lib.flushInk();
     expect(posts).toEqual([

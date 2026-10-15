@@ -50,6 +50,30 @@ describe("handwritten PDF annotations", () => {
     expect((await api(u, "GET", url(9))).json()).toMatchObject({ page: 9, version: 0, strokes: [] });
   });
 
+  it("lists a summary of the pages (no strokes) and only the pages asked for", async () => {
+    const u = await signUp();
+    const book = (await upload(u, "s.pdf", fakePdf())).json();
+    const ink = `/api/books/${book.id}/ink`;
+    await api(u, "POST", `${ink}/2`, { add: [stroke("a"), stroke("b")] });
+    await api(u, "POST", `${ink}/7`, { add: [stroke("c")] });
+    await api(u, "POST", `${ink}/7`, { remove: ["c"] });
+    await api(u, "POST", `${ink}/9`, { add: [stroke("d")] });
+
+    const summary = (await api(u, "GET", `${ink}?summary=1`)).json();
+    expect(summary.map((p: { page: number; version: number; count: number; strokes?: unknown }) => [p.page, p.version, p.count, p.strokes])).toEqual([
+      [2, 1, 2, undefined],
+      [7, 2, 0, undefined],
+      [9, 1, 1, undefined],
+    ]);
+    const some = (await api(u, "GET", `${ink}?pages=9,2,4`)).json();
+    expect(some.map((p: { page: number; strokes: { id: string }[] }) => [p.page, ids(p.strokes)])).toEqual([
+      [2, ["a", "b"]],
+      [9, ["d"]],
+    ]);
+    expect((await api(u, "GET", `${ink}?pages=0`)).statusCode).toBe(400);
+    expect((await api(u, "GET", `${ink}?pages=1,x`)).statusCode).toBe(400);
+  });
+
   it("refuses a change that would overfill the page, leaving it as it was", async () => {
     const u = await signUp();
     const book = (await upload(u, "k.pdf", fakePdf())).json();

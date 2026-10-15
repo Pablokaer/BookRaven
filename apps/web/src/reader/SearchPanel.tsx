@@ -2,10 +2,18 @@ import { Loader2, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReaderHandle, SearchResult } from "./types";
 
+/** Results listed at first, and added by each "Show more": a frequent word can match tens of thousands of times. */
+const PAGE_SIZE = 200;
+/** The count and list refresh at most this often while searching, so long books stay responsive. */
+const REFRESH_MS = 150;
+
 /** Full-text search in the open book. */
 export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandle | null; onSelect: (r: SearchResult) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
+  /** Every match found so far; the list shows the first `shown`. */
+  const found = useRef<SearchResult[]>([]);
+  const [, setRefreshed] = useState(0);
+  const [shown, setShown] = useState(PAGE_SIZE);
   const [running, setRunning] = useState(false);
   const [searched, setSearched] = useState("");
   const abort = useRef<AbortController | null>(null);
@@ -19,31 +27,36 @@ export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandl
     abort.current?.abort();
     const ctrl = new AbortController();
     abort.current = ctrl;
-    setResults([]);
+    const results: SearchResult[] = [];
+    found.current = results;
+    setShown(PAGE_SIZE);
+    setRefreshed((n) => n + 1);
     setRunning(true);
     setSearched(q);
-    const found: SearchResult[] = [];
-    let flush = 0;
+    let last = 0;
     try {
       await reader.search(
         q,
         (r) => {
-          found.push(r);
-          // Update the list in batches so long books stay responsive.
-          if (found.length - flush >= 20) {
-            flush = found.length;
-            setResults([...found]);
+          results.push(r);
+          const now = performance.now();
+          if (now - last > REFRESH_MS) {
+            last = now;
+            setRefreshed((n) => n + 1);
           }
         },
         ctrl.signal,
       );
     } finally {
       if (!ctrl.signal.aborted) {
-        setResults([...found]);
+        setRefreshed((n) => n + 1);
         setRunning(false);
       }
     }
   };
+
+  const count = found.current.length;
+  const list = found.current.slice(0, shown);
 
   return (
     <div className="panel left-0 w-full max-w-sm" role="dialog" aria-label="Search in book">
@@ -52,6 +65,7 @@ export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandl
         <button
           className="btn-icon"
           onClick={() => {
+            abort.current?.abort();
             reader?.clearSearch?.();
             onClose();
           }}
@@ -75,11 +89,11 @@ export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandl
       {searched && (
         <p className="flex items-center gap-2 text-xs opacity-60">
           {running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {results.length} result{results.length === 1 ? "" : "s"} for “{searched}”{running ? "…" : ""}
+          {count.toLocaleString()} result{count === 1 ? "" : "s"} for “{searched}”{running ? "…" : ""}
         </p>
       )}
       <ul className="space-y-1">
-        {results.map((r, i) => (
+        {list.map((r, i) => (
           <li key={`${r.locator}-${i}`}>
             <button className="w-full rounded-md px-3 py-2 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800" onClick={() => onSelect(r)}>
               {r.label && <span className="mb-0.5 block truncate text-[11px] font-medium uppercase tracking-wide opacity-50">{r.label}</span>}
@@ -92,6 +106,11 @@ export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandl
           </li>
         ))}
       </ul>
+      {count > list.length && (
+        <button className="w-full rounded-md py-2 text-sm font-medium text-teal-700 hover:bg-neutral-100 dark:text-teal-300 dark:hover:bg-neutral-800" onClick={() => setShown((n) => n + PAGE_SIZE)}>
+          Show more ({(count - list.length).toLocaleString()} left)
+        </button>
+      )}
     </div>
   );
 }

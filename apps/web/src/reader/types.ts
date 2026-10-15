@@ -1,6 +1,6 @@
 import type { TocItem } from "foliate-js/view.js";
 import type { Book, Highlight } from "../lib/api";
-import type { InkChange, InkPages, InkTool } from "../lib/ink";
+import type { InkChange, InkPages, InkTool, Stroke } from "../lib/ink";
 import type { Position } from "../lib/progress";
 import type { ReaderSettings } from "../lib/settings";
 
@@ -22,8 +22,8 @@ export type ReaderHandle = {
   clearSearch?(): void;
   /** PDFs: zoom in or out a step, or back to the fitted page. */
   zoom?(action: "in" | "out" | "reset"): void;
-  /** PDFs: a small picture of a page with its handwriting (data URL), for the notebook. */
-  thumbnail?(page: number, width: number): Promise<string | null>;
+  /** PDFs: a small picture of a page with its handwriting (`strokes`, else the page's in `ink`), as a data URL. */
+  thumbnail?(page: number, width: number, strokes?: Stroke[]): Promise<string | null>;
 };
 
 /** PDFs: what the pen does while annotating. */

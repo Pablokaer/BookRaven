@@ -1,11 +1,29 @@
 import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
 import { apiJson, type Book, type Bookmark, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
-import { bookmarkLocator, deleteBookmark, isOnPage, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks, type BookKind } from "../lib/bookmarks";
-import { applyChange, fetchInkPage, inkSignature, inverseChange, liveChangeAction, loadInk, recordInk, rememberInkPage, withPendingInk, type InkChange, type InkPages, type InkVersions, type Stroke } from "../lib/ink";
+import { bookmarkLocator, isOnPage, type BookKind } from "../lib/bookmarkPages";
+import { deleteBookmark, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks } from "../lib/bookmarks";
+import {
+  applyChange,
+  fetchInkPage,
+  inkSignature,
+  inverseChange,
+  liveChangeAction,
+  loadInkPages,
+  loadInkSummary,
+  pendingInkPages,
+  recordInk,
+  rememberInkPage,
+  withPendingInk,
+  type InkChange,
+  type InkPages,
+  type InkSummary,
+  type InkVersions,
+  type Stroke,
+} from "../lib/ink";
 import { getBook } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comics";
@@ -22,7 +40,7 @@ import { HighlightMenu } from "../reader/HighlightMenu";
 import { LookupCard } from "../reader/LookupCard";
 import { NoteDialog } from "../reader/NoteDialog";
 import { InkToolbar, useInkTools } from "../reader/InkToolbar";
-import { NotebookPanel, type NotebookTab } from "../reader/NotebookPanel";
+import { NotebookPanel, type InkPageSummary, type NotebookTab } from "../reader/NotebookPanel";
 import { PdfReader } from "../reader/PdfReader";
 import { SearchPanel } from "../reader/SearchPanel";
 import { SettingsPanel } from "../reader/SettingsPanel";
@@ -97,15 +115,25 @@ export function ReaderPage() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   /** The book whose bookmarks are loaded (null while loading). */
   const [bookmarksLoadedFor, setBookmarksLoadedFor] = useState<string | null>(null);
-  /** PDFs: handwriting per page, and whether the pen is out. */
+  /** PDFs: handwriting of the pages loaded so far (around the page being read), and whether the pen is out. */
   const [ink, setInk] = useState<InkPages>({});
   const inkRef = useRef(ink);
-  /** Server version of each page's handwriting (see the sync effect). */
+  inkRef.current = ink;
+  /** Every annotated page's stroke count and version, loaded when the book opens (strokes load page by page). */
+  const [inkSummary, setInkSummary] = useState<InkSummary>({});
+  const inkSummaryRef = useRef(inkSummary);
+  inkSummaryRef.current = inkSummary;
+  /** Pages whose strokes are loaded (or known to be empty), and those being loaded. */
+  const inkLoaded = useRef(new Set<number>());
+  const inkLoading = useRef(new Map<number, Promise<void>>());
+  /** Server version of each loaded page's handwriting, and the newest version heard of for any page. */
   const inkVersions = useRef<InkVersions>({});
-  /** What the offline copy holds; and the book whose handwriting is loaded (null while loading). */
+  const inkLatest = useRef<InkVersions>({});
+  /** What the offline copy holds; and the book whose handwriting summary is loaded (null while loading). */
   const savedInk = useRef<InkPages>({});
   const [inkLoadedFor, setInkLoadedFor] = useState<string | null>(null);
-  inkRef.current = ink;
+  /** Notebook pictures of annotated pages, by page and strokes. */
+  const inkThumbs = useRef(new Map<string, string>());
   const [inking, setInking] = useState(false);
   const inkTools = useInkTools();
   /** Undo and redo stacks of this session's handwriting changes (each with the change that reverts it). */
@@ -173,33 +201,103 @@ export function ReaderPage() {
     };
   }, [book]);
 
-  // PDF handwriting, kept in sync with other devices; changes work offline (lib/ink). Live changes
-  // carry the page's version: they apply in order, and a missed one makes the page load again.
+  /** The book whose handwriting is being shown (loads for another book are dropped). */
+  const inkBook = useRef<string | null>(null);
+
+  /** The server's copy of a loaded page, with this device's unsent changes on top. */
+  const reloadInkPage = useCallback(
+    async (page: number) => {
+      if (!book) return;
+      const fresh = await fetchInkPage(book.id, page);
+      if (!fresh || book.id !== inkBook.current || fresh.version < (inkVersions.current[page] ?? 0)) return;
+      inkVersions.current[page] = fresh.version;
+      setInk((prev) => withPage(prev, page, withPendingInk(book.id, page, fresh.strokes)));
+    },
+    [book],
+  );
+
+  /** Puts a page's strokes (as loaded) on screen, with unsent changes on top. */
+  const showInkPage = useCallback(
+    (bookId: string, page: number, strokes: Stroke[], version: number) => {
+      if (bookId !== inkBook.current) return;
+      inkLoaded.current.add(page);
+      inkVersions.current[page] = version;
+      const shown = withPendingInk(bookId, page, strokes);
+      savedInk.current = withPage(savedInk.current, page, shown); // already in the offline copy
+      inkRef.current = withPage(inkRef.current, page, shown); // for callers awaiting the load (thumbnails)
+      setInk((prev) => withPage(prev, page, shown));
+      // A live change arrived while this page was loading: load it again.
+      if ((inkLatest.current[page] ?? 0) > version) void reloadInkPage(page);
+    },
+    [reloadInkPage],
+  );
+
+  /** Loads the strokes of `pages` that aren't loaded yet, in one request; resolves when they are on screen. */
+  const ensureInkPages = useCallback(
+    (pages: number[]) => {
+      if (book?.format !== "pdf" || inkBook.current !== book.id) return Promise.resolve();
+      const bookId = book.id;
+      const waiting: Promise<void>[] = [];
+      const toFetch: number[] = [];
+      for (const page of new Set(pages)) {
+        if (page < 1 || inkLoaded.current.has(page)) continue;
+        const loading = inkLoading.current.get(page);
+        if (loading) waiting.push(loading);
+        else if ((inkSummaryRef.current[page]?.count ?? 0) > 0) toFetch.push(page);
+        else showInkPage(bookId, page, [], inkSummaryRef.current[page]?.version ?? 0); // nothing written there
+      }
+      if (toFetch.length) {
+        const job = loadInkPages(bookId, toFetch).then((loaded) => {
+          for (const page of toFetch) {
+            inkLoading.current.delete(page);
+            showInkPage(bookId, page, loaded[page]!.strokes, loaded[page]!.version);
+          }
+        });
+        for (const page of toFetch) inkLoading.current.set(page, job);
+        waiting.push(job);
+      }
+      return Promise.all(waiting).then(() => {});
+    },
+    [book, showInkPage],
+  );
+
+  // PDF handwriting, kept in sync with other devices; changes work offline (lib/ink). The book
+  // opens with a summary of its annotated pages; strokes load around the page being read. Live
+  // changes carry the page's version: they apply in order, and a missed one makes the page load again.
   useEffect(() => {
     if (book?.format !== "pdf") return;
     let cancelled = false;
+    inkBook.current = book.id;
+    inkLoaded.current = new Set();
+    inkLoading.current = new Map();
+    inkVersions.current = {};
+    inkLatest.current = {};
+    savedInk.current = {};
+    setInk({});
+    setInkSummary({});
     setInkLoadedFor(null);
-    /** The server's copy of a page, with this device's unsent changes on top. */
-    const loadPage = async (page: number) => {
-      const fresh = await fetchInkPage(book.id, page);
-      if (cancelled || !fresh || fresh.version < (inkVersions.current[page] ?? 0)) return;
-      inkVersions.current[page] = fresh.version;
-      setInk((prev) => withPage(prev, page, withPendingInk(book.id, page, fresh.strokes)));
-    };
-    loadInk(book.id)
-      .then(({ pages, versions }) => {
+    loadInkSummary(book.id)
+      .then((summary) => {
         if (cancelled) return;
-        inkVersions.current = versions;
-        savedInk.current = pages; // loadInk already stored what it read
-        setInk(pages);
+        for (const [page, s] of Object.entries(summary)) inkLatest.current[Number(page)] = s.version;
+        setInkSummary(summary);
         setInkLoadedFor(book.id);
       })
       .catch(() => {});
     const off = onServerEvent((event, data) => {
       if (event !== "ink.updated" || data?.bookId !== book.id) return;
       const page = data.page as number;
+      inkLatest.current[page] = Math.max(inkLatest.current[page] ?? 0, data.version);
+      if (!inkLoaded.current.has(page)) {
+        // Not loaded here: the summary keeps the notebook right, and the strokes load when needed.
+        setInkSummary((prev) => ({
+          ...prev,
+          [page]: { version: Math.max(prev[page]?.version ?? 0, data.version), count: Math.max(0, (prev[page]?.count ?? 0) + data.add.length - data.remove.length) },
+        }));
+        return;
+      }
       const action = liveChangeAction(inkVersions.current[page] ?? 0, data.version);
-      if (action === "refetch") return void loadPage(page);
+      if (action === "refetch") return void reloadInkPage(page);
       if (action === "ignore") return;
       inkVersions.current[page] = data.version;
       // Unsent changes are read when the update runs, so a stroke just drawn is never lost.
@@ -213,15 +311,23 @@ export function ReaderPage() {
           ? `Page ${page} has too much handwriting to save. The last strokes were not kept; erase some strokes to make room.`
           : `Some handwriting on page ${page} could not be saved.`,
       );
-      void loadPage(page);
+      void reloadInkPage(page);
     };
     window.addEventListener("readsync:ink-rejected", onRejected);
     return () => {
       cancelled = true;
+      inkBook.current = null;
       off();
       window.removeEventListener("readsync:ink-rejected", onRejected);
     };
-  }, [book]);
+  }, [book, reloadInkPage]);
+
+  // Strokes of the page being read and its neighbours (and pages with unsent changes) are loaded.
+  const pdfPageNow = book?.format === "pdf" && position ? Number(/^page:(\d+)/.exec(position.locator)?.[1] ?? 0) : 0;
+  useEffect(() => {
+    if (!book || inkLoadedFor !== book.id || !pdfPageNow) return;
+    void ensureInkPages([pdfPageNow - 1, pdfPageNow, pdfPageNow + 1, pdfPageNow + 2, ...pendingInkPages(book.id)]);
+  }, [book, inkLoadedFor, pdfPageNow, inkSummary, ensureInkPages]);
 
   // Keep changed pages in the offline copy (only once the book's handwriting is loaded: until
   // then the reader's empty state would wipe it).
@@ -233,6 +339,32 @@ export function ReaderPage() {
     }
     savedInk.current = ink;
   }, [book, ink, inkLoadedFor]);
+
+  /** The notebook's annotated pages: loaded ones from their strokes, the others from the summary. */
+  const inkPageList = useMemo(() => {
+    const pages = new Map<number, InkPageSummary>();
+    for (const [p, s] of Object.entries(inkSummary)) {
+      if (s.count > 0 && !inkLoaded.current.has(Number(p))) pages.set(Number(p), { page: Number(p), strokes: s.count, signature: `v${s.version}` });
+    }
+    for (const [p, strokes] of Object.entries(ink)) pages.set(Number(p), { page: Number(p), strokes: strokes.length, signature: inkSignature(strokes) });
+    return [...pages.values()].sort((a, b) => a.page - b.page);
+  }, [ink, inkSummary]);
+
+  /** A notebook picture: loads the page (and the next annotated ones, in the same request), kept for reuse. */
+  const inkThumbnail = useCallback(
+    async (page: number) => {
+      const after = inkPageList.filter((p) => p.page > page).slice(0, 7).map((p) => p.page);
+      await ensureInkPages([page, ...after]);
+      const strokes = inkRef.current[page] ?? [];
+      const key = `${page}:${inkSignature(strokes)}`;
+      const hit = inkThumbs.current.get(key);
+      if (hit) return hit;
+      const url = (await reader.current?.thumbnail?.(page, 240, strokes)) ?? null;
+      if (url) inkThumbs.current.set(key, url);
+      return url;
+    },
+    [inkPageList, ensureInkPages],
+  );
 
   /** Applies a handwriting change here and queues it for the server (queued first, so it already counts as unsent). */
   const applyInk = useCallback(
@@ -874,14 +1006,8 @@ export function ReaderPage() {
           }}
           onRenameBookmark={renameBookmark}
           onDeleteBookmark={removeBookmark}
-          inkPages={
-            isPdf
-              ? Object.entries(ink)
-                  .map(([page, strokes]) => ({ page: Number(page), strokes: strokes.length, signature: inkSignature(strokes) }))
-                  .sort((a, b) => a.page - b.page)
-              : undefined
-          }
-          thumbnail={(page) => reader.current?.thumbnail?.(page, 240) ?? Promise.resolve(null)}
+          inkPages={isPdf ? inkPageList : undefined}
+          thumbnail={inkThumbnail}
           onSelectInkPage={(page) => {
             reader.current?.goToHref?.(`page:${page}`);
             setPanel(null);
