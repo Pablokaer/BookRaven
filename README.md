@@ -222,7 +222,7 @@ Every deploy also builds the app (`android-build` and `android-publish` jobs in 
 | `/downloads/bundles/<commit>.zip` | the web app as a live-update bundle (the last 10 are kept) |
 | `/downloads/android.json` | the current release: `versionCode`, `versionName`, `nativeVersion`, APK path and size, bundle id/URL/SHA-256 |
 
-- **Install:** *Download* in the sidebar (`/download`) shows the version, the download button and step-by-step instructions (allow installing from the browser, Play Protect's *Install anyway*). Android 7 or newer.
+- **Install:** *Download APK* in the sidebar (`/download`) shows the version, the download button and step-by-step instructions (allow installing from the browser, Play Protect's *Install anyway*). Android 7 or newer.
 - **Versions:** `versionCode` is the number of commits on `main`, `versionName` is `1.<versionCode>`, and the bundle id is the commit.
 - **Updates:** the app reads `android.json` when it starts and when it comes back after 15 minutes. `nativeVersion` is a fingerprint of the native layer (`apps/web/scripts/native-version.mjs`: the committed `android/` project, `capacitor.config.ts` and the installed Capacitor plugin versions).
   - Same fingerprint as the installed app: the new web bundle is downloaded in the background ([`@capawesome/capacitor-live-update`](https://capawesome.io/plugins/live-update/), self-hosted, checksum-verified) and used from the next start. If a bundle does not start within 10 s it is rolled back to the APK's own and never retried.
