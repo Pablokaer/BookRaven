@@ -40,13 +40,22 @@ const pageParams = {
 
 type PageRow = { page: number; version: number; updated_at: Date; strokes: Stroke[] };
 
-/** Pages of a book (or one page) with their strokes in drawing order. Pages emptied by the eraser stay, with their version. */
+/** Pages of a book (all, or those in $3) with their strokes in drawing order. Pages emptied by the eraser stay, with their version. */
 const PAGES_SQL = `
   SELECT p.page, p.version, p.updated_at,
          COALESCE(jsonb_agg(s.stroke ORDER BY s.seq) FILTER (WHERE s.id IS NOT NULL), '[]'::jsonb) AS strokes
   FROM pdf_ink_page p
   LEFT JOIN pdf_ink_stroke s ON s.user_id = p.user_id AND s.book_id = p.book_id AND s.page = p.page
-  WHERE p.user_id = $1 AND p.book_id = $2 AND ($3::int IS NULL OR p.page = $3)
+  WHERE p.user_id = $1 AND p.book_id = $2 AND ($3::int[] IS NULL OR p.page = ANY($3))
+  GROUP BY p.page, p.version, p.updated_at
+  ORDER BY p.page`;
+
+/** Every page with handwriting, without the strokes: what a reader needs to open a book quickly. */
+const SUMMARY_SQL = `
+  SELECT p.page, p.version, p.updated_at, count(s.id)::int AS count
+  FROM pdf_ink_page p
+  LEFT JOIN pdf_ink_stroke s ON s.user_id = p.user_id AND s.book_id = p.book_id AND s.page = p.page
+  WHERE p.user_id = $1 AND p.book_id = $2
   GROUP BY p.page, p.version, p.updated_at
   ORDER BY p.page`;
 
@@ -62,18 +71,38 @@ const toDto = (bookId: string, r: PageRow) => ({ bookId, page: r.page, version: 
 export async function inkRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
 
-  app.get<{ Params: { id: string } }>("/api/books/:id/ink", async (request, reply) => {
-    const book = await loadOwnedBook(request, reply);
-    if (!book) return;
-    const { rows } = await query<PageRow>(PAGES_SQL, [request.user.id, book.id, null]);
-    return rows.map((r) => toDto(book.id, r));
-  });
+  /** All pages with their strokes; `?pages=3,4,5` only those pages; `?summary=1` every page's version and stroke count, no strokes. */
+  app.get<{ Params: { id: string }; Querystring: { pages?: string; summary?: string } }>(
+    "/api/books/:id/ink",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            pages: { type: "string", pattern: "^[1-9][0-9]{0,5}(,[1-9][0-9]{0,5}){0,199}$" },
+            summary: { type: "string", enum: ["1", "true"] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const book = await loadOwnedBook(request, reply);
+      if (!book) return;
+      if (request.query.summary) {
+        const { rows } = await query<{ page: number; version: number; updated_at: Date; count: number }>(SUMMARY_SQL, [request.user.id, book.id]);
+        return rows.map((r) => ({ bookId: book.id, page: r.page, version: r.version, count: r.count, updatedAt: r.updated_at.toISOString() }));
+      }
+      const pages = request.query.pages ? [...new Set(request.query.pages.split(",").map(Number))] : null;
+      const { rows } = await query<PageRow>(PAGES_SQL, [request.user.id, book.id, pages]);
+      return rows.map((r) => toDto(book.id, r));
+    },
+  );
 
   app.get<{ Params: { id: string; page: string } }>("/api/books/:id/ink/:page", { schema: { params: pageParams } }, async (request, reply) => {
     const book = await loadOwnedBook(request, reply);
     if (!book) return;
     const page = Number(request.params.page);
-    const { rows } = await query<PageRow>(PAGES_SQL, [request.user.id, book.id, page]);
+    const { rows } = await query<PageRow>(PAGES_SQL, [request.user.id, book.id, [page]]);
     return toDto(book.id, rows[0] ?? { page, version: 0, updated_at: new Date(0), strokes: [] });
   });
 

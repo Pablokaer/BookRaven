@@ -1,4 +1,3 @@
-import getStroke from "perfect-freehand";
 import { apiFetch, apiJson } from "./api";
 import { deviceId } from "./device";
 import { cacheStore, createOutbox, type Queued } from "./outbox";
@@ -10,9 +9,12 @@ import { cacheStore, createOutbox, type Queued } from "./outbox";
  *  - Devices exchange changes ("added these strokes, erased those"), never whole pages, so
  *    pages annotated on two devices (even offline) keep everyone's strokes. Each change raises
  *    the page's version on the server; live changes carry it, so they are applied in order.
+ *  - A book opens with a summary of its annotated pages; strokes are loaded page by page,
+ *    around the page being read (and for the notebook's pictures).
  *  - Changes wait in an outbox (lib/outbox) and are sent in order, several strokes of a page
  *    per request. The last ink seen is kept per page for reading offline. Both live in Cache
  *    Storage, which has room for a lot of handwriting.
+ *  - Drawing strokes lives in lib/inkDraw.ts, which loads with the reader only.
  */
 
 export type InkTool = "pen" | "highlighter";
@@ -167,7 +169,8 @@ async function openStore() {
   return typeof caches === "undefined" ? null : caches.open(STORE).catch(() => null);
 }
 
-async function readCachedPages(bookId: string): Promise<Record<number, CachedPage>> {
+/** The device's copy of a book's pages (all, or `only` these). */
+async function readCachedPages(bookId: string, only?: number[]): Promise<Record<number, CachedPage>> {
   const cache = await openStore();
   if (!cache) return {};
   const out: Record<number, CachedPage> = {};
@@ -175,13 +178,15 @@ async function readCachedPages(bookId: string): Promise<Record<number, CachedPag
   for (const req of await cache.keys()) {
     const path = new URL(req.url).pathname;
     if (!path.startsWith(prefix)) continue;
+    const page = Number(path.slice(prefix.length));
+    if (only && !only.includes(page)) continue;
     const res = await cache.match(req);
-    if (res) out[Number(path.slice(prefix.length))] = await res.json();
+    if (res) out[page] = await res.json();
   }
   // The first version kept a whole book in one entry.
   const legacy = await cache.match(`/ink-store/book-${bookId}`);
   if (legacy && !Object.keys(out).length) {
-    for (const [p, strokes] of Object.entries((await legacy.json()) as InkPages)) out[Number(p)] = { strokes, version: 0 };
+    for (const [p, strokes] of Object.entries((await legacy.json()) as InkPages)) if (!only || only.includes(Number(p))) out[Number(p)] = { strokes, version: 0 };
   }
   return out;
 }
@@ -211,31 +216,52 @@ export function rememberInkPage(bookId: string, page: number, strokes: Stroke[],
 }
 
 type ServerPage = { page: number; version: number; strokes: Stroke[] };
+/** A page with handwriting as the summary lists it: how many strokes, at which version. */
+export type InkSummary = Record<number, { count: number; version: number }>;
+
+/** Pages with changes still waiting to be sent (they must show even before the server has them). */
+export function pendingInkPages(bookId: string) {
+  return [...new Set(outbox.pending().filter((c) => c.bookId === bookId).map((c) => c.page))];
+}
 
 /**
- * The book's handwriting: from the server when reachable (then also kept offline), else the
- * last copy seen; with this device's unsent changes on top.
+ * Which pages of a book have handwriting (stroke count and version, no strokes): one small
+ * request, so a heavily annotated book opens fast. Offline, the copy on this device answers.
+ * Pages the server no longer has are dropped from that copy.
  */
-export async function loadInk(bookId: string): Promise<{ pages: InkPages; versions: InkVersions }> {
-  let server: Record<number, CachedPage> | null = null;
+export async function loadInkSummary(bookId: string): Promise<InkSummary> {
   try {
-    const list = await apiJson<ServerPage[]>(`/api/books/${bookId}/ink`);
-    server = Object.fromEntries(list.map((p) => [p.page, { strokes: p.strokes, version: p.version }]));
+    const list = await apiJson<{ page: number; version: number; count: number }[]>(`/api/books/${bookId}/ink?summary=1`);
+    const summary: InkSummary = Object.fromEntries(list.map((p) => [p.page, { count: p.count, version: p.version }]));
+    void pruneCachedPages(bookId, summary);
+    return summary;
   } catch {
-    /* offline: use the copy on this device */
+    const cached = await readCachedPages(bookId);
+    return Object.fromEntries(Object.entries(cached).map(([p, c]) => [p, { count: c.strokes.length, version: c.version }]));
+  } finally {
+    await outbox.ready;
   }
-  const saved = server ?? (await readCachedPages(bookId));
-  if (server) void replaceCachedBook(bookId, server);
-  await outbox.ready;
-  const pages: InkPages = {};
-  const versions: InkVersions = {};
-  const touched = new Set([...Object.keys(saved).map(Number), ...outbox.pending().filter((c) => c.bookId === bookId).map((c) => c.page)]);
-  for (const page of touched) {
-    versions[page] = saved[page]?.version ?? 0;
-    const strokes = withPendingInk(bookId, page, saved[page]?.strokes ?? []);
-    if (strokes.length) pages[page] = strokes;
+}
+
+/**
+ * The strokes of some pages (as the server has them; offline, as this device last saw them),
+ * kept on the device as they arrive. Pages without handwriting come back empty at version 0.
+ * Unsent changes are not included: add them with withPendingInk.
+ */
+export async function loadInkPages(bookId: string, pages: number[]): Promise<Record<number, { strokes: Stroke[]; version: number }>> {
+  const out: Record<number, { strokes: Stroke[]; version: number }> = Object.fromEntries(pages.map((p) => [p, { strokes: [], version: 0 }]));
+  if (!pages.length) return out;
+  try {
+    const list = await apiJson<ServerPage[]>(`/api/books/${bookId}/ink?pages=${pages.join(",")}`);
+    for (const p of list) {
+      out[p.page] = { strokes: p.strokes, version: p.version };
+      rememberInkPage(bookId, p.page, p.strokes, p.version);
+    }
+  } catch {
+    const cached = await readCachedPages(bookId, pages);
+    for (const p of pages) if (cached[p]) out[p] = cached[p];
   }
-  return { pages, versions };
+  return out;
 }
 
 /** One page from the server (after a missed live change, or a refused one); null when offline. */
@@ -248,95 +274,18 @@ export async function fetchInkPage(bookId: string, page: number): Promise<{ stro
   }
 }
 
-/** Stores the server's copy of a book's pages, dropping pages it no longer has. */
-async function replaceCachedBook(bookId: string, pages: Record<number, CachedPage>) {
+/** Drops pages from the device's copy that the server no longer has (and the first version's single entry). */
+async function pruneCachedPages(bookId: string, summary: InkSummary) {
   const cache = await openStore();
   if (!cache) return;
   try {
-    const prefix = `/ink-store/book-${bookId}/`;
+    const prefix = `/ink-store/book-${bookId}/page-`;
     for (const req of await cache.keys()) {
       const path = new URL(req.url).pathname;
-      if (path.startsWith(prefix) && !(Number(path.slice(`${prefix}page-`.length)) in pages)) await cache.delete(req);
+      if (path.startsWith(prefix) && !(Number(path.slice(prefix.length)) in summary)) await cache.delete(req);
     }
-    await cache.delete(`/ink-store/book-${bookId}`); // the first version's single entry
-    for (const [p, data] of Object.entries(pages)) {
-      await cache.put(pageUrl(bookId, Number(p)), new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
-    }
+    await cache.delete(`/ink-store/book-${bookId}`);
   } catch {
-    /* storage full: the reader still works online */
+    /* storage unavailable: nothing to tidy */
   }
-}
-
-// ---------- Geometry ----------
-
-const round = (v: number, digits: number) => Math.round(v * 10 ** digits) / 10 ** digits;
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
-/**
- * A pointer position as a stroke point: page fractions (to 1/10000, a little past the edges
- * at most, as the server accepts) and pressure (to 1/100).
- */
-export function strokePoint(x: number, y: number, pressure: number) {
-  return [round(clamp(x, -0.25, 1.25), 4), round(clamp(y, -0.25, 1.25), 4), round(clamp(pressure, 0, 1), 2)];
-}
-
-/** Whether the pressure came from a real pen (mice and fingers report a flat 0.5 or 0). */
-const hasPressure = (points: number[]) => {
-  for (let i = 2; i < points.length; i += 3) if (points[i] !== 0.5 && points[i] !== 0) return true;
-  return false;
-};
-
-/** The filled outline of a stroke on a page of w × h pixels, as polygon points. */
-export function strokeOutline(stroke: Stroke, w: number, h: number, last = true): number[][] {
-  const pts: number[][] = [];
-  for (let i = 0; i + 2 < stroke.points.length; i += 3) pts.push([stroke.points[i]! * w, stroke.points[i + 1]! * h, stroke.points[i + 2]! || 0.5]);
-  const size = stroke.width * w;
-  return stroke.tool === "highlighter"
-    ? getStroke(pts, { size, thinning: 0, smoothing: 0.5, streamline: 0.4, simulatePressure: false, last, start: { cap: false }, end: { cap: false } })
-    : getStroke(pts, { size, thinning: 0.6, smoothing: 0.5, streamline: 0.4, simulatePressure: !hasPressure(stroke.points), last });
-}
-
-/** Draws strokes on a canvas the size of the page. Highlighter goes first, under the pen. */
-export function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[], w: number, h: number) {
-  const ordered = [...strokes.filter((s) => s.tool === "highlighter"), ...strokes.filter((s) => s.tool === "pen")];
-  for (const s of ordered) {
-    const outline = strokeOutline(s, w, h);
-    if (outline.length < 2) continue;
-    ctx.globalAlpha = s.tool === "highlighter" ? 0.4 : 1;
-    ctx.fillStyle = s.color;
-    ctx.beginPath();
-    ctx.moveTo(outline[0]![0]!, outline[0]![1]!);
-    // Smooth curve through the midpoints of the outline.
-    for (let i = 1; i < outline.length; i++) {
-      const [x0, y0] = outline[i - 1]!;
-      const [x1, y1] = outline[i]!;
-      ctx.quadraticCurveTo(x0!, y0!, (x0! + x1!) / 2, (y0! + y1!) / 2);
-    }
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-}
-
-/** Distance from (px, py) to the segment a–b. */
-function segmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len = dx * dx + dy * dy;
-  const t = len ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len)) : 0;
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
-
-/**
- * Whether the eraser at (x, y) (page fractions) touches the stroke. Distances are measured
- * in page-width units, so a page's aspect ratio (h / w) doesn't skew them.
- */
-export function touchesStroke(stroke: Stroke, x: number, y: number, radius: number, aspect: number) {
-  const reach = radius + stroke.width / 2;
-  const p = stroke.points;
-  if (p.length === 3) return Math.hypot(p[0]! - x, (p[1]! - y) * aspect) <= reach;
-  for (let i = 0; i + 5 < p.length; i += 3) {
-    if (segmentDistance(x, y * aspect, p[i]!, p[i + 1]! * aspect, p[i + 3]!, p[i + 4]! * aspect) <= reach) return true;
-  }
-  return false;
 }

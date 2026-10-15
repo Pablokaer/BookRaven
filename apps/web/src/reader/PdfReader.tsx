@@ -2,7 +2,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { authHeaders, type Highlight } from "../lib/api";
 import { bookFileUrl, cachedBookFile } from "../lib/books";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
-import { drawStrokes, MAX_STROKE_POINTS, strokePoint, touchesStroke, type InkTool, type Stroke } from "../lib/ink";
+import { MAX_STROKE_POINTS, type InkTool, type Stroke } from "../lib/ink";
+import { drawStrokes, strokePoint, touchesStroke } from "../lib/inkDraw";
 import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
 import { canvasPixelRatio, contentBox, fitScale, FULL_PAGE, type PageBox } from "../lib/pdfLayout";
 import { MAX_ZOOM, pinchController, type PinchController } from "../lib/pinchZoom";
@@ -100,12 +101,115 @@ async function detectContent(pdfPage: PDFPageProxy): Promise<PageBox> {
   return contentBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
 }
 
+/** A page ready to show: built off-screen (canvas at the fitted size, text layer, handwriting canvases). */
+type BuiltPage = {
+  page: number;
+  wrap: HTMLDivElement;
+  sheet: HTMLDivElement;
+  canvas: HTMLCanvasElement;
+  ink: HTMLCanvasElement;
+  wet: HTMLCanvasElement;
+  /** Scale that fits the page (or its cropped part) on screen. */
+  fit: number;
+  /** Page size in PDF units. */
+  width: number;
+  height: number;
+};
+
+type Build = { promise: Promise<BuiltPage | null>; cancel: () => void };
+
+/**
+ * Builds a page off-screen. The canvas is drawn at the fitted size only: zooming in draws the
+ * visible part sharp on top of it (see the detail effect), so a zoomed page never needs a giant
+ * canvas, and zooming doesn't rebuild the page or its text layer.
+ */
+function buildPage(doc: PDFDocumentProxy, pageNo: number, area: { w: number; h: number }, settings: ReaderSettings, crops: Map<number, PageBox>): Build {
+  let cancelled = false;
+  let task: ReturnType<PDFPageProxy["render"]> | null = null;
+  const promise = (async () => {
+    const pdfPage = await doc.getPage(pageNo);
+    const base = pdfPage.getViewport({ scale: 1 });
+    let box = FULL_PAGE;
+    if (settings.pdfCrop) {
+      box = crops.get(pageNo) ?? (await detectContent(pdfPage));
+      crops.set(pageNo, box);
+    }
+    if (cancelled) return null;
+    // The visible part of the page, in PDF units.
+    const cropW = base.width * (box.x1 - box.x0);
+    const cropH = base.height * (box.y1 - box.y0);
+    const fit = fitScale({ w: cropW, h: cropH }, area, settings.pdfMargin, settings.pdfFit);
+    const dpr = canvasPixelRatio(base.width * fit, base.height * fit, window.devicePixelRatio);
+    const viewport = pdfPage.getViewport({ scale: fit * dpr });
+    const cssViewport = pdfPage.getViewport({ scale: fit });
+
+    // Everything is sized from --total-scale-factor (like pdf.js's text layer), so a pinch
+    // only has to change that one variable.
+    const px = (v: number) => `calc(var(--total-scale-factor) * ${v}px)`;
+    const wrap = document.createElement("div");
+    const light = ["light", "sepia"].includes(settings.theme);
+    wrap.className = `pdf-page relative m-auto shrink-0 overflow-hidden bg-white ${light ? "shadow-lg" : ""}`;
+    wrap.style.width = px(cropW);
+    wrap.style.height = px(cropH);
+    wrap.style.setProperty("--scale-round-x", "1px");
+    wrap.style.setProperty("--scale-round-y", "1px");
+    wrap.style.setProperty("--total-scale-factor", String(fit));
+
+    const sheet = document.createElement("div");
+    sheet.className = "absolute";
+    Object.assign(sheet.style, {
+      left: px(-box.x0 * base.width),
+      top: px(-box.y0 * base.height),
+      width: px(base.width),
+      height: px(base.height),
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.className = "block bg-white";
+
+    const hl = document.createElement("div");
+    hl.className = "pdf-highlights";
+    const text = document.createElement("div");
+    text.className = "textLayer";
+    // Handwriting (lib/ink.ts): the page's strokes, and on top the one being drawn. Sized for the zoom when shown.
+    const [ink, wet] = ["pdf-ink", "pdf-ink pdf-ink-wet"].map((cls) => {
+      const c = document.createElement("canvas");
+      c.className = cls;
+      return c;
+    });
+    sheet.append(canvas, hl, text, ink!, wet!);
+    wrap.append(sheet);
+
+    task = pdfPage.render({ canvas, viewport });
+    const textLayer = new pdfjs.TextLayer({ textContentSource: pdfPage.streamTextContent(), container: text, viewport: cssViewport });
+    await Promise.all([task.promise, textLayer.render()]);
+    if (cancelled) return null;
+    return { page: pageNo, wrap, sheet, canvas, ink: ink!, wet: wet!, fit, width: base.width, height: base.height };
+  })().catch((err) => {
+    if (err?.name !== "RenderingCancelledException") console.error(err);
+    return null;
+  });
+  return {
+    promise,
+    cancel: () => {
+      cancelled = true;
+      task?.cancel();
+    },
+  };
+}
+
 /** Zoom factor of one step of the + and − buttons and keys. */
 const ZOOM_STEP = 1.25;
 /** How far the eraser reaches, as a fraction of the page width. */
 const ERASER_RADIUS = 0.012;
 /** Handwriting canvases stay under this many pixels each (they are redrawn at every zoom). */
 const MAX_INK_PIXELS = 6_000_000;
+/** The sharp part drawn over the visible area while zoomed in stays under this many pixels. */
+const MAX_DETAIL_PIXELS = 8_000_000;
 
 export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReader(props, ref) {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -119,6 +223,15 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
   /** Handwriting: the page's strokes, and on top the stroke being drawn. */
   const inkEl = useRef<HTMLCanvasElement | null>(null);
   const wetEl = useRef<HTMLCanvasElement | null>(null);
+  /** The page on screen, and the sharp part drawn over its visible area while zoomed in. */
+  const builtRef = useRef<BuiltPage | null>(null);
+  const detailEl = useRef<HTMLCanvasElement | null>(null);
+  /** Pages being built or ready (the current one and its neighbours), by page and layout. */
+  const prepared = useRef(new Map<string, Build>());
+  /** Each page's text (and its folded form) for search: reading it from the PDF is the slow part. */
+  const pageTexts = useRef(new Map<number, { text: string; folded: string }>());
+  /** Bumped when a zoomed page stops scrolling, to draw the newly visible part sharp. */
+  const [scrolled, setScrolled] = useState(0);
   /** The pen stroke (or eraser pass) in progress. */
   const drawing = useRef<{ id: number; rect: DOMRect; stroke: Stroke | null; removed: Set<string> } | null>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
@@ -241,7 +354,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     },
     clearSearch: () => setSearchHit(null),
     zoom: zoomStep,
-    thumbnail: async (p, width) => {
+    thumbnail: async (p, width, strokes) => {
       if (!doc) return null;
       const pdfPage = await doc.getPage(p);
       const viewport = pdfPage.getViewport({ scale: width / pdfPage.getViewport({ scale: 1 }).width });
@@ -251,7 +364,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       await pdfPage.render({ canvas, viewport }).promise;
       const ctx = canvas.getContext("2d");
       if (!ctx) return null;
-      drawStrokes(ctx, propsRef.current.ink?.[p] ?? [], canvas.width, canvas.height);
+      drawStrokes(ctx, strokes ?? propsRef.current.ink?.[p] ?? [], canvas.width, canvas.height);
       return canvas.toDataURL("image/jpeg", 0.75);
     },
     search: async (query, onResult, signal) => {
@@ -259,10 +372,15 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       const q = fold(query.trim());
       if (!q) return;
       for (let p = 1; p <= doc.numPages && !signal.aborted; p++) {
-        const content = await (await doc.getPage(p)).getTextContent();
-        // Same text the text layer shows: one text node per item, in order.
-        const text = content.items.map((it) => ("str" in it ? it.str : "")).join("");
-        const folded = fold(text);
+        let page = pageTexts.current.get(p);
+        if (!page) {
+          const content = await (await doc.getPage(p)).getTextContent();
+          // Same text the text layer shows: one text node per item, in order.
+          const text = content.items.map((it) => ("str" in it ? it.str : "")).join("");
+          page = { text, folded: fold(text) };
+          pageTexts.current.set(p, page);
+        }
+        const { text, folded } = page;
         let nth = 0;
         for (let at = folded.indexOf(q); at !== -1; at = folded.indexOf(q, at + q.length)) {
           const r: SearchResult = { locator: `pdfsearch:${p}:${nth++}:${query.trim()}`, label: `Page ${p}`, excerpt: excerpt(text, at, q.length) };
@@ -295,6 +413,9 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       .then(async (d) => {
         if (cancelled) return void d.loadingTask.destroy();
         crops.current.clear();
+        pageTexts.current.clear();
+        for (const b of prepared.current.values()) b.cancel();
+        prepared.current.clear();
         setDoc(d);
         setPage((p) => Math.min(Math.max(1, p), d.numPages));
         const meta = await d.getMetadata().catch(() => null);
@@ -334,104 +455,164 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     );
   }, [page, numPages]);
 
-  // Render the current page (canvas + selectable text layer) off-screen, then swap (no flicker).
-  // Runs again once a zoom settles, to draw the page sharp at its new size.
+  /**
+   * Sizes a page's handwriting canvases for the zoom (they hold vector strokes, so they are
+   * redrawn sharp). The canvas for the stroke being drawn takes memory only while annotating.
+   */
+  const sizeInk = (b: BuiltPage, z: number) => {
+    const w = b.width * b.fit * z;
+    const h = b.height * b.fit * z;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(MAX_INK_PIXELS / (w * h)));
+    const annotating = !!propsRef.current.inkMode;
+    for (const c of [b.ink, b.wet]) {
+      const used = c === b.ink || annotating;
+      const cw = used ? Math.floor(w * ratio) : 0;
+      const ch = used ? Math.floor(h * ratio) : 0;
+      if (c.width !== cw || c.height !== ch) {
+        c.width = cw;
+        c.height = ch;
+      }
+    }
+  };
+
+  // Show the current page: built off-screen (or prepared ahead, then it is instant), then
+  // swapped in without flicker. The neighbours are prepared while this one is read.
+  const layout = `${size.w}x${size.h}|${props.settings.pdfFit}|${props.settings.pdfMargin}|${props.settings.pdfCrop ? 1 : 0}`;
   useEffect(() => {
     if (!doc || !size.w || !size.h) return;
     let cancelled = false;
-    let renderTask: ReturnType<PDFPageProxy["render"]> | null = null;
-    (async () => {
-      const pdfPage = await doc.getPage(page);
-      if (cancelled) return;
-      const settings = propsRef.current.settings;
-      const base = pdfPage.getViewport({ scale: 1 });
-      let box = FULL_PAGE;
-      if (settings.pdfCrop) {
-        box = crops.current.get(page) ?? (await detectContent(pdfPage));
-        crops.current.set(page, box);
-        if (cancelled) return;
+    let prefetch: ReturnType<typeof setTimeout> | undefined;
+    const builds = prepared.current;
+    // Pages built for another size or setting are no use now.
+    for (const [key, b] of builds) {
+      if (key.slice(key.indexOf("|") + 1) !== layout) {
+        b.cancel();
+        builds.delete(key);
       }
-      // The visible part of the page, in PDF units.
-      const cropW = base.width * (box.x1 - box.x0);
-      const cropH = base.height * (box.y1 - box.y0);
-      const fit = fitScale({ w: cropW, h: cropH }, size, settings.pdfMargin, settings.pdfFit);
-      const scale = fit * zoom;
-      const dpr = canvasPixelRatio(base.width * scale, base.height * scale, window.devicePixelRatio);
-      const viewport = pdfPage.getViewport({ scale: scale * dpr });
-      const cssViewport = pdfPage.getViewport({ scale });
+    }
+    const take = (p: number) => {
+      const key = `${p}|${layout}`;
+      let b = builds.get(key);
+      if (!b) {
+        b = buildPage(doc, p, size, propsRef.current.settings, crops.current);
+        builds.set(key, b);
+      }
+      return b;
+    };
+    take(page)
+      .promise.then((b) => {
+        if (cancelled || !b || !holderRef.current) return;
+        fitRef.current = b.fit;
+        // The fingers may have kept zooming while this was built: show it at the live zoom.
+        b.wrap.style.setProperty("--total-scale-factor", String(b.fit * zoomRef.current));
+        b.sheet.querySelector(".pdf-detail")?.remove(); // from an earlier visit, zoomed
+        detailEl.current = null;
+        // The handwriting is drawn before the page shows, so it never blinks.
+        sizeInk(b, zoomRef.current);
+        const ctx = b.ink.getContext("2d");
+        if (ctx) {
+          ctx.clearRect(0, 0, b.ink.width, b.ink.height);
+          drawStrokes(ctx, propsRef.current.ink?.[page] ?? [], b.ink.width, b.ink.height);
+        }
+        b.wet.getContext("2d")?.clearRect(0, 0, b.wet.width, b.wet.height);
+        holderRef.current.replaceChildren(b.wrap);
+        builtRef.current = b;
+        pageEl.current = b.wrap;
+        sheetEl.current = b.sheet;
+        inkEl.current = b.ink;
+        wetEl.current = b.wet;
+        // A new page starts at its top-left corner.
+        if (shownPage.current !== page) stageRef.current?.scrollTo({ top: 0, left: 0 });
+        shownPage.current = page;
+        setRendered((n) => n + 1);
+        prefetch = setTimeout(() => {
+          for (const p of [page + 1, page - 1]) if (p >= 1 && p <= doc.numPages) take(p);
+          for (const [key, other] of builds) {
+            if (Math.abs(Number(key.slice(0, key.indexOf("|"))) - page) > 1) {
+              other.cancel();
+              builds.delete(key);
+            }
+          }
+        }, 300);
+      })
+      .catch((err) => console.error(err));
+    return () => {
+      cancelled = true;
+      clearTimeout(prefetch);
+    };
+    // `layout` stands for the size and the page-layout settings.
+  }, [doc, page, layout]);
 
-      // Everything is sized from --total-scale-factor (like pdf.js's text layer), so a pinch
-      // only has to change that one variable.
-      const px = (v: number) => `calc(var(--total-scale-factor) * ${v}px)`;
-      const wrap = document.createElement("div");
-      const light = ["light", "sepia"].includes(settings.theme);
-      wrap.className = `pdf-page relative m-auto shrink-0 overflow-hidden bg-white ${light ? "shadow-lg" : ""}`;
-      wrap.style.width = px(cropW);
-      wrap.style.height = px(cropH);
-      wrap.style.setProperty("--scale-round-x", "1px");
-      wrap.style.setProperty("--scale-round-y", "1px");
+  // A zoomed page that stops scrolling gets its newly visible part drawn sharp.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      if (zoomRef.current <= 1.01) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => setScrolled((n) => n + 1), 120);
+    };
+    stage.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      stage.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
-      const sheet = document.createElement("div");
-      sheet.className = "absolute";
-      Object.assign(sheet.style, {
-        left: px(-box.x0 * base.width),
-        top: px(-box.y0 * base.height),
-        width: px(base.width),
-        height: px(base.height),
-      });
-
+  // Zoomed in: the page canvas keeps its fitted resolution, and the visible part (plus a margin)
+  // is drawn sharp on a canvas of its own, placed over it in page fractions so a pinch stretches
+  // it along until it is drawn again.
+  useEffect(() => {
+    const b = builtRef.current;
+    const stage = stageRef.current;
+    if (!doc || !b || !stage) return;
+    if (zoom <= 1.01) {
+      detailEl.current?.remove();
+      detailEl.current = null;
+      return;
+    }
+    let cancelled = false;
+    let task: ReturnType<PDFPageProxy["render"]> | null = null;
+    (async () => {
+      const pdfPage = await doc.getPage(b.page);
+      if (cancelled) return;
+      const s = b.sheet.getBoundingClientRect();
+      const v = stage.getBoundingClientRect();
+      // A small margin, so a short scroll shows sharp text before the next drawing.
+      const mx = v.width / 10;
+      const my = v.height / 10;
+      const x0 = Math.max(0, v.left - s.left - mx);
+      const y0 = Math.max(0, v.top - s.top - my);
+      const x1 = Math.min(s.width, v.right - s.left + mx);
+      const y1 = Math.min(s.height, v.bottom - s.top + my);
+      if (x1 - x0 < 1 || y1 - y0 < 1) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 3, Math.sqrt(MAX_DETAIL_PIXELS / ((x1 - x0) * (y1 - y0))));
+      const scale = s.width / b.width; // CSS px per PDF unit, right now
       const canvas = document.createElement("canvas");
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-      canvas.className = "block bg-white";
-
-      const hl = document.createElement("div");
-      hl.className = "pdf-highlights";
-      const text = document.createElement("div");
-      text.className = "textLayer";
-      // Handwriting (lib/ink.ts): the page's strokes, and on top the one being drawn.
-      const inkRatio = Math.min(dpr, 2, Math.sqrt(MAX_INK_PIXELS / (base.width * scale * base.height * scale)));
-      const [inkCanvas, wetCanvas] = ["pdf-ink", "pdf-ink pdf-ink-wet"].map((cls) => {
-        const c = document.createElement("canvas");
-        c.width = Math.floor(base.width * scale * inkRatio);
-        c.height = Math.floor(base.height * scale * inkRatio);
-        c.className = cls;
-        return c;
+      canvas.width = Math.ceil((x1 - x0) * dpr);
+      canvas.height = Math.ceil((y1 - y0) * dpr);
+      canvas.className = "pdf-detail";
+      Object.assign(canvas.style, {
+        left: `${(x0 / s.width) * 100}%`,
+        top: `${(y0 / s.height) * 100}%`,
+        width: `${((x1 - x0) / s.width) * 100}%`,
+        height: `${((y1 - y0) / s.height) * 100}%`,
       });
-      sheet.append(canvas, hl, text, inkCanvas!, wetCanvas!);
-      wrap.append(sheet);
-      // The handwriting is drawn before the page shows, so it never blinks on page turns or zoom redraws.
-      const inkCtx = inkCanvas!.getContext("2d");
-      if (inkCtx) drawStrokes(inkCtx, propsRef.current.ink?.[page] ?? [], inkCanvas!.width, inkCanvas!.height);
-
-      renderTask = pdfPage.render({ canvas, viewport });
-      const textLayer = new pdfjs.TextLayer({ textContentSource: pdfPage.streamTextContent(), container: text, viewport: cssViewport });
-      await Promise.all([renderTask.promise, textLayer.render()]);
-      if (cancelled || !holderRef.current) return;
-      // The fingers may have kept zooming while this was drawn: show it at the live zoom.
-      fitRef.current = fit;
-      wrap.style.setProperty("--total-scale-factor", String(fit * zoomRef.current));
-      holderRef.current.replaceChildren(wrap);
-      pageEl.current = wrap;
-      sheetEl.current = sheet;
-      inkEl.current = inkCanvas!;
-      wetEl.current = wetCanvas!;
-      // A new page starts at its top-left corner; a sharper redraw of the same one stays put.
-      if (shownPage.current !== page) stageRef.current?.scrollTo({ top: 0, left: 0 });
-      shownPage.current = page;
-      setRendered((n) => n + 1);
-      // Warm up the next page in the background.
-      if (page < doc.numPages) void doc.getPage(page + 1);
+      task = pdfPage.render({ canvas, viewport: pdfPage.getViewport({ scale: scale * dpr, offsetX: -x0 * dpr, offsetY: -y0 * dpr }) });
+      await task.promise;
+      if (cancelled || builtRef.current !== b) return;
+      detailEl.current?.remove();
+      b.canvas.after(canvas);
+      detailEl.current = canvas;
     })().catch((err) => {
       if (err?.name !== "RenderingCancelledException") console.error(err);
     });
     return () => {
       cancelled = true;
-      renderTask?.cancel();
+      task?.cancel();
     };
-  }, [doc, page, size, zoom, props.settings.pdfFit, props.settings.pdfMargin, props.settings.pdfCrop]);
+  }, [doc, zoom, rendered, scrolled]);
 
   // Draw highlights (and the current search match) on the page.
   useEffect(() => {
@@ -499,13 +680,15 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     c?.getContext("2d")?.clearRect(0, 0, c.width, c.height);
   };
 
-  // Redraw the handwriting when the page is drawn or its strokes change. A stroke just
-  // finished stays on the top canvas until then, so it never blinks.
+  // Redraw the handwriting when the page is shown, its strokes change or a zoom settles (at
+  // the new resolution). A stroke just finished stays on the top canvas until then, so it never blinks.
   const pageInk = props.ink?.[page];
   useEffect(() => {
+    const b = builtRef.current;
+    if (b && !drawing.current) sizeInk(b, zoomRef.current);
     drawInk();
     if (!drawing.current) clearWet();
-  }, [rendered, pageInk, drawInk]);
+  }, [rendered, pageInk, zoom, drawInk]);
 
   // Annotating: a pen or a mouse (or a finger, when allowed) draws; other fingers still scroll,
   // pinch and turn pages. While the pen is down, touches (a resting palm) are ignored.
@@ -514,6 +697,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     const wet = wetEl.current;
     const stage = stageRef.current;
     if (!inking || !wet || !stage) return;
+    if (builtRef.current) sizeInk(builtRef.current, zoomRef.current); // give the stroke canvas its size
     let frame = 0;
     /** Fingers on the page that don't draw; one of them scrolls it. */
     const fingers = new Set<number>();
@@ -632,6 +816,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       cancelAnimationFrame(frame);
       drawing.current = null;
       clearWet();
+      if (builtRef.current) sizeInk(builtRef.current, zoomRef.current); // done annotating: free the stroke canvas
       drawInk();
     };
   }, [inking, rendered, drawInk]);

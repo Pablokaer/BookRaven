@@ -236,6 +236,14 @@ body {
   cursor: crosshair;
 }
 
+/* The sharp part of a zoomed PDF page (only the visible area): over the page canvas, under
+   highlights, text and handwriting. */
+.pdf-detail {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
 /* Highlights and the current search match, drawn under the text layer. */
 .pdf-highlights {
   position: absolute;

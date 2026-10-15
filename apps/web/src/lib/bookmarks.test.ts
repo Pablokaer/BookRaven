@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bookmark } from "./api";
-import { bookmarkLocator, isOnPage } from "./bookmarks";
+import { bookmarkLocator, isOnPage } from "./bookmarkPages";
 import { comicLocator } from "./comics";
 
 const mark = (locator: string, percentage: number, extra: Partial<Bookmark> = {}): Bookmark => ({
