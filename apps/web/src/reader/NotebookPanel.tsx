@@ -1,12 +1,12 @@
-import { Bookmark as BookmarkIcon, Download, Pencil, StickyNote, X } from "lucide-react";
-import { useState } from "react";
+import { Bookmark as BookmarkIcon, Download, Pencil, PenLine, StickyNote, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { Bookmark, Highlight } from "../lib/api";
 import { percent } from "../lib/format";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
 
-export type NotebookTab = "highlights" | "bookmarks";
+export type NotebookTab = "highlights" | "bookmarks" | "ink";
 
-/** The reader's notebook: highlights (books with text) and bookmarked pages (every format). */
+/** The reader's notebook: highlights (books with text), bookmarked pages (every format) and handwritten PDF pages. */
 export function NotebookPanel({
   tab: initialTab,
   highlights,
@@ -18,6 +18,9 @@ export function NotebookPanel({
   onSelectBookmark,
   onRenameBookmark,
   onDeleteBookmark,
+  inkPages,
+  thumbnail,
+  onSelectInkPage,
   onClose,
 }: {
   tab: NotebookTab;
@@ -31,13 +34,18 @@ export function NotebookPanel({
   onSelectBookmark: (b: Bookmark) => void;
   onRenameBookmark: (b: Bookmark, title: string | null) => void;
   onDeleteBookmark: (b: Bookmark) => void;
+  /** PDFs: the pages with handwriting and their number of strokes. */
+  inkPages?: { page: number; strokes: number }[];
+  thumbnail?: (page: number) => Promise<string | null>;
+  onSelectInkPage?: (page: number) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<NotebookTab>(highlights ? initialTab : "bookmarks");
   const tabs: { id: NotebookTab; label: string; count: number }[] = [
     ...(highlights ? [{ id: "highlights" as const, label: "Highlights", count: highlights.length }] : []),
     { id: "bookmarks", label: "Bookmarks", count: bookmarks.length },
+    ...(inkPages ? [{ id: "ink" as const, label: "Handwriting", count: inkPages.length }] : []),
   ];
+  const [tab, setTab] = useState<NotebookTab>(tabs.some((t) => t.id === initialTab) ? initialTab : "bookmarks");
 
   return (
     <div className="panel left-0 w-full max-w-sm" role="dialog" aria-label="Notebook">
@@ -56,14 +64,14 @@ export function NotebookPanel({
       </div>
 
       {tabs.length > 1 && (
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800" role="tablist">
+        <div className={`grid gap-1 rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800 ${tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"}`} role="tablist">
           {tabs.map((t) => (
             <button
               key={t.id}
               role="tab"
               aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${tab === t.id ? "bg-white shadow-sm dark:bg-neutral-700" : "opacity-70 hover:opacity-100"}`}
+              className={`rounded-lg px-2 py-1.5 text-sm font-medium transition ${tab === t.id ? "bg-white shadow-sm dark:bg-neutral-700" : "opacity-70 hover:opacity-100"}`}
             >
               {t.label}
               {t.count > 0 && <span className="ml-1.5 text-xs tabular-nums opacity-60">{t.count}</span>}
@@ -74,6 +82,8 @@ export function NotebookPanel({
 
       {tab === "highlights" && highlights ? (
         <HighlightList highlights={highlights} onSelect={onSelectHighlight} onDelete={onDeleteHighlight} onEditNote={onEditNote} />
+      ) : tab === "ink" && inkPages ? (
+        <InkPageList pages={inkPages} thumbnail={thumbnail} onSelect={(p) => onSelectInkPage?.(p)} />
       ) : (
         <BookmarkList bookmarks={bookmarks} onSelect={onSelectBookmark} onRename={onRenameBookmark} onDelete={onDeleteBookmark} />
       )}
@@ -127,6 +137,60 @@ function HighlightList({
         ))}
       </ul>
     </>
+  );
+}
+
+/** Pages with handwriting, as small pictures (drawn one after another, so the list opens at once). */
+function InkPageList({
+  pages,
+  thumbnail,
+  onSelect,
+}: {
+  pages: { page: number; strokes: number }[];
+  thumbnail?: (page: number) => Promise<string | null>;
+  onSelect: (page: number) => void;
+}) {
+  const [pictures, setPictures] = useState<Record<number, string>>({});
+  const key = pages.map((p) => `${p.page}:${p.strokes}`).join(",");
+  useEffect(() => {
+    if (!thumbnail) return;
+    let cancelled = false;
+    void (async () => {
+      for (const { page } of pages) {
+        const url = await thumbnail(page).catch(() => null);
+        if (cancelled) return;
+        if (url) setPictures((prev) => ({ ...prev, [page]: url }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `key` changes when pages or their strokes do: then the pictures are drawn again.
+  }, [key]);
+
+  if (!pages.length) {
+    return (
+      <p className="text-sm text-neutral-500">
+        Tap <PenLine className="inline h-3.5 w-3.5 align-[-2px]" /> in the top bar to write on the pages with a pen, a mouse or a finger.
+      </p>
+    );
+  }
+  return (
+    <ul className="grid grid-cols-2 gap-3">
+      {pages.map(({ page, strokes }) => (
+        <li key={page}>
+          <button className="block w-full space-y-1 rounded-lg p-1.5 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800" onClick={() => onSelect(page)}>
+            <span className="block aspect-[3/4] overflow-hidden rounded border border-neutral-200 bg-white dark:border-neutral-700">
+              {pictures[page] ? <img src={pictures[page]} alt={`Page ${page} with handwriting`} className="h-full w-full object-contain" /> : null}
+            </span>
+            <span className="block text-sm font-medium">Page {page}</span>
+            <span className="block text-xs text-neutral-500">
+              {strokes} stroke{strokes === 1 ? "" : "s"}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -121,6 +121,9 @@ importers:
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
+      perfect-freehand:
+        specifier: 1.2.2
+        version: 1.2.2
       react:
         specifier: ^19.3.0
         version: 19.3.0
@@ -2345,6 +2348,9 @@ packages:
 
   pend@1.2.0:
     resolution: {integrity: sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg==}
+
+  perfect-freehand@1.2.2:
+    resolution: {integrity: sha512-eh31l019WICQ03pkF3FSzHxB8n07ItqIQ++G5UV8JX0zVOXzgTGCqnRR0jJ2h9U8/2uW4W4mtGJELt9kEV0CFQ==}
 
   pg-cloudflare@1.4.1:
     resolution: {integrity: sha512-6PQbsFWZcp9EmJEwy5cGQ2La+AMWpP46lgbb8X+U/XsHIUweYDNCpeuKck5RxL2MdVFi7krbbEi5nX4Zh7JhrQ==}
@@ -5294,6 +5300,8 @@ snapshots:
       '@napi-rs/canvas': 1.0.11
 
   pend@1.2.0: {}
+
+  perfect-freehand@1.2.2: {}
 
   pg-cloudflare@1.4.1:
     optional: true

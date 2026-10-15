@@ -5,6 +5,7 @@ import { isNative } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
 import { authClient } from "./lib/auth";
 import { installBookmarkFlushers } from "./lib/bookmarks";
+import { installInkFlushers } from "./lib/ink";
 import { startEvents, stopEvents } from "./lib/events";
 import { installProgressFlushers } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
@@ -65,6 +66,7 @@ export function App() {
     startEvents();
     installProgressFlushers();
     installBookmarkFlushers();
+    installInkFlushers();
     return () => stopEvents();
   }, [signedIn]);
 
