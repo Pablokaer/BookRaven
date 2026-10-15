@@ -9,6 +9,7 @@ import { installInkFlushers } from "./lib/ink";
 import { startEvents, stopEvents } from "./lib/events";
 import { installProgressFlushers } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
+import { WhatsNew } from "./components/WhatsNew";
 import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
@@ -94,6 +95,8 @@ export function App() {
       <LibraryProvider userId={session!.user.id}>
         <BrowserRouter>
           <NativeBackButton />
+          {/* After an update: what changed, once. */}
+          <WhatsNew />
           <Routes>
             {/* The reader is full screen, outside the library layout. */}
             <Route

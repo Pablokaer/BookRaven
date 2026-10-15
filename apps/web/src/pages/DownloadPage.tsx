@@ -2,7 +2,7 @@ import { Check, CheckCircle2, Copy, Download, Loader2, RefreshCw, ShieldCheck, S
 import { useEffect, useState } from "react";
 import { ApkUpdateButton } from "../components/AppUpdate";
 import { isNative } from "../lib/api";
-import { APK_URL, checkForUpdates, fetchRelease, restartWithUpdate, useAppUpdate, type AndroidRelease } from "../lib/appUpdate";
+import { APK_URL, BUNDLE_VERSION, checkForUpdates, fetchRelease, restartWithUpdate, useAppUpdate, type AndroidRelease } from "../lib/appUpdate";
 import { fileSize, timeAgo } from "../lib/format";
 
 function CopyLink({ value }: { value: string }) {
@@ -45,6 +45,8 @@ function releaseLine(release: AndroidRelease) {
 /** Inside the Android app: installed version and updates. */
 function InstalledApp() {
   const { release, apkUpdate, bundleReady, checking, installedVersion } = useAppUpdate();
+  // The installed version is the APK's; silent updates bring newer code without changing it.
+  const runningVersion = release && BUNDLE_VERSION && release.bundle.id === BUNDLE_VERSION ? release.versionName : null;
   return (
     <section className="surface space-y-4 p-6">
       <div className="flex items-start gap-4">
@@ -53,7 +55,10 @@ function InstalledApp() {
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="font-display text-xl font-semibold">You are using the Android app</h2>
-          <p className="mt-1 text-sm text-muted">Installed version {installedVersion || "…"}</p>
+          <p className="mt-1 text-sm text-muted">
+            Installed version {installedVersion || "…"}
+            {runningVersion && runningVersion !== installedVersion ? ` · updated to ${runningVersion}` : ""}
+          </p>
         </div>
       </div>
 
