@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
 import { apiJson, type Book, type Bookmark, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { bookmarkLocator, deleteBookmark, isOnPage, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks, type BookKind } from "../lib/bookmarks";
-import { applyChange, inverseChange, loadInk, overlayPending, recordInk, rememberInk, type InkChange, type InkPages, type Stroke } from "../lib/ink";
+import { applyChange, fetchInkPage, inkSignature, inverseChange, liveChangeAction, loadInk, recordInk, rememberInkPage, withPendingInk, type InkChange, type InkPages, type InkVersions, type Stroke } from "../lib/ink";
 import { getBook } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comics";
@@ -51,6 +51,13 @@ function sortHighlights(list: Highlight[]) {
   });
 }
 
+/** `pages` with one page's strokes replaced (a page left without strokes is dropped). */
+function withPage(pages: InkPages, page: number, strokes: Stroke[]): InkPages {
+  const next = { ...pages, [page]: strokes };
+  if (!strokes.length) delete next[page];
+  return next;
+}
+
 /** A single word (or a short hyphenated one): what the dictionary can look up. */
 const isWord = (text: string) => /^[\p{L}\p{M}'’-]{1,40}$/u.test(text.trim());
 
@@ -88,9 +95,16 @@ export function ReaderPage() {
   const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  /** The book whose bookmarks are loaded (null while loading). */
+  const [bookmarksLoadedFor, setBookmarksLoadedFor] = useState<string | null>(null);
   /** PDFs: handwriting per page, and whether the pen is out. */
   const [ink, setInk] = useState<InkPages>({});
   const inkRef = useRef(ink);
+  /** Server version of each page's handwriting (see the sync effect). */
+  const inkVersions = useRef<InkVersions>({});
+  /** What the offline copy holds; and the book whose handwriting is loaded (null while loading). */
+  const savedInk = useRef<InkPages>({});
+  const [inkLoadedFor, setInkLoadedFor] = useState<string | null>(null);
   inkRef.current = ink;
   const [inking, setInking] = useState(false);
   const inkTools = useInkTools();
@@ -159,28 +173,48 @@ export function ReaderPage() {
     };
   }, [book]);
 
-  // PDF handwriting, kept in sync with other devices; changes work offline (lib/ink).
+  // PDF handwriting, kept in sync with other devices; changes work offline (lib/ink). Live changes
+  // carry the page's version: they apply in order, and a missed one makes the page load again.
   useEffect(() => {
     if (book?.format !== "pdf") return;
     let cancelled = false;
+    setInkLoadedFor(null);
+    /** The server's copy of a page, with this device's unsent changes on top. */
+    const loadPage = async (page: number) => {
+      const fresh = await fetchInkPage(book.id, page);
+      if (cancelled || !fresh || fresh.version < (inkVersions.current[page] ?? 0)) return;
+      inkVersions.current[page] = fresh.version;
+      setInk((prev) => withPage(prev, page, withPendingInk(book.id, page, fresh.strokes)));
+    };
     loadInk(book.id)
-      .then((pages) => !cancelled && setInk(pages))
+      .then(({ pages, versions }) => {
+        if (cancelled) return;
+        inkVersions.current = versions;
+        savedInk.current = pages; // loadInk already stored what it read
+        setInk(pages);
+        setInkLoadedFor(book.id);
+      })
       .catch(() => {});
     const off = onServerEvent((event, data) => {
       if (event !== "ink.updated" || data?.bookId !== book.id) return;
-      const strokes = data.strokes as Stroke[];
-      void overlayPending(book.id, { [data.page]: strokes }).then((pages) => {
-        if (cancelled) return;
-        setInk((prev) => {
-          const next = { ...prev };
-          if (pages[data.page]?.length) next[data.page] = pages[data.page]!;
-          else delete next[data.page];
-          return next;
-        });
-      });
+      const page = data.page as number;
+      const action = liveChangeAction(inkVersions.current[page] ?? 0, data.version);
+      if (action === "refetch") return void loadPage(page);
+      if (action === "ignore") return;
+      inkVersions.current[page] = data.version;
+      // Unsent changes are read when the update runs, so a stroke just drawn is never lost.
+      setInk((prev) => withPage(prev, page, withPendingInk(book.id, page, applyChange(prev[page] ?? [], data as InkChange))));
     });
-    const onRejected = (e: Event) =>
-      window.alert(`Page ${(e as CustomEvent<{ page: number }>).detail.page} has too much handwriting to save. Erase some strokes and try again.`);
+    const onRejected = (e: Event) => {
+      const { bookId, page, status } = (e as CustomEvent<{ bookId: string; page: number; status: number }>).detail;
+      if (bookId !== book.id) return;
+      window.alert(
+        status === 413
+          ? `Page ${page} has too much handwriting to save. The last strokes were not kept; erase some strokes to make room.`
+          : `Some handwriting on page ${page} could not be saved.`,
+      );
+      void loadPage(page);
+    };
     window.addEventListener("readsync:ink-rejected", onRejected);
     return () => {
       cancelled = true;
@@ -189,20 +223,23 @@ export function ReaderPage() {
     };
   }, [book]);
 
+  // Keep changed pages in the offline copy (only once the book's handwriting is loaded: until
+  // then the reader's empty state would wipe it).
   useEffect(() => {
-    if (book?.format === "pdf") rememberInk(book.id, ink);
-  }, [book, ink]);
+    if (!book || inkLoadedFor !== book.id) return;
+    const before = savedInk.current;
+    for (const page of new Set([...Object.keys(before), ...Object.keys(ink)].map(Number))) {
+      if (before[page] !== ink[page]) rememberInkPage(book.id, page, ink[page] ?? [], inkVersions.current[page] ?? 0);
+    }
+    savedInk.current = ink;
+  }, [book, ink, inkLoadedFor]);
 
-  /** Applies a handwriting change here and queues it for the server. */
+  /** Applies a handwriting change here and queues it for the server (queued first, so it already counts as unsent). */
   const applyInk = useCallback(
     (page: number, change: InkChange) => {
       if (!book) return;
-      setInk((prev) => {
-        const next = { ...prev, [page]: applyChange(prev[page] ?? [], change) };
-        if (!next[page]!.length) delete next[page];
-        return next;
-      });
-      void recordInk(book.id, page, change);
+      recordInk(book.id, page, change);
+      setInk((prev) => withPage(prev, page, applyChange(prev[page] ?? [], change)));
     },
     [book],
   );
@@ -261,9 +298,16 @@ export function ReaderPage() {
   useEffect(() => {
     if (!book) return;
     let cancelled = false;
-    loadBookmarks(book.id)
-      .then((list) => !cancelled && setBookmarks(list))
-      .catch(() => {});
+    setBookmarksLoadedFor(null);
+    const load = () =>
+      loadBookmarks(book.id)
+        .then((list) => {
+          if (cancelled) return;
+          setBookmarks(list);
+          setBookmarksLoadedFor(book.id);
+        })
+        .catch(() => {});
+    void load();
     const off = onServerEvent((event, data) => {
       if (data?.bookId !== book.id) return;
       if (event === "bookmark.saved") {
@@ -272,15 +316,24 @@ export function ReaderPage() {
         setBookmarks((prev) => prev.filter((b) => b.locator !== data.locator));
       }
     });
+    const onRejected = (e: Event) => {
+      const { bookId, status } = (e as CustomEvent<{ bookId: string; status: number }>).detail;
+      if (bookId !== book.id) return;
+      if (status === 409) window.alert("This book has too many bookmarks; remove some to add more.");
+      void load(); // show what the server kept
+    };
+    window.addEventListener("readsync:bookmarks-rejected", onRejected);
     return () => {
       cancelled = true;
       off();
+      window.removeEventListener("readsync:bookmarks-rejected", onRejected);
     };
   }, [book]);
 
+  // Keep the offline copy current, once the list is loaded (before that it is just empty).
   useEffect(() => {
-    if (book) rememberBookmarks(book.id, bookmarks);
-  }, [book, bookmarks]);
+    if (book && bookmarksLoadedFor === book.id) rememberBookmarks(book.id, bookmarks);
+  }, [book, bookmarks, bookmarksLoadedFor]);
 
   const bookKind: BookKind = book?.format === "pdf" ? "pdf" : book && isComicFormat(book.format) ? "comic" : "text";
   /** The bookmark on the page being read, if any. */
@@ -824,7 +877,7 @@ export function ReaderPage() {
           inkPages={
             isPdf
               ? Object.entries(ink)
-                  .map(([page, strokes]) => ({ page: Number(page), strokes: strokes.length }))
+                  .map(([page, strokes]) => ({ page: Number(page), strokes: strokes.length, signature: inkSignature(strokes) }))
                   .sort((a, b) => a.page - b.page)
               : undefined
           }

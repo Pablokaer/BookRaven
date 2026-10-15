@@ -6,6 +6,9 @@ import { HIGHLIGHT_COLORS } from "../lib/highlights";
 
 export type NotebookTab = "highlights" | "bookmarks" | "ink";
 
+/** A page with handwriting: its number of strokes, and a signature that changes with any stroke (lib/ink). */
+export type InkPageSummary = { page: number; strokes: number; signature: string };
+
 /** The reader's notebook: highlights (books with text), bookmarked pages (every format) and handwritten PDF pages. */
 export function NotebookPanel({
   tab: initialTab,
@@ -35,7 +38,7 @@ export function NotebookPanel({
   onRenameBookmark: (b: Bookmark, title: string | null) => void;
   onDeleteBookmark: (b: Bookmark) => void;
   /** PDFs: the pages with handwriting and their number of strokes. */
-  inkPages?: { page: number; strokes: number }[];
+  inkPages?: InkPageSummary[];
   thumbnail?: (page: number) => Promise<string | null>;
   onSelectInkPage?: (page: number) => void;
   onClose: () => void;
@@ -146,12 +149,12 @@ function InkPageList({
   thumbnail,
   onSelect,
 }: {
-  pages: { page: number; strokes: number }[];
+  pages: InkPageSummary[];
   thumbnail?: (page: number) => Promise<string | null>;
   onSelect: (page: number) => void;
 }) {
   const [pictures, setPictures] = useState<Record<number, string>>({});
-  const key = pages.map((p) => `${p.page}:${p.strokes}`).join(",");
+  const key = pages.map((p) => `${p.page}:${p.signature}`).join(",");
   useEffect(() => {
     if (!thumbnail) return;
     let cancelled = false;
@@ -165,7 +168,7 @@ function InkPageList({
     return () => {
       cancelled = true;
     };
-    // `key` changes when pages or their strokes do: then the pictures are drawn again.
+    // `key` changes when a page's strokes do (any stroke added or erased): then the pictures are drawn again.
   }, [key]);
 
   if (!pages.length) {

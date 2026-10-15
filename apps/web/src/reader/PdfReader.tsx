@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { authHeaders, type Highlight } from "../lib/api";
 import { bookFileUrl, cachedBookFile } from "../lib/books";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
-import { drawStrokes, strokePoint, touchesStroke, type InkTool, type Stroke } from "../lib/ink";
+import { drawStrokes, MAX_STROKE_POINTS, strokePoint, touchesStroke, type InkTool, type Stroke } from "../lib/ink";
 import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
 import { canvasPixelRatio, contentBox, fitScale, FULL_PAGE, type PageBox } from "../lib/pdfLayout";
 import { MAX_ZOOM, pinchController, type PinchController } from "../lib/pinchZoom";
@@ -402,6 +402,9 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       });
       sheet.append(canvas, hl, text, inkCanvas!, wetCanvas!);
       wrap.append(sheet);
+      // The handwriting is drawn before the page shows, so it never blinks on page turns or zoom redraws.
+      const inkCtx = inkCanvas!.getContext("2d");
+      if (inkCtx) drawStrokes(inkCtx, propsRef.current.ink?.[page] ?? [], inkCanvas!.width, inkCanvas!.height);
 
       renderTask = pdfPage.render({ canvas, viewport });
       const textLayer = new pdfjs.TextLayer({ textContentSource: pdfPage.streamTextContent(), container: text, viewport: cssViewport });
@@ -535,6 +538,12 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         const y = (e.clientY - d.rect.top) / d.rect.height;
         if (d.stroke) {
           d.stroke.points.push(...strokePoint(x, y, e.pointerType === "pen" ? e.pressure : 0.5));
+          if (d.stroke.points.length >= MAX_STROKE_POINTS * 3) {
+            // A very long stroke is saved in pieces (the server takes up to 10,000 points per stroke).
+            const piece = d.stroke;
+            propsRef.current.onInkChange?.(pageRef.current, { add: [piece], remove: [] });
+            d.stroke = { ...piece, id: crypto.randomUUID(), points: piece.points.slice(-3) };
+          }
           continue;
         }
         const aspect = d.rect.height / d.rect.width;

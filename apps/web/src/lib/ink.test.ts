@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyChange, flushInk, inverseChange, loadInk, recordInk, resetInkStore, strokeOutline, strokePoint, touchesStroke, withPendingInk, type Stroke } from "./ink";
+import {
+  applyChange,
+  inkSignature,
+  inverseChange,
+  liveChangeAction,
+  mergeChanges,
+  strokeOutline,
+  strokePoint,
+  touchesStroke,
+  withPendingInk,
+  type InkChange,
+  type Stroke,
+} from "./ink";
 
 const stroke = (id: string, points = [0.1, 0.1, 0.5, 0.5, 0.1, 0.5], extra: Partial<Stroke> = {}): Stroke => ({
   id,
@@ -9,28 +21,63 @@ const stroke = (id: string, points = [0.1, 0.1, 0.5, 0.5, 0.1, 0.5], extra: Part
   points,
   ...extra,
 });
+const ids = (strokes: Stroke[]) => strokes.map((s) => s.id);
+
+/** What the server does with a change: erase `remove` and the ids in `add`, then add `add`. */
+const serverApply = (strokes: Stroke[], c: InkChange) => {
+  const gone = new Set([...c.remove, ...c.add.map((s) => s.id)]);
+  return [...strokes.filter((s) => !gone.has(s.id)), ...c.add];
+};
 
 describe("ink changes", () => {
   it("adds, replaces and erases strokes, and undoes a change", () => {
     const before = [stroke("a"), stroke("b")];
     const change = { add: [stroke("c"), stroke("a", [0.2, 0.2, 0.5])], remove: ["b"] };
     const after = applyChange(before, change);
-    expect(after.map((s) => s.id)).toEqual(["c", "a"]);
+    expect(ids(after)).toEqual(["c", "a"]);
     expect(after.find((s) => s.id === "a")!.points).toEqual([0.2, 0.2, 0.5]);
 
     const undo = inverseChange(before, { add: [stroke("c")], remove: ["b"] });
     expect(undo).toEqual({ add: [stroke("b")], remove: ["c"] });
-    expect(applyChange(applyChange(before, { add: [stroke("c")], remove: ["b"] }), undo).map((s) => s.id).sort()).toEqual(["a", "b"]);
+    expect(ids(applyChange(applyChange(before, { add: [stroke("c")], remove: ["b"] }), undo)).sort()).toEqual(["a", "b"]);
   });
 
-  it("overlays this device's pending changes, per book and page, dropping emptied pages", () => {
-    const pages = { 1: [stroke("a")], 2: [stroke("b")] };
-    const outbox = [
-      { id: "1", bookId: "bk", page: 2, at: 1, add: [], remove: ["b"] },
-      { id: "2", bookId: "bk", page: 3, at: 2, add: [stroke("c")], remove: [] },
-      { id: "3", bookId: "other", page: 1, at: 3, add: [], remove: ["a"] },
+  it("merges several changes into one with the same result on the server", () => {
+    const start = [stroke("a"), stroke("b"), stroke("c")];
+    const changes: InkChange[] = [
+      { add: [stroke("x")], remove: ["a"] },
+      { add: [stroke("y")], remove: ["x"] }, // erases a stroke added just before
+      { add: [stroke("a", [0.3, 0.3, 0.5])], remove: [] }, // puts back an erased one
+      { add: [stroke("b", [0.4, 0.4, 0.5])], remove: ["c"] },
     ];
-    expect(withPendingInk("bk", pages, outbox)).toEqual({ 1: [stroke("a")], 3: [stroke("c")] });
+    const oneByOne = changes.reduce(serverApply, start);
+    expect(serverApply(start, mergeChanges(changes))).toEqual(oneByOne);
+    expect(ids(oneByOne)).toEqual(["y", "a", "b"]);
+  });
+
+  it("applies live changes in order, ignores old ones and asks for the page after a gap", () => {
+    expect(liveChangeAction(4, 5)).toBe("apply");
+    expect(liveChangeAction(4, 4)).toBe("ignore");
+    expect(liveChangeAction(4, 2)).toBe("ignore");
+    expect(liveChangeAction(4, 7)).toBe("refetch");
+    expect(liveChangeAction(0, 1)).toBe("apply"); // first change to a page
+  });
+
+  it("gives pages a signature that changes when any stroke does, even with the same count", () => {
+    const page = [stroke("a"), stroke("b")];
+    const erasedAndDrawn = applyChange(applyChange(page, { add: [], remove: ["a"] }), { add: [stroke("c")], remove: [] });
+    expect(inkSignature(erasedAndDrawn)).not.toBe(inkSignature(page));
+    expect(inkSignature([stroke("a"), stroke("b")])).toBe(inkSignature(page));
+  });
+
+  it("puts this device's unsent changes of a page on top of the server's copy", () => {
+    const pending = [
+      { seq: 1, bookId: "bk", page: 2, add: [], remove: ["b"] },
+      { seq: 2, bookId: "bk", page: 2, add: [stroke("c")], remove: [] },
+      { seq: 3, bookId: "bk", page: 3, add: [stroke("d")], remove: [] },
+      { seq: 4, bookId: "other", page: 2, add: [], remove: ["a"] },
+    ];
+    expect(ids(withPendingInk("bk", 2, [stroke("a"), stroke("b")], pending))).toEqual(["a", "c"]);
   });
 });
 
@@ -56,34 +103,62 @@ describe("ink geometry", () => {
 });
 
 describe("ink sync", () => {
-  beforeEach(() => resetInkStore());
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("keeps changes while offline, shows them, and sends them in order when back", async () => {
-    let online = false;
-    const sent: unknown[] = [];
+  /** A fresh copy of the module (its outbox lives in memory), with the server answering `respond`. */
+  async function fresh(respond: (method: string, url: string, body: unknown) => Response | Promise<Response>) {
+    const posts: [string, InkChange][] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit = {}) => {
-        if (!online) throw new TypeError("offline");
-        if ((init.method ?? "GET") === "GET") return new Response(JSON.stringify([{ page: 1, strokes: [stroke("server")] }]), { status: 200 });
-        sent.push([url, JSON.parse(init.body as string)]);
-        return new Response("{}", { status: 200 });
+        const method = init.method ?? "GET";
+        const body = init.body ? JSON.parse(init.body as string) : null;
+        const res = await respond(method, url, body);
+        if (method === "POST" && res.ok) posts.push([url, { add: body.add, remove: body.remove }]);
+        return res;
       }),
     );
-    await recordInk("bk", 1, { add: [stroke("x")], remove: [] });
-    await recordInk("bk", 1, { add: [], remove: ["server"] });
-    await flushInk();
-    expect(sent).toEqual([]);
+    vi.resetModules();
+    return { lib: await import("./ink"), posts };
+  }
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps strokes while offline, shows them over the server's copy, then sends a page's strokes together", async () => {
+    let online = false;
+    const { lib, posts } = await fresh((method) => {
+      if (!online) throw new TypeError("offline");
+      if (method === "GET") return new Response(JSON.stringify([{ page: 1, version: 3, strokes: [stroke("server")] }]), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    lib.recordInk("bk", 1, { add: [stroke("x")], remove: [] });
+    lib.recordInk("bk", 1, { add: [], remove: ["server"] });
+    lib.recordInk("bk", 1, { add: [stroke("y")], remove: [] });
+    lib.recordInk("bk", 2, { add: [stroke("z")], remove: [] });
+    await lib.flushInk();
+    expect(posts).toEqual([]);
 
     online = true;
-    // The server's copy, with the unsent changes on top.
-    expect((await loadInk("bk"))[1]!.map((s) => s.id)).toEqual(["x"]);
-    await flushInk();
-    expect(sent.map((s) => (s as [string, { add: Stroke[]; remove: string[] }])[1])).toMatchObject([
-      { add: [{ id: "x" }], remove: [] },
-      { add: [], remove: ["server"] },
+    const loaded = await lib.loadInk("bk");
+    expect(loaded.versions).toEqual({ 1: 3, 2: 0 });
+    expect(Object.fromEntries(Object.entries(loaded.pages).map(([p, s]) => [p, ids(s)]))).toEqual({ 1: ["x", "y"], 2: ["z"] });
+
+    await lib.flushInk();
+    expect(posts).toEqual([
+      ["/api/books/bk/ink/1", { add: [stroke("x"), stroke("y")], remove: ["server"] }],
+      ["/api/books/bk/ink/2", { add: [stroke("z")], remove: [] }],
     ]);
-    expect((sent[0] as [string])[0]).toBe("/api/books/bk/ink/1");
+  });
+
+  it("tells the reader when the server refuses a page's change for good", async () => {
+    const { lib } = await fresh(() => new Response(null, { status: 413 }));
+    const rejected: unknown[] = [];
+    window.addEventListener("readsync:ink-rejected", (e) => rejected.push((e as CustomEvent).detail));
+    lib.recordInk("bk", 4, { add: [stroke("big")], remove: [] });
+    await lib.flushInk();
+    expect(rejected).toEqual([{ bookId: "bk", page: 4, status: 413 }]);
+    expect(lib.withPendingInk("bk", 4, [])).toEqual([]);
   });
 });
