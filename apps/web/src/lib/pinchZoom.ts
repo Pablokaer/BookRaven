@@ -43,7 +43,11 @@ export type PinchController = {
   reset: () => void;
 };
 
-export function pinchController(surface: ZoomSurface & { reset: () => void }): PinchController {
+export function pinchController(
+  surface: ZoomSurface & { reset: () => void },
+  /** `dblClick: false` leaves double-click alone (on a PDF it selects a word). */
+  { dblClick = true }: { dblClick?: boolean } = {},
+): PinchController {
   let pinch: { dist: number; scale: number } | null = null;
   let pan: Point | null = null;
   let settledAt = 0;
@@ -158,7 +162,7 @@ export function pinchController(surface: ZoomSurface & { reset: () => void }): P
     on("touchend", onEnd, { passive: false });
     on("touchcancel", onEnd, { passive: false });
     on("wheel", onWheel, { passive: false });
-    on("dblclick", onDblClick);
+    if (dblClick) on("dblclick", onDblClick);
     on("mousedown", onMouseDown);
     on("mousemove", onMouseMove);
     on("mouseup", onMouseUp);

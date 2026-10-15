@@ -2,7 +2,7 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { Highlighter, Search, TableOfContents, ZoomIn } from "lucide-react";
+import { Highlighter, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
 import { apiJson, type Book, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
 import { getBook } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
@@ -73,6 +73,8 @@ export function ReaderPage() {
   const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
   const [bookLanguage, setBookLanguage] = useState<string | null>(null);
   const [magnifier, setMagnifier] = useState(false);
+  /** PDFs: zoom level (1 = the fitted page). */
+  const [pdfZoom, setPdfZoom] = useState(1);
   /** Book clubs reading this book (for "Discuss in club"). */
   const [clubs, setClubs] = useState<ClubSummary[]>([]);
   const [discuss, setDiscuss] = useState<{ quote: string; locator: string } | null>(null);
@@ -349,6 +351,7 @@ export function ReaderPage() {
             onSelection={onSelection}
             onHighlightClick={onHighlightClick}
             magnifier={isComic && magnifier}
+            onZoom={setPdfZoom}
           />
         )}
       </div>
@@ -440,8 +443,29 @@ export function ReaderPage() {
             ›
           </button>
         </div>
-        <div className="truncate px-4 pb-2 text-center text-xs opacity-70">
-          {position ? `${percent(position.percentage)}${position.label ? ` · ${position.label}` : ""}` : ""}
+        <div className="flex items-center gap-2 px-4 pb-2 text-xs">
+          {isPdf && <div className="w-[104px] shrink-0" />}
+          <div className="min-w-0 flex-1 truncate text-center opacity-70">
+            {position ? `${percent(position.percentage)}${position.label ? ` · ${position.label}` : ""}` : ""}
+          </div>
+          {isPdf && (
+            <div className="flex w-[104px] shrink-0 items-center justify-end">
+              <button className="btn-icon h-8 min-w-8 disabled:opacity-30" aria-label="Zoom out" title="Zoom out (Ctrl −)" disabled={pdfZoom <= 1} onClick={() => reader.current?.zoom?.("out")}>
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <button
+                className="rounded px-1 tabular-nums opacity-80 hover:opacity-100"
+                aria-label="Fit page"
+                title="Fit page (Ctrl 0)"
+                onClick={() => reader.current?.zoom?.("reset")}
+              >
+                {Math.round(pdfZoom * 100)}%
+              </button>
+              <button className="btn-icon h-8 min-w-8 disabled:opacity-30" aria-label="Zoom in" title="Zoom in (Ctrl +)" disabled={pdfZoom >= 4} onClick={() => reader.current?.zoom?.("in")}>
+                <ZoomIn className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       </footer>
 

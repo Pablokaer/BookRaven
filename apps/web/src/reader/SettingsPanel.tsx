@@ -136,22 +136,35 @@ export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic
           )}
         </>
       ) : kind === "pdf" ? (
-        <Row label="Page fit">
-          <div className="grid grid-cols-2 gap-2">
-            {(["page", "width"] as const).map((fit) => (
-              <button
-                key={fit}
-                onClick={() => update({ pdfFit: fit })}
-                className={`chip ${s.pdfFit === fit ? "chip-on" : ""}`}
-              >
-                {fit === "page" ? "Whole page" : "Page width"}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-neutral-500">
-            PDFs have a fixed layout, so font and spacing options apply to ebooks only.
-          </p>
-        </Row>
+        <>
+          <Row label="Page fit">
+            <div className="grid grid-cols-2 gap-2">
+              {(["page", "width"] as const).map((fit) => (
+                <button
+                  key={fit}
+                  onClick={() => update({ pdfFit: fit })}
+                  className={`chip ${s.pdfFit === fit ? "chip-on" : ""}`}
+                >
+                  {fit === "page" ? "Whole page" : "Page width"}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-neutral-500">
+              PDFs have a fixed layout, so font and spacing options apply to ebooks only. Pinch, double-tap or Ctrl + scroll to zoom.
+            </p>
+          </Row>
+          <Row label="Margins">
+            <Stepper value={s.pdfMargin} onChange={(v) => update({ pdfMargin: v })} min={0} max={48} step={4} format={(v) => `${v}px`} />
+            <p className="text-xs text-neutral-500">Space between the page and the edges of the screen.</p>
+          </Row>
+          <label className="flex items-center justify-between gap-4">
+            <span>
+              Crop white margins
+              <span className="block text-xs text-neutral-500">Shows only the part of each page with content, so the text is larger.</span>
+            </span>
+            <input type="checkbox" className="h-5 w-5 accent-teal-600" checked={s.pdfCrop} onChange={(e) => update({ pdfCrop: e.target.checked })} />
+          </label>
+        </>
       ) : (
         <>
           <Row label="Font">

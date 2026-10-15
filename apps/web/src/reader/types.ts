@@ -19,6 +19,8 @@ export type ReaderHandle = {
   search?(query: string, onResult: (r: SearchResult) => void, signal: AbortSignal): Promise<void>;
   /** Removes search marks from the pages. */
   clearSearch?(): void;
+  /** PDFs: zoom in or out a step, or back to the fitted page. */
+  zoom?(action: "in" | "out" | "reset"): void;
 };
 
 /** One search match: `locator` is passed back to goToHref to show it. */
@@ -43,6 +45,8 @@ export type ReaderProps = {
   magnifier?: boolean;
   onSelection?(selection: TextSelection | null): void;
   onHighlightClick?(highlight: Highlight, rect: DOMRect): void;
+  /** PDFs: the zoom level changed (1 = the fitted page). */
+  onZoom?(zoom: number): void;
 };
 
 export function zoneFromX(x: number, width: number): TapZone {
