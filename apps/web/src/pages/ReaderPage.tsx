@@ -2,8 +2,9 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { Highlighter, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
-import { apiJson, type Book, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
+import { Bookmark as BookmarkIcon, NotebookText, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
+import { apiJson, type Book, type Bookmark, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
+import { bookmarkLocator, deleteBookmark, isOnPage, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks, type BookKind } from "../lib/bookmarks";
 import { getBook } from "../lib/books";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comics";
@@ -17,9 +18,9 @@ import { ComicScroller } from "../reader/ComicScroller";
 import { DiscussDialog } from "../reader/DiscussDialog";
 import { EpubReader } from "../reader/EpubReader";
 import { HighlightMenu } from "../reader/HighlightMenu";
-import { HighlightsPanel } from "../reader/HighlightsPanel";
 import { LookupCard } from "../reader/LookupCard";
 import { NoteDialog } from "../reader/NoteDialog";
+import { NotebookPanel, type NotebookTab } from "../reader/NotebookPanel";
 import { PdfReader } from "../reader/PdfReader";
 import { SearchPanel } from "../reader/SearchPanel";
 import { SettingsPanel } from "../reader/SettingsPanel";
@@ -68,7 +69,8 @@ export function ReaderPage() {
   const [position, setPosition] = useState<Position | null>(null);
   const [toc, setToc] = useState<TocItem[] | null>(null);
   const [chrome, setChrome] = useState(true);
-  const [panel, setPanel] = useState<"settings" | "toc" | "highlights" | "search" | null>(null);
+  const [panel, setPanel] = useState<"settings" | "toc" | "notebook" | "search" | null>(null);
+  const [notebookTab, setNotebookTab] = useState<NotebookTab>("highlights");
   const [lookup, setLookup] = useState<{ mode: "define" | "translate"; text: string; rect: DOMRect } | null>(null);
   const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
   const [bookLanguage, setBookLanguage] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export function ReaderPage() {
   const jumpTo = useRef(params.get("at"));
   const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [activeHighlight, setActiveHighlight] = useState<{ highlight: Highlight; rect: DOMRect } | null>(null);
   const [remote, setRemote] = useState<Remote | null>(null);
@@ -144,6 +147,72 @@ export function ReaderPage() {
       off();
     };
   }, [book]);
+
+  // Bookmarks (every format), kept in sync with other devices; changes work offline (lib/bookmarks).
+  useEffect(() => {
+    if (!book) return;
+    let cancelled = false;
+    loadBookmarks(book.id)
+      .then((list) => !cancelled && setBookmarks(list))
+      .catch(() => {});
+    const off = onServerEvent((event, data) => {
+      if (data?.bookId !== book.id) return;
+      if (event === "bookmark.saved") {
+        setBookmarks((prev) => sortBookmarks([...prev.filter((b) => b.locator !== data.locator), data as Bookmark]));
+      } else if (event === "bookmark.deleted") {
+        setBookmarks((prev) => prev.filter((b) => b.locator !== data.locator));
+      }
+    });
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, [book]);
+
+  useEffect(() => {
+    if (book) rememberBookmarks(book.id, bookmarks);
+  }, [book, bookmarks]);
+
+  const bookKind: BookKind = book?.format === "pdf" ? "pdf" : book && isComicFormat(book.format) ? "comic" : "text";
+  /** The bookmark on the page being read, if any. */
+  const pageBookmark = position ? bookmarks.find((b) => isOnPage(b.locator, position.locator, bookKind)) : undefined;
+
+  const toggleBookmark = () => {
+    if (!book || !position) return;
+    if (pageBookmark) {
+      setBookmarks((prev) => prev.filter((b) => b.locator !== pageBookmark.locator));
+      deleteBookmark(book.id, pageBookmark.locator);
+      return;
+    }
+    const b = { locator: bookmarkLocator(position.locator, bookKind), percentage: position.percentage, label: position.label };
+    putBookmark(book.id, b);
+    setBookmarks((prev) =>
+      sortBookmarks([
+        ...prev.filter((x) => x.locator !== b.locator),
+        { ...b, id: `local:${b.locator}`, bookId: book.id, title: null, createdAt: new Date().toISOString() },
+      ]),
+    );
+  };
+  const toggleBookmarkRef = useRef(toggleBookmark);
+  toggleBookmarkRef.current = toggleBookmark;
+
+  const renameBookmark = (b: Bookmark, title: string | null) => {
+    if (!book || title === b.title) return;
+    setBookmarks((prev) => prev.map((x) => (x.locator === b.locator ? { ...x, title } : x)));
+    putBookmark(book.id, { locator: b.locator, percentage: b.percentage, label: b.label, title });
+  };
+
+  const removeBookmark = (b: Bookmark) => {
+    if (!book) return;
+    setBookmarks((prev) => prev.filter((x) => x.locator !== b.locator));
+    deleteBookmark(book.id, b.locator);
+  };
+
+  const openNotebook = (tab: NotebookTab) => {
+    if (panel === "notebook") return setPanel(null);
+    setNotebookTab(tab);
+    setPanel("notebook");
+  };
 
   const addHighlight = useCallback(
     async (color: HighlightColor, sel: TextSelection | null = selection, note?: string) => {
@@ -282,6 +351,11 @@ export function ReaderPage() {
         setPanel(null);
         setChrome((c) => !c);
         break;
+      case "b":
+      case "B":
+        e.preventDefault();
+        toggleBookmarkRef.current();
+        break;
     }
   }, []);
 
@@ -358,6 +432,19 @@ export function ReaderPage() {
 
       {!book && <div className="absolute inset-0 flex items-center justify-center opacity-60">Loading…</div>}
 
+      {/* Ribbon on a bookmarked page (with the bars showing, their bookmark button says it) */}
+      {pageBookmark && !chrome && (
+        <svg
+          className="pointer-events-none absolute right-6 top-0 z-10 h-9 w-6 drop-shadow"
+          style={{ marginTop: "env(safe-area-inset-top)" }}
+          viewBox="0 0 24 36"
+          role="img"
+          aria-label="Bookmarked page"
+        >
+          <path d="M0 0h24v36l-12-8-12 8z" fill="#ef4444" />
+        </svg>
+      )}
+
       {/* Invisible strip at the top: tapping it brings the chrome back */}
       {!chrome && (
         <div
@@ -371,7 +458,7 @@ export function ReaderPage() {
       <header
         className={`reader-bar top-0 pt-[env(safe-area-inset-top)] ${chrome ? "" : "-translate-y-full opacity-0"}`}
       >
-        <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-1 px-3 py-2 sm:gap-2">
           <button className="btn-icon" aria-label="Back to library" onClick={() => navigate("/")}>
             ←
           </button>
@@ -384,17 +471,27 @@ export function ReaderPage() {
               <Search className="h-[18px] w-[18px]" />
             </button>
           )}
-          {canAnnotate && (
-            <button
-              className="btn-icon"
-              aria-label="Highlights"
-              title="Highlights"
-              onClick={() => setPanel(panel === "highlights" ? null : "highlights")}
-            >
-              <Highlighter className="h-[18px] w-[18px]" />
-              {highlights.length > 0 && <span className="ml-0.5 text-xs tabular-nums opacity-70">{highlights.length}</span>}
-            </button>
-          )}
+          <button
+            className={`btn-icon ${pageBookmark ? "text-red-400" : ""}`}
+            aria-label={pageBookmark ? "Remove bookmark from this page" : "Bookmark this page"}
+            aria-pressed={!!pageBookmark}
+            title={pageBookmark ? "Remove bookmark (B)" : "Bookmark this page (B)"}
+            disabled={!position}
+            onClick={toggleBookmark}
+          >
+            <BookmarkIcon className={`h-[18px] w-[18px] ${pageBookmark ? "fill-current" : ""}`} />
+          </button>
+          <button
+            className="btn-icon"
+            aria-label="Notebook: highlights and bookmarks"
+            title="Notebook: highlights and bookmarks"
+            onClick={() => openNotebook(canAnnotate ? "highlights" : "bookmarks")}
+          >
+            <NotebookText className="h-[18px] w-[18px]" />
+            {(canAnnotate ? highlights.length : 0) + bookmarks.length > 0 && (
+              <span className="ml-0.5 text-xs tabular-nums opacity-70">{(canAnnotate ? highlights.length : 0) + bookmarks.length}</span>
+            )}
+          </button>
           {isComic && (
             <button
               className={`btn-icon ${magnifier ? "bg-white/20 text-teal-300" : ""}`}
@@ -574,17 +671,25 @@ export function ReaderPage() {
         />
       )}
 
-      {panel === "highlights" && (
-        <HighlightsPanel
-          highlights={highlights}
+      {panel === "notebook" && (
+        <NotebookPanel
+          tab={notebookTab}
+          highlights={canAnnotate ? highlights : undefined}
+          bookmarks={bookmarks}
           onClose={() => setPanel(null)}
-          onDelete={(h) => void removeHighlight(h)}
+          onDeleteHighlight={(h) => void removeHighlight(h)}
           onEditNote={(h) => setNoteFor({ highlight: h })}
           onExport={exportHighlights}
-          onSelect={(h) => {
+          onSelectHighlight={(h) => {
             reader.current?.goToHref?.(h.cfi);
             setPanel(null);
           }}
+          onSelectBookmark={(b) => {
+            reader.current?.goToHref?.(b.locator);
+            setPanel(null);
+          }}
+          onRenameBookmark={renameBookmark}
+          onDeleteBookmark={removeBookmark}
         />
       )}
       {panel === "settings" && <SettingsPanel kind={isPdf ? "pdf" : isComic ? "comic" : "text"} onClose={() => setPanel(null)} />}
