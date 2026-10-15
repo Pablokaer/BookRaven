@@ -1,5 +1,5 @@
 {
-  "name": "readsync",
+  "name": "bookraven",
   "private": true,
   "version": "0.1.0",
   "description": "Self-hosted ebook & PDF reader with cross-device progress sync",

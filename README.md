@@ -2,7 +2,7 @@
 
 Self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT) that saves your exact reading position and lets you continue on any device: web browser, Android app, or e-ink readers through KOReader.
 
-The app is called **BookRaven** (formerly Mico-livrão). Internal identifiers (package names, the database, storage and cache keys, the `readsync.local` example domain) still use `readsync`, so existing data and installs keep working.
+The app and the repository are called **BookRaven** (formerly Mico-livrão). Some internal identifiers (the database, storage and cache keys, the Android app id `app.readsync`, the `readsync.local` example domain) still use `readsync`, and the server folder is still `/opt/mico-livrao` (Docker Compose names the database volume after it), so existing data and installs keep working.
 
 ## Features
 
@@ -81,7 +81,7 @@ The API has development defaults for every setting. To change them, create `.env
 1. Point a DNS record (e.g. `books.example.com`) at the VPS. Open ports 80 and 443.
 2. Clone the repo on the server and create `.env`:
    ```bash
-   git clone https://github.com/Pablokaer/MicoLivrao.git /opt/mico-livrao
+   git clone https://github.com/Pablokaer/BookRaven.git /opt/mico-livrao
    cd /opt/mico-livrao
    cp .env.example .env
    # set DOMAIN, PUBLIC_URL, POSTGRES_PASSWORD (also inside DATABASE_URL),
