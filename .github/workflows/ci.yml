@@ -32,9 +32,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
+      # The build typechecks both apps (api: tsc -p tsconfig.json, web: tsc -b), so it stands in
+      # for `pnpm typecheck` and runs first to fail fast.
+      - name: Typecheck and build
+        run: pnpm build
       - name: API tests (against the Postgres service)
         run: pnpm --filter api test
       - name: Web unit tests
         run: pnpm --filter web test
-      - run: pnpm build

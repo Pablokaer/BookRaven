@@ -64,11 +64,13 @@ apps/
     src/routes/       auth, books (upload/file/cover), progress, settings, events (SSE)
     src/lib/          storage, format detection (magic bytes), SSE hub, CBZ copies of comics
     src/migrations/   SQL migrations (run automatically on start)
+    scripts/          Docker image helper (drops unused optional peer dependencies)
   web/                React app (also the Capacitor Android app)
     src/reader/       EpubReader (foliate-js), PdfReader (pdf.js), settings + TOC panels
     src/lib/          api client, auth, progress sync/outbox, SSE client, settings, fonts
     android/          Capacitor Android project
-    scripts/          Android release helpers (native-version fingerprint, release files)
+    scripts/          Android release helpers (native-version fingerprint, release files),
+                      precompress.mjs (.br/.gz copies for Caddy)
 infra/Caddyfile
 infra/deploy.sh          update the VPS to a commit and restart (used by the Deploy workflow)
 infra/publish-android.sh publish an Android release into ./downloads (used by the Deploy workflow)
@@ -99,7 +101,7 @@ The API has development defaults for every setting. To change them, create `.env
    # set DOMAIN, PUBLIC_URL, POSTGRES_PASSWORD (also inside DATABASE_URL),
    # BETTER_AUTH_SECRET (openssl rand -base64 32), optional Google keys
    ```
-3. Start everything:
+3. Start everything (needs Docker 23 or newer with Compose v2, which build with BuildKit):
    ```bash
    docker compose up -d --build
    ```
@@ -183,7 +185,13 @@ One-time setup (tested on a Hostinger KVM VPS with Ubuntu; the *Ubuntu with Dock
 
    Optional variables: `VPS_SSH_PORT` (default `22`) and `VPS_APP_DIR` (default `/opt/mico-livrao`).
 
-The VPS builds the images itself, so it needs about 2 GB of free RAM during a deploy (any Hostinger KVM plan has enough). Deploys run one at a time; a short pause in service while the containers restart is expected.
+The VPS builds the images itself, so it needs about 2 GB of free RAM during a deploy (any Hostinger KVM plan has enough). Deploys run one at a time. How the images are built and served:
+
+- **Builds.** Both images are built at the same time, from the committed `pnpm-lock.yaml` (`--frozen-lockfile`), with the pnpm version from `packageManager` in `package.json`. pnpm's package store is kept in Docker's build cache between deploys, so only new or upgraded packages are downloaded (`docker builder prune` frees that cache). The web image runs only the Vite build, since CI has already typechecked the commit.
+- **API image.** It holds `dist/` (compiled code, source maps, migrations) and the production dependencies, minus packages only present as optional peer dependencies (better-auth's test and React helpers would otherwise bring vitest, vite and React along; `apps/api/scripts/prune-optional-peers.mjs`). The build then loads the app once, so a missing package fails the build and the running containers stay as they are. Node runs with `--enable-source-maps`, so stack traces point at the TypeScript sources.
+- **Restarts.** While the API container restarts, Caddy holds incoming API requests for up to 15 s and passes them on as soon as it answers, instead of returning 502.
+- **Static files.** The web image ships a brotli (`.br`) and a gzip (`.gz`) copy of every text file, which Caddy serves to browsers that accept them; API responses are still compressed on the fly. Hashed files under `/assets/` are cached for a year; everything else (`index.html`, `sw.js`, `manifest.webmanifest`, icons) is revalidated on each use, so a deploy reaches browsers right away.
+- **Logs.** Each container keeps at most 3 log files of 10 MB (`docker compose logs`).
 
 **Backups.** The `backup` service writes a database dump and the book files to `./backups/<date>/` every day (`BACKUP_INTERVAL_HOURS`) and deletes backups older than `BACKUP_KEEP_DAYS`. Copy `./backups` off the server too, for example with `restic backup ./backups` to B2 / R2 / another machine. Take one right now with:
 
@@ -227,10 +235,11 @@ Every deploy also builds the app (`android-build` and `android-publish` jobs in 
 | `/downloads/bookraven.apk` | the newest signed APK (the *Download* page links to it) |
 | `/downloads/bookraven-1.<N>.apk` | the same APK by version (the last 3 are kept) |
 | `/downloads/bundles/<commit>.zip` | the web app as a live-update bundle (the last 10 are kept) |
-| `/downloads/android.json` | the current release: `versionCode`, `versionName`, `nativeVersion`, APK path and size, bundle id/URL/SHA-256 |
+| `/downloads/android.json` | the current release: `versionCode`, `versionName`, `nativeVersion`, APK path and size, bundle id/URL/SHA-256, `inputs` |
 
 - **Install:** *Download APK* in the sidebar (`/download`) shows the version, the download button and step-by-step instructions (allow installing from the browser, Play Protect's *Install anyway*). Android 7 or newer.
 - **Versions:** `versionCode` is the number of commits on `main`, `versionName` is `1.<versionCode>`, and the bundle id is the commit.
+- **Only when it changed:** `inputs` in `android.json` is a fingerprint of what the release was built from: `apps/web` (without its tests and Docker-only files), the root `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `patches/`, `.github/workflows/deploy.yml`, `infra/publish-android.sh` and the server URL. When a push leaves it unchanged (for example an API-only change), the Android jobs skip building and publishing, and installed apps keep the release they have. *Run workflow* always builds. Gradle's downloads are cached between runs, and a failed Gradle build is tried up to 3 times (downloads from `dl.google.com` sometimes time out).
 - **Updates:** the app reads `android.json` when it starts and when it comes back after 15 minutes. `nativeVersion` is a fingerprint of the native layer (`apps/web/scripts/native-version.mjs`: the committed `android/` project, `capacitor.config.ts` and the installed Capacitor plugin versions).
   - Same fingerprint as the installed app: the new web bundle is downloaded in the background ([`@capawesome/capacitor-live-update`](https://capawesome.io/plugins/live-update/), self-hosted, checksum-verified) and used from the next start. If a bundle does not start within 10 s it is rolled back to the APK's own and never retried.
   - Different fingerprint (new plugin, permission, icon, Capacitor version…): the app shows *A new version is available*; *Update* downloads the APK and opens Android's installer (the first time Android asks to allow BookRaven to install apps). *App updates* in the sidebar shows the installed version and checks by hand.
@@ -292,7 +301,7 @@ createdb -U readsync readsync_test   # once; the tests reset this database on ev
 pnpm test                            # API integration tests + web unit tests
 ```
 
-CI (`.github/workflows/ci.yml`) runs typechecks, both test suites and the build on every push; when it passes on `main`, the Deploy workflow ships that commit to the VPS (see *Automatic deploys*).
+CI (`.github/workflows/ci.yml`) builds both apps on every push (the build typechecks them, so there is no separate typecheck step) and runs both test suites; when it passes on `main`, the Deploy workflow ships that commit to the VPS (see *Automatic deploys*).
 
 ## API overview
 

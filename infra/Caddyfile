@@ -15,6 +15,9 @@
 		reverse_proxy api:3000 {
 			# Server-Sent Events must not be buffered
 			flush_interval -1
+			# While a deploy restarts the API, requests wait for it (up to 15 s) instead of failing with 502
+			lb_try_duration 15s
+			lb_try_interval 250ms
 		}
 	}
 
@@ -34,10 +37,18 @@
 	handle {
 		root * /srv
 		try_files {path} /index.html
-		file_server
+		# .br/.gz copies made when the image is built (apps/web/scripts/precompress.mjs)
+		file_server {
+			precompressed br gzip
+		}
 
+		# Hashed file names never change, so they are cached for good. Everything else (index.html,
+		# which every app route falls back to, sw.js, manifest.webmanifest, icons) is revalidated
+		# on each use, so a deploy reaches browsers at once.
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@revalidate not path /assets/*
+		header @revalidate Cache-Control "no-cache"
 	}
 
 	header {

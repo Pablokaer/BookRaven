@@ -1,7 +1,16 @@
+# Only what the images build from is sent to Docker (apps/api/Dockerfile, apps/web/Dockerfile).
 **/node_modules
 **/dist
-data
-.env
+**/data
+**/.env*
+**/*.log
+**/*.tsbuildinfo
+**/*.test.ts
+**/*.test.tsx
 .git
-apps/web/android
+.github
+backups
 downloads
+apps/api/test
+apps/web/android
+README.md
