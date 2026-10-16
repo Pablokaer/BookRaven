@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { comicIndexFromLocator, comicLocator, getComicArchive, type ComicArchive } from "../lib/comics";
+import { comicIndexFromLocator, comicLocator, comicToc, getComicArchive, type ComicArchive } from "../lib/comics";
 import { attachLens } from "../lib/lens";
 import { pinchController, scrollSurface, type PinchController } from "../lib/pinchZoom";
 import { THEMES } from "../lib/settings";
-import { USER_NAV_WINDOW_MS, zoneFromX, type ReaderHandle, type ReaderProps } from "./types";
+import { useLatest } from "../lib/useLatest";
+import { freeZone, USER_NAV_WINDOW_MS, type ReaderHandle, type ReaderProps } from "./types";
 
 /** One page: its image is only created when the page comes near the screen. */
 function Page({ archive, name, index, eager }: { archive: ComicArchive; name: string; index: number; eager: boolean }) {
@@ -55,11 +56,16 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
   const current = useRef(startIndex);
   const lastInteraction = useRef(0);
   const ready = useRef(false);
-  const propsRef = useRef(props);
-  propsRef.current = props;
+  const propsRef = useLatest(props);
   const count = archive?.pages.length ?? 0;
 
   const mark = () => (lastInteraction.current = Date.now());
+  /** A screen's height (a bit less, to keep some context) down or up. */
+  const scrollPage = (dir: 1 | -1) => {
+    mark();
+    const el = stageRef.current;
+    el?.scrollBy({ top: dir * el.clientHeight * 0.85, behavior: "smooth" });
+  };
 
   const scrollToPage = useCallback((index: number, smooth = false) => {
     const el = stageRef.current?.querySelector(`[data-page="${index}"]`);
@@ -80,16 +86,8 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
   );
 
   useImperativeHandle(ref, () => ({
-    next: () => {
-      mark();
-      const el = stageRef.current;
-      el?.scrollBy({ top: el.clientHeight * 0.85, behavior: "smooth" });
-    },
-    prev: () => {
-      mark();
-      const el = stageRef.current;
-      el?.scrollBy({ top: -el.clientHeight * 0.85, behavior: "smooth" });
-    },
+    next: () => scrollPage(1),
+    prev: () => scrollPage(-1),
     goToFraction: (f) => {
       mark();
       scrollToPage(Math.round(f * Math.max(0, count - 1)));
@@ -112,7 +110,7 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
       .then((a) => {
         if (cancelled) return;
         setArchive(a);
-        propsRef.current.onReady({ toc: a.pages.map((p, i) => ({ label: `Page ${i + 1}`, href: p.name })) });
+        propsRef.current.onReady({ toc: comicToc(a) });
       })
       .catch((err) => !cancelled && propsRef.current.onError(err?.message ?? "Could not open this comic"));
     return () => {
@@ -180,9 +178,8 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     if (props.magnifier) return;
     const rect = e.currentTarget.getBoundingClientRect();
     mark();
-    const zone = zoneFromX(e.clientX - rect.left, rect.width);
-    if (zone !== "center" && zoomRef.current?.busy()) return; // zoomed in: side taps don't scroll away
-    props.onTap(zone);
+    const zone = freeZone(e.clientX - rect.left, rect.width, zoomRef.current); // zoomed in: side taps don't scroll away
+    if (zone) props.onTap(zone);
   };
 
   return (

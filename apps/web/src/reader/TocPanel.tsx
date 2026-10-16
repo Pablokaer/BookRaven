@@ -1,4 +1,5 @@
 import type { TocItem } from "foliate-js/view.js";
+import { PanelShell } from "./PanelShell";
 
 function Items({ items, depth, onSelect }: { items: TocItem[]; depth: number; onSelect: (href: string) => void }) {
   return (
@@ -19,30 +20,14 @@ function Items({ items, depth, onSelect }: { items: TocItem[]; depth: number; on
   );
 }
 
-export function TocPanel({
-  toc,
-  onSelect,
-  onClose,
-  title = "Contents",
-}: {
-  toc: TocItem[];
-  onSelect: (href: string) => void;
-  onClose: () => void;
-  title?: string;
-}) {
+export function TocPanel({ toc, title, onSelect, onClose }: { toc: TocItem[]; title: string; onSelect: (href: string) => void; onClose: () => void }) {
   return (
-    <div className="panel left-0 w-full max-w-sm" role="dialog" aria-label={title}>
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <button className="btn-icon" onClick={onClose} aria-label={`Close ${title.toLowerCase()}`}>
-          ✕
-        </button>
-      </div>
+    <PanelShell side="left" label={title} title={title} closeLabel={`Close ${title.toLowerCase()}`} closeIcon="✕" onClose={onClose}>
       {toc.length ? (
         <Items items={toc} depth={0} onSelect={onSelect} />
       ) : (
         <p className="text-sm text-neutral-500">This book has no table of contents.</p>
       )}
-    </div>
+    </PanelShell>
   );
 }

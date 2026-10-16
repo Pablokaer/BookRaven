@@ -1,6 +1,7 @@
-import { Check, Eraser, Hand, Highlighter, PenLine, Redo2, Undo2 } from "lucide-react";
+import { Check, Eraser, Hand, Highlighter, PenLine, Redo2, Undo2, type LucideIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS } from "../lib/ink";
+import { readJson, writeJson } from "../lib/storage";
 import type { InkMode } from "./types";
 
 type Tools = {
@@ -18,25 +19,13 @@ const DEFAULT_TOOLS: Tools = {
   fingerDraws: false,
 };
 
-function loadTools(): Tools {
-  try {
-    return { ...DEFAULT_TOOLS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
-  } catch {
-    return DEFAULT_TOOLS;
-  }
-}
-
 /** The pen, highlighter and eraser settings, remembered on this device. */
 export function useInkTools() {
-  const [tools, setTools] = useState<Tools>(loadTools);
+  const [tools, setTools] = useState<Tools>(() => ({ ...DEFAULT_TOOLS, ...readJson<Partial<Tools>>(KEY, {}) }));
   const update = useCallback((patch: Partial<Tools>) => {
     setTools((prev) => {
       const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
+      writeJson(KEY, next);
       return next;
     });
   }, []);
@@ -68,17 +57,19 @@ export function InkToolbar({
   const colors = drawing === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS;
   const current = drawing ? tools[drawing] : null;
   const setInk = (patch: Partial<Tools["pen"]>) => drawing && update({ [drawing]: { ...tools[drawing], ...patch } });
-  const toolButton = (id: Tools["tool"], label: string, Icon: typeof PenLine) => (
+  const iconBtn = (Icon: LucideIcon, label: string, onClick: () => void, opts: { pressed?: boolean; title?: string; disabled?: boolean; className?: string } = {}) => (
     <button
-      className={`btn-icon h-9 min-w-9 px-1.5 ${tools.tool === id ? "bg-white/20 text-teal-300" : ""}`}
+      className={`btn-icon h-9 min-w-9 px-1.5 ${opts.pressed ? "bg-white/20 text-teal-300" : (opts.className ?? "")}`}
       aria-label={label}
-      aria-pressed={tools.tool === id}
-      title={label}
-      onClick={() => update({ tool: id })}
+      aria-pressed={opts.pressed}
+      title={opts.title ?? label}
+      disabled={opts.disabled}
+      onClick={onClick}
     >
       <Icon className="h-[18px] w-[18px]" />
     </button>
   );
+  const toolButton = (id: Tools["tool"], label: string, Icon: LucideIcon) => iconBtn(Icon, label, () => update({ tool: id }), { pressed: tools.tool === id });
   const sep = <span className="mx-0.5 h-6 w-px bg-white/20" aria-hidden />;
 
   return (
@@ -121,24 +112,13 @@ export function InkToolbar({
         </>
       )}
       {sep}
-      <button className="btn-icon h-9 min-w-9 px-1.5 disabled:opacity-30" aria-label="Undo" title="Undo (Ctrl Z)" disabled={!canUndo} onClick={onUndo}>
-        <Undo2 className="h-[18px] w-[18px]" />
-      </button>
-      <button className="btn-icon h-9 min-w-9 px-1.5 disabled:opacity-30" aria-label="Redo" title="Redo (Ctrl Y)" disabled={!canRedo} onClick={onRedo}>
-        <Redo2 className="h-[18px] w-[18px]" />
-      </button>
-      <button
-        className={`btn-icon h-9 min-w-9 px-1.5 ${tools.fingerDraws ? "bg-white/20 text-teal-300" : ""}`}
-        aria-label="Draw with a finger"
-        aria-pressed={tools.fingerDraws}
-        title={tools.fingerDraws ? "Fingers draw (tap to scroll with fingers again)" : "Fingers scroll and zoom; a pen or mouse draws. Tap to draw with a finger."}
-        onClick={() => update({ fingerDraws: !tools.fingerDraws })}
-      >
-        <Hand className="h-[18px] w-[18px]" />
-      </button>
-      <button className="btn-icon h-9 min-w-9 px-1.5 text-teal-300" aria-label="Done annotating" title="Done" onClick={onDone}>
-        <Check className="h-[18px] w-[18px]" />
-      </button>
+      {iconBtn(Undo2, "Undo", onUndo, { title: "Undo (Ctrl Z)", disabled: !canUndo, className: "disabled:opacity-30" })}
+      {iconBtn(Redo2, "Redo", onRedo, { title: "Redo (Ctrl Y)", disabled: !canRedo, className: "disabled:opacity-30" })}
+      {iconBtn(Hand, "Draw with a finger", () => update({ fingerDraws: !tools.fingerDraws }), {
+        pressed: tools.fingerDraws,
+        title: tools.fingerDraws ? "Fingers draw (tap to scroll with fingers again)" : "Fingers scroll and zoom; a pen or mouse draws. Tap to draw with a finger.",
+      })}
+      {iconBtn(Check, "Done annotating", onDone, { title: "Done", className: "text-teal-300" })}
     </div>
   );
 }

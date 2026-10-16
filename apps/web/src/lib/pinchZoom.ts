@@ -27,7 +27,7 @@ function toTop(doc: Document, x: number, y: number): Point {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-export type ZoomSurface = {
+type ZoomSurface = {
   scale: () => number;
   /** Zooms to `scale`, keeping the content under `anchor` (top-window point) where it is. */
   zoomAt: (scale: number, anchor: Point) => void;
@@ -53,6 +53,8 @@ export function pinchController(
   let settledAt = 0;
   let lastTap: { t: number; p: Point } | null = null;
   let moved = false;
+  /** Double tap or double-click: a close-up at `p`, or back to the whole page. */
+  const toggleCloseUp = (p: Point) => (surface.scale() > 1.01 ? surface.reset() : surface.zoomAt(DOUBLE_TAP_ZOOM, p));
 
   const attach = (target: Document | HTMLElement) => {
     const doc = target.nodeType === Node.DOCUMENT_NODE ? (target as Document) : (target as HTMLElement).ownerDocument;
@@ -109,8 +111,7 @@ export function pinchController(
         ev.preventDefault(); // no click: the second tap must not also turn the page
         lastTap = null;
         settledAt = now;
-        if (surface.scale() > 1.01) surface.reset();
-        else surface.zoomAt(DOUBLE_TAP_ZOOM, p);
+        toggleCloseUp(p);
       } else {
         lastTap = { t: now, p };
       }
@@ -129,8 +130,7 @@ export function pinchController(
     const onDblClick = (ev: MouseEvent) => {
       const p = toTop(doc, ev.clientX, ev.clientY);
       settledAt = Date.now();
-      if (surface.scale() > 1.01) surface.reset();
-      else surface.zoomAt(DOUBLE_TAP_ZOOM, p);
+      toggleCloseUp(p);
     };
 
     // Mouse drag pans a zoomed page (touch panning is handled above).
@@ -155,28 +155,19 @@ export function pinchController(
       drag = null;
     };
 
+    const listening = new AbortController();
+    const { signal } = listening;
     const on = target.addEventListener.bind(target) as Document["addEventListener"];
-    const off = target.removeEventListener.bind(target) as Document["removeEventListener"];
-    on("touchstart", onStart, { passive: true });
-    on("touchmove", onMove, { passive: false });
-    on("touchend", onEnd, { passive: false });
-    on("touchcancel", onEnd, { passive: false });
-    on("wheel", onWheel, { passive: false });
-    if (dblClick) on("dblclick", onDblClick);
-    on("mousedown", onMouseDown);
-    on("mousemove", onMouseMove);
-    on("mouseup", onMouseUp);
-    return () => {
-      off("touchstart", onStart);
-      off("touchmove", onMove);
-      off("touchend", onEnd);
-      off("touchcancel", onEnd);
-      off("wheel", onWheel);
-      off("dblclick", onDblClick);
-      off("mousedown", onMouseDown);
-      off("mousemove", onMouseMove);
-      off("mouseup", onMouseUp);
-    };
+    on("touchstart", onStart, { passive: true, signal });
+    on("touchmove", onMove, { passive: false, signal });
+    on("touchend", onEnd, { passive: false, signal });
+    on("touchcancel", onEnd, { passive: false, signal });
+    on("wheel", onWheel, { passive: false, signal });
+    if (dblClick) on("dblclick", onDblClick, { signal });
+    on("mousedown", onMouseDown, { signal });
+    on("mousemove", onMouseMove, { signal });
+    on("mouseup", onMouseUp, { signal });
+    return () => listening.abort();
   };
 
   return {

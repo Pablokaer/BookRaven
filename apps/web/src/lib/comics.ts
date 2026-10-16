@@ -2,9 +2,10 @@ import { ApiError, type Book } from "./api";
 import { cachedBookFile, downloadBook, openBookFile, readsAsCbz } from "./books";
 import { blobRangeFile, type RangeFile } from "./rangeFile";
 import { localDataStart, openRangeZip } from "./rangeZip";
+import { readJson, writeJson } from "./storage";
 import type { ComicFormat } from "./comicFormats";
 
-export { COMIC_FORMATS, comicFormatOfName, isComicFormat, type ComicFormat } from "./comicFormats";
+export { comicFormatOfName, isComicFormat } from "./comicFormats";
 
 const IMAGE_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jxl|svg)$/i;
 const MIME: Record<string, string> = {
@@ -25,6 +26,9 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
 
 /** Skip macOS resource forks and hidden files that archivers often add. */
 const isJunk = (name: string) => /(^|\/)(__MACOSX|\.)/.test(name);
+const isComicInfo = (name: string) => /(^|\/)comicinfo\.xml$/i.test(name);
+/** Room for a ZIP entry's local header: 30 bytes plus the name and an "extra" field (rarely over a few hundred bytes). */
+const headerRoom = (entry: { filename: string }) => 30 + 4 * entry.filename.length + 1024;
 
 export type ComicInfo = { title?: string; author?: string; rtl: boolean };
 
@@ -64,7 +68,7 @@ function sortPages<T extends { name: string }>(list: T[]) {
 async function openZip(file: RangeFile): Promise<ComicArchive> {
   const { zip, entries } = await openRangeZip(file);
   const byName = new Map(entries.map((e) => [e.filename, e]));
-  const infoEntry = entries.find((e) => /(^|\/)comicinfo\.xml$/i.test(e.filename));
+  const infoEntry = entries.find((e) => isComicInfo(e.filename));
   const pages = sortPages(entries.filter((e) => !e.directory).map((e) => ({ name: e.filename, size: e.uncompressedSize })));
   const indexOf = new Map(pages.map((p, i) => [p.name, i]));
   const prefetchAround = (name: string) => {
@@ -75,8 +79,7 @@ async function openZip(file: RangeFile): Promise<ComicArchive> {
   };
   const prefetchPage = (i: number) => {
     const entry = pages[i] && byName.get(pages[i].name);
-    // The local header is 30 bytes plus the name and an "extra" field (rarely over a few hundred bytes).
-    if (entry) file.prefetch!(entry.offset, entry.offset + entry.compressedSize + 30 + entry.filename.length * 4 + 1024);
+    if (entry) file.prefetch!(entry.offset, entry.offset + entry.compressedSize + headerRoom(entry));
   };
   return {
     pages,
@@ -87,10 +90,9 @@ async function openZip(file: RangeFile): Promise<ComicArchive> {
     loadHead: async (name, bytes) => {
       const entry = byName.get(name)!;
       if (entry.compressionMethod !== 0 || entry.encrypted) return entry.getData(new zip.BlobWriter(mimeOf(name)));
-      // One small request: the local header (30 bytes, the name and an "extra" field) and the image's first bytes.
+      // One small request: the local header and the image's first bytes.
       const peek = (file.peek ?? file.read).bind(file);
-      const room = 30 + 4 * entry.filename.length + 1024;
-      const head = await peek(entry.offset, entry.offset + room + bytes);
+      const head = await peek(entry.offset, entry.offset + headerRoom(entry) + bytes);
       const start = localDataStart(head);
       return new Blob([head.subarray(start, start + Math.min(bytes, entry.compressedSize)) as BlobPart]);
     },
@@ -110,7 +112,7 @@ async function openWith7z(file: Blob): Promise<ComicArchive> {
     });
     if (result.error || !result.files) throw new Error(result.error ?? "Could not read this archive");
     const blobs = new Map(result.files.map((f) => [f.name, new Blob([f.data as BlobPart], { type: mimeOf(f.name) })]));
-    const infoName = [...blobs.keys()].find((n) => /(^|\/)comicinfo\.xml$/i.test(n));
+    const infoName = [...blobs.keys()].find(isComicInfo);
     return {
       pages: sortPages([...blobs].map(([name, blob]) => ({ name, size: blob.size }))),
       loadPage: async (name) => blobs.get(name)!,
@@ -207,14 +209,7 @@ export async function imageSize(blob: Blob): Promise<{ width: number; height: nu
 const WIDE_KEY = (bookId: string) => `readsync.comicWide.${bookId}`;
 
 /** Pages already known to be double-page scans (landscape), or null if not scanned yet. */
-export function cachedWidePages(bookId: string): number[] | null {
-  try {
-    const raw = localStorage.getItem(WIDE_KEY(bookId));
-    return raw ? (JSON.parse(raw) as number[]) : null;
-  } catch {
-    return null;
-  }
-}
+export const cachedWidePages = (bookId: string) => readJson<number[] | null>(WIDE_KEY(bookId), null);
 
 /**
  * Finds double-page scans (images wider than tall). They are shown on their own in
@@ -244,13 +239,12 @@ export async function scanWidePages(bookId: string, archive: ComicArchive, signa
   await Promise.all([worker(), worker(), worker(), worker()]);
   if (signal.aborted) return null;
   wide.sort((a, b) => a - b);
-  try {
-    localStorage.setItem(WIDE_KEY(bookId), JSON.stringify(wide));
-  } catch {
-    /* ignore */
-  }
+  writeJson(WIDE_KEY(bookId), wide);
   return wide;
 }
+
+/** A comic's table of contents: every page. */
+export const comicToc = (archive: ComicArchive) => archive.pages.map((p, i) => ({ label: `Page ${i + 1}`, href: p.name }));
 
 /**
  * A foliate-js book object for a comic: one fixed-layout section per page image,
@@ -286,7 +280,7 @@ export function makeComicBook(archive: ComicArchive, opts: { book: Book; spreads
     dir: opts.rtl ? "rtl" : "ltr",
     rendition: { layout: "pre-paginated", spread: opts.spreads ? "auto" : "none" },
     sections,
-    toc: archive.pages.map((p, i) => ({ label: `Page ${i + 1}`, href: p.name })),
+    toc: comicToc(archive),
     getCover: () => archive.loadPage(archive.pages[0]!.name),
     resolveHref: (href: string) => ({ index: sections.findIndex((s) => s.id === href) }),
     splitTOCHref: (href: string) => [href, null],

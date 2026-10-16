@@ -2,10 +2,8 @@ import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
-import { apiJson, type Book, type Bookmark, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
-import { bookmarkLocator, isOnPage, type BookKind } from "../lib/bookmarkPages";
-import { deleteBookmark, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks } from "../lib/bookmarks";
+import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
+import { apiJson, type Book, type Highlight, type HighlightColor, type ServerConfig } from "../lib/api";
 import {
   applyChange,
   fetchInkPage,
@@ -28,12 +26,12 @@ import { getBook } from "../lib/books";
 import { useLibraryActions } from "../lib/libraryStore";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comicFormats";
-import { deviceId } from "../lib/device";
 import { onServerEvent } from "../lib/events";
 import { percent, timeAgo } from "../lib/format";
 import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, listHighlights, updateHighlight } from "../lib/highlights";
-import { fetchProgress, flushProgress, getLocalPending, lastLocalUpdate, saveProgress, type Position } from "../lib/progress";
+import { flushProgress, getLocalPending, saveProgress, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
+import { useDocumentEvent, useLatest } from "../lib/useLatest";
 import { DiscussDialog } from "../reader/DiscussDialog";
 import { HighlightMenu } from "../reader/HighlightMenu";
 import { LookupCard } from "../reader/LookupCard";
@@ -44,13 +42,15 @@ import { SearchPanel } from "../reader/SearchPanel";
 import { SettingsPanel } from "../reader/SettingsPanel";
 import { TocPanel } from "../reader/TocPanel";
 import type { ReaderHandle, TapZone, TextSelection } from "../reader/types";
+import { useBookmarks } from "../reader/useBookmarks";
+import { useRemoteProgress } from "../reader/useRemoteProgress";
 
 // Each reader loads with the first book that needs it (pdf.js, for one, is big: only PDFs load it).
 const PdfReader = lazy(() => import("../reader/PdfReader").then((m) => ({ default: m.PdfReader })));
 const EpubReader = lazy(() => import("../reader/EpubReader").then((m) => ({ default: m.EpubReader })));
 const ComicScroller = lazy(() => import("../reader/ComicScroller").then((m) => ({ default: m.ComicScroller })));
 
-type Remote = Pick<Progress, "locator" | "percentage" | "label" | "deviceName" | "updatedAt">;
+type Panel = "settings" | "toc" | "notebook" | "search";
 
 /** PDF highlight positions: "pdf:<page>:<start>-<end>". */
 const pdfPos = (cfi: string) => {
@@ -79,6 +79,23 @@ function withPage(pages: InkPages, page: number, strokes: Stroke[]): InkPages {
   return next;
 }
 
+/**
+ * PDF handwriting state of the open book: the pages whose strokes are loaded (or known to be
+ * empty) and those being loaded, the server version of each loaded page and the newest version
+ * heard of for any page, and what the offline copy holds.
+ */
+const newInkState = () => ({ loaded: new Set<number>(), loading: new Map<number, Promise<void>>(), versions: {} as InkVersions, latest: {} as InkVersions, saved: {} as InkPages });
+
+/** A top-bar button with an icon. */
+function BarButton({ icon: Icon, iconClass, className, children, ...props }: React.ComponentProps<"button"> & { icon: LucideIcon; iconClass?: string }) {
+  return (
+    <button className={className === undefined ? "btn-icon" : `btn-icon ${className}`} {...props}>
+      <Icon className={iconClass === undefined ? "h-[18px] w-[18px]" : `h-[18px] w-[18px] ${iconClass}`} />
+      {children}
+    </button>
+  );
+}
+
 /** A single word (or a short hyphenated one): what the dictionary can look up. */
 const isWord = (text: string) => /^[\p{L}\p{M}'’-]{1,40}$/u.test(text.trim());
 
@@ -99,7 +116,7 @@ export function ReaderPage() {
   const [position, setPosition] = useState<Position | null>(null);
   const [toc, setToc] = useState<TocItem[] | null>(null);
   const [chrome, setChrome] = useState(true);
-  const [panel, setPanel] = useState<"settings" | "toc" | "notebook" | "search" | null>(null);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [notebookTab, setNotebookTab] = useState<NotebookTab>("highlights");
   const [lookup, setLookup] = useState<{ mode: "dictionary" | "translate"; text: string; rect: DOMRect } | null>(null);
   const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
@@ -117,25 +134,14 @@ export function ReaderPage() {
   // The word dictionary detects a word's language with the dictionary and translates it: either is enough.
   const hasDictionary = !!(features?.dictionaryEnabled || features?.translateEnabled);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  /** The book whose bookmarks are loaded (null while loading). */
-  const [bookmarksLoadedFor, setBookmarksLoadedFor] = useState<string | null>(null);
   /** PDFs: handwriting of the pages loaded so far (around the page being read), and whether the pen is out. */
   const [ink, setInk] = useState<InkPages>({});
-  const inkRef = useRef(ink);
-  inkRef.current = ink;
+  const inkRef = useLatest(ink);
   /** Every annotated page's stroke count and version, loaded when the book opens (strokes load page by page). */
   const [inkSummary, setInkSummary] = useState<InkSummary>({});
-  const inkSummaryRef = useRef(inkSummary);
-  inkSummaryRef.current = inkSummary;
-  /** Pages whose strokes are loaded (or known to be empty), and those being loaded. */
-  const inkLoaded = useRef(new Set<number>());
-  const inkLoading = useRef(new Map<number, Promise<void>>());
-  /** Server version of each loaded page's handwriting, and the newest version heard of for any page. */
-  const inkVersions = useRef<InkVersions>({});
-  const inkLatest = useRef<InkVersions>({});
-  /** What the offline copy holds; and the book whose handwriting summary is loaded (null while loading). */
-  const savedInk = useRef<InkPages>({});
+  const inkSummaryRef = useLatest(inkSummary);
+  const inkState = useRef(newInkState());
+  /** The book whose handwriting summary is loaded (null while loading). */
   const [inkLoadedFor, setInkLoadedFor] = useState<string | null>(null);
   /** Notebook pictures of annotated pages, by page and strokes. */
   const inkThumbs = useRef(new Map<string, string>());
@@ -146,16 +152,14 @@ export function ReaderPage() {
   const [inkHistorySize, setInkHistorySize] = useState({ undo: 0, redo: 0 });
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [activeHighlight, setActiveHighlight] = useState<{ highlight: Highlight; rect: DOMRect } | null>(null);
-  const [remote, setRemote] = useState<Remote | null>(null);
   const [startLocator, setStartLocator] = useState<string | null>(null);
   const reader = useRef<ReaderHandle>(null);
   const positionRef = useRef<Position | null>(null);
+  const { remote, setRemote, offerRemote } = useRemoteProgress(id, positionRef);
 
   // Read once when the book opens: subscribing to the library would re-render the whole reader
   // on every change to it (reading positions from other devices…).
   const { getBook: libraryBook } = useLibraryActions();
-  /** The server's progress, when the book opened from the library's copy (it may be newer). */
-  const [serverProgress, setServerProgress] = useState<Progress | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +176,7 @@ export function ReaderPage() {
           setStartLocator(initialLocator(b));
           setBook(b);
         } else if (b.progress && b.progress.updatedAt !== known.progress?.updatedAt) {
-          setServerProgress(b.progress);
+          offerRemote(b.progress); // the library's copy may be older
         }
       })
       .catch(() => !cancelled && !known && setError("Book not found"));
@@ -180,7 +184,7 @@ export function ReaderPage() {
       cancelled = true;
       flushProgress();
     };
-  }, [id, libraryBook]);
+  }, [id, libraryBook, offerRemote]);
 
   useEffect(() => {
     listClubs(id)
@@ -230,8 +234,8 @@ export function ReaderPage() {
     async (page: number) => {
       if (!book) return;
       const fresh = await fetchInkPage(book.id, page);
-      if (!fresh || book.id !== inkBook.current || fresh.version < (inkVersions.current[page] ?? 0)) return;
-      inkVersions.current[page] = fresh.version;
+      if (!fresh || book.id !== inkBook.current || fresh.version < (inkState.current.versions[page] ?? 0)) return;
+      inkState.current.versions[page] = fresh.version;
       setInk((prev) => withPage(prev, page, withPendingInk(book.id, page, fresh.strokes)));
     },
     [book],
@@ -241,16 +245,17 @@ export function ReaderPage() {
   const showInkPage = useCallback(
     (bookId: string, page: number, strokes: Stroke[], version: number) => {
       if (bookId !== inkBook.current) return;
-      inkLoaded.current.add(page);
-      inkVersions.current[page] = version;
+      const state = inkState.current;
+      state.loaded.add(page);
+      state.versions[page] = version;
       const shown = withPendingInk(bookId, page, strokes);
-      savedInk.current = withPage(savedInk.current, page, shown); // already in the offline copy
+      state.saved = withPage(state.saved, page, shown); // already in the offline copy
       inkRef.current = withPage(inkRef.current, page, shown); // for callers awaiting the load (thumbnails)
       setInk((prev) => withPage(prev, page, shown));
       // A live change arrived while this page was loading: load it again.
-      if ((inkLatest.current[page] ?? 0) > version) void reloadInkPage(page);
+      if ((state.latest[page] ?? 0) > version) void reloadInkPage(page);
     },
-    [reloadInkPage],
+    [reloadInkPage, inkRef],
   );
 
   /** Loads the strokes of `pages` that aren't loaded yet, in one request; resolves when they are on screen. */
@@ -261,8 +266,8 @@ export function ReaderPage() {
       const waiting: Promise<void>[] = [];
       const toFetch: number[] = [];
       for (const page of new Set(pages)) {
-        if (page < 1 || inkLoaded.current.has(page)) continue;
-        const loading = inkLoading.current.get(page);
+        if (page < 1 || inkState.current.loaded.has(page)) continue;
+        const loading = inkState.current.loading.get(page);
         if (loading) waiting.push(loading);
         else if ((inkSummaryRef.current[page]?.count ?? 0) > 0) toFetch.push(page);
         else showInkPage(bookId, page, [], inkSummaryRef.current[page]?.version ?? 0); // nothing written there
@@ -270,16 +275,16 @@ export function ReaderPage() {
       if (toFetch.length) {
         const job = loadInkPages(bookId, toFetch).then((loaded) => {
           for (const page of toFetch) {
-            inkLoading.current.delete(page);
+            inkState.current.loading.delete(page);
             showInkPage(bookId, page, loaded[page]!.strokes, loaded[page]!.version);
           }
         });
-        for (const page of toFetch) inkLoading.current.set(page, job);
+        for (const page of toFetch) inkState.current.loading.set(page, job);
         waiting.push(job);
       }
       return Promise.all(waiting).then(() => {});
     },
-    [book, showInkPage],
+    [book, showInkPage, inkSummaryRef],
   );
 
   // PDF handwriting, kept in sync with other devices; changes work offline (lib/ink). The book
@@ -289,18 +294,14 @@ export function ReaderPage() {
     if (book?.format !== "pdf") return;
     let cancelled = false;
     inkBook.current = book.id;
-    inkLoaded.current = new Set();
-    inkLoading.current = new Map();
-    inkVersions.current = {};
-    inkLatest.current = {};
-    savedInk.current = {};
+    inkState.current = newInkState();
     setInk({});
     setInkSummary({});
     setInkLoadedFor(null);
     loadInkSummary(book.id)
       .then((summary) => {
         if (cancelled) return;
-        for (const [page, s] of Object.entries(summary)) inkLatest.current[Number(page)] = s.version;
+        for (const [page, s] of Object.entries(summary)) inkState.current.latest[Number(page)] = s.version;
         setInkSummary(summary);
         setInkLoadedFor(book.id);
       })
@@ -308,8 +309,9 @@ export function ReaderPage() {
     const off = onServerEvent((event, data) => {
       if (event !== "ink.updated" || data?.bookId !== book.id) return;
       const page = data.page as number;
-      inkLatest.current[page] = Math.max(inkLatest.current[page] ?? 0, data.version);
-      if (!inkLoaded.current.has(page)) {
+      const state = inkState.current;
+      state.latest[page] = Math.max(state.latest[page] ?? 0, data.version);
+      if (!state.loaded.has(page)) {
         // Not loaded here: the summary keeps the notebook right, and the strokes load when needed.
         setInkSummary((prev) => ({
           ...prev,
@@ -317,10 +319,10 @@ export function ReaderPage() {
         }));
         return;
       }
-      const action = liveChangeAction(inkVersions.current[page] ?? 0, data.version);
+      const action = liveChangeAction(state.versions[page] ?? 0, data.version);
       if (action === "refetch") return void reloadInkPage(page);
       if (action === "ignore") return;
-      inkVersions.current[page] = data.version;
+      state.versions[page] = data.version;
       // Unsent changes are read when the update runs, so a stroke just drawn is never lost.
       setInk((prev) => withPage(prev, page, withPendingInk(book.id, page, applyChange(prev[page] ?? [], data as InkChange))));
     });
@@ -354,18 +356,18 @@ export function ReaderPage() {
   // then the reader's empty state would wipe it).
   useEffect(() => {
     if (!book || inkLoadedFor !== book.id) return;
-    const before = savedInk.current;
-    for (const page of new Set([...Object.keys(before), ...Object.keys(ink)].map(Number))) {
-      if (before[page] !== ink[page]) rememberInkPage(book.id, page, ink[page] ?? [], inkVersions.current[page] ?? 0);
+    const state = inkState.current;
+    for (const page of new Set([...Object.keys(state.saved), ...Object.keys(ink)].map(Number))) {
+      if (state.saved[page] !== ink[page]) rememberInkPage(book.id, page, ink[page] ?? [], state.versions[page] ?? 0);
     }
-    savedInk.current = ink;
+    state.saved = ink;
   }, [book, ink, inkLoadedFor]);
 
   /** The notebook's annotated pages: loaded ones from their strokes, the others from the summary. */
   const inkPageList = useMemo(() => {
     const pages = new Map<number, InkPageSummary>();
     for (const [p, s] of Object.entries(inkSummary)) {
-      if (s.count > 0 && !inkLoaded.current.has(Number(p))) pages.set(Number(p), { page: Number(p), strokes: s.count, signature: `v${s.version}` });
+      if (s.count > 0 && !inkState.current.loaded.has(Number(p))) pages.set(Number(p), { page: Number(p), strokes: s.count, signature: `v${s.version}` });
     }
     for (const [p, strokes] of Object.entries(ink)) pages.set(Number(p), { page: Number(p), strokes: strokes.length, signature: inkSignature(strokes) });
     return [...pages.values()].sort((a, b) => a.page - b.page);
@@ -384,7 +386,7 @@ export function ReaderPage() {
       if (url) inkThumbs.current.set(key, url);
       return url;
     },
-    [inkPageList, ensureInkPages],
+    [inkPageList, ensureInkPages, inkRef],
   );
 
   /** Applies a handwriting change here and queues it for the server (queued first, so it already counts as unsent). */
@@ -405,7 +407,7 @@ export function ReaderPage() {
       setInkHistorySize({ undo: h.undo.length, redo: 0 });
       applyInk(page, change);
     },
-    [applyInk],
+    [applyInk, inkRef],
   );
 
   /** Undo (or redo): applies the stored change, keeping the one that reverts it on the other stack. */
@@ -420,13 +422,13 @@ export function ReaderPage() {
       // Show the page that changed.
       if (positionRef.current?.locator !== `page:${step.page}`) reader.current?.goToHref?.(`page:${step.page}`);
     },
-    [applyInk],
+    [applyInk, inkRef],
   );
 
   // Ctrl/⌘ + Z undoes, Ctrl/⌘ + Y or Ctrl/⌘ + Shift + Z redoes, while annotating.
-  useEffect(() => {
-    if (!inking) return;
-    const onKey = (e: KeyboardEvent) => {
+  useDocumentEvent(
+    "keydown",
+    (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === "z") {
@@ -436,10 +438,9 @@ export function ReaderPage() {
         e.preventDefault();
         stepInkHistory("redo");
       }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [inking, stepInkHistory]);
+    },
+    inking,
+  );
 
   const startInking = () => {
     setPanel(null);
@@ -447,88 +448,20 @@ export function ReaderPage() {
     setInking(true);
   };
 
-  // Bookmarks (every format), kept in sync with other devices; changes work offline (lib/bookmarks).
-  useEffect(() => {
-    if (!book) return;
-    let cancelled = false;
-    setBookmarksLoadedFor(null);
-    const load = () =>
-      loadBookmarks(book.id)
-        .then((list) => {
-          if (cancelled) return;
-          setBookmarks(list);
-          setBookmarksLoadedFor(book.id);
-        })
-        .catch(() => {});
-    void load();
-    const off = onServerEvent((event, data) => {
-      if (data?.bookId !== book.id) return;
-      if (event === "bookmark.saved") {
-        setBookmarks((prev) => sortBookmarks([...prev.filter((b) => b.locator !== data.locator), data as Bookmark]));
-      } else if (event === "bookmark.deleted") {
-        setBookmarks((prev) => prev.filter((b) => b.locator !== data.locator));
-      }
-    });
-    const onRejected = (e: Event) => {
-      const { bookId, status } = (e as CustomEvent<{ bookId: string; status: number }>).detail;
-      if (bookId !== book.id) return;
-      if (status === 409) window.alert("This book has too many bookmarks; remove some to add more.");
-      void load(); // show what the server kept
-    };
-    window.addEventListener("readsync:bookmarks-rejected", onRejected);
-    return () => {
-      cancelled = true;
-      off();
-      window.removeEventListener("readsync:bookmarks-rejected", onRejected);
-    };
-  }, [book]);
+  const { bookmarks, pageBookmark, toggleBookmark, renameBookmark, removeBookmark } = useBookmarks(book, position);
+  const inkingRef = useLatest(inking);
+  const toggleBookmarkRef = useLatest(toggleBookmark);
 
-  // Keep the offline copy current, once the list is loaded (before that it is just empty).
-  useEffect(() => {
-    if (book && bookmarksLoadedFor === book.id) rememberBookmarks(book.id, bookmarks);
-  }, [book, bookmarks, bookmarksLoadedFor]);
-
-  const bookKind: BookKind = book?.format === "pdf" ? "pdf" : book && isComicFormat(book.format) ? "comic" : "text";
-  /** The bookmark on the page being read, if any. */
-  const pageBookmark = position ? bookmarks.find((b) => isOnPage(b.locator, position.locator, bookKind)) : undefined;
-
-  const toggleBookmark = () => {
-    if (!book || !position) return;
-    if (pageBookmark) {
-      setBookmarks((prev) => prev.filter((b) => b.locator !== pageBookmark.locator));
-      deleteBookmark(book.id, pageBookmark.locator);
-      return;
-    }
-    const b = { locator: bookmarkLocator(position.locator, bookKind), percentage: position.percentage, label: position.label };
-    putBookmark(book.id, b);
-    setBookmarks((prev) =>
-      sortBookmarks([
-        ...prev.filter((x) => x.locator !== b.locator),
-        { ...b, id: `local:${b.locator}`, bookId: book.id, title: null, createdAt: new Date().toISOString() },
-      ]),
-    );
-  };
-  const inkingRef = useRef(inking);
-  inkingRef.current = inking;
-  const toggleBookmarkRef = useRef(toggleBookmark);
-  toggleBookmarkRef.current = toggleBookmark;
-
-  const renameBookmark = (b: Bookmark, title: string | null) => {
-    if (!book || title === b.title) return;
-    setBookmarks((prev) => prev.map((x) => (x.locator === b.locator ? { ...x, title } : x)));
-    putBookmark(book.id, { locator: b.locator, percentage: b.percentage, label: b.label, title });
-  };
-
-  const removeBookmark = (b: Bookmark) => {
-    if (!book) return;
-    setBookmarks((prev) => prev.filter((x) => x.locator !== b.locator));
-    deleteBookmark(book.id, b.locator);
-  };
-
+  const togglePanel = (p: Panel) => setPanel(panel === p ? null : p);
   const openNotebook = (tab: NotebookTab) => {
     if (panel === "notebook") return setPanel(null);
     setNotebookTab(tab);
     setPanel("notebook");
+  };
+  /** Shows a place picked in a panel, and closes the panel. */
+  const goAndClose = (href: string) => {
+    reader.current?.goToHref?.(href);
+    setPanel(null);
   };
 
   const addHighlight = useCallback(
@@ -597,41 +530,6 @@ export function ReaderPage() {
     setActiveHighlight({ highlight, rect });
   }, []);
 
-  const offerRemote = useCallback(
-    (p: Remote & { deviceId?: string | null }) => {
-      if (p.deviceId === deviceId) return;
-      if (new Date(p.updatedAt).getTime() <= lastLocalUpdate(id)) return;
-      if (positionRef.current?.locator === p.locator) return;
-      setRemote(p);
-    },
-    [id],
-  );
-
-  useEffect(() => {
-    if (serverProgress) offerRemote(serverProgress);
-  }, [serverProgress, offerRemote]);
-
-  // Another device moved forward: offer to jump there (live, via SSE).
-  useEffect(
-    () =>
-      onServerEvent((event, data) => {
-        if (event === "progress.updated" && data.bookId === id) offerRemote(data);
-      }),
-    [id, offerRemote],
-  );
-
-  // Coming back to the app (phone unlocked, tab focused): check the server too.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      fetchProgress(id)
-        .then((p) => p && offerRemote(p))
-        .catch(() => {});
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [id, offerRemote]);
-
   const onRelocate = useCallback(
     (raw: Position, byUser: boolean) => {
       const pos = { ...raw, percentage: Number.isFinite(raw.percentage) ? raw.percentage : 0 };
@@ -645,7 +543,7 @@ export function ReaderPage() {
         setRemote(null);
       }
     },
-    [id],
+    [id, setRemote],
   );
 
   const onKeyDown = useCallback((e: KeyboardEvent) => {
@@ -679,13 +577,8 @@ export function ReaderPage() {
         toggleBookmarkRef.current();
         break;
     }
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => onKeyDown(e);
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onKeyDown]);
+  }, [inkingRef, toggleBookmarkRef]);
+  useDocumentEvent("keydown", onKeyDown);
 
   const onTap = useCallback(
     (zone: TapZone) => {
@@ -727,6 +620,16 @@ export function ReaderPage() {
   const canAnnotate = !isComic;
   // Comics read as pages (foliate) or as one vertical strip (webtoons).
   const ReaderComponent = isPdf ? PdfReader : isComic && settings.comicScroll ? ComicScroller : EpubReader;
+  // The menu over selected text, or over a highlight that was tapped (never both at once).
+  const menu = selection
+    ? !discuss && { ...selection, highlight: null, noteFor: { selection }, done: () => reader.current?.clearSelection?.() }
+    : activeHighlight && {
+        ...activeHighlight.highlight,
+        rect: activeHighlight.rect,
+        highlight: activeHighlight.highlight,
+        noteFor: { highlight: activeHighlight.highlight },
+        done: () => setActiveHighlight(null),
+      };
 
   return (
     <div className="relative h-dvh w-full overflow-hidden" style={{ background: theme.surround, color: theme.fg }}>
@@ -793,59 +696,40 @@ export function ReaderPage() {
             <div className="truncate font-medium">{book?.title}</div>
             {book?.author && <div className="truncate text-xs opacity-70">{book.author}</div>}
           </div>
-          {canAnnotate && (
-            <button className="btn-icon" aria-label="Search in book" title="Search" onClick={() => setPanel(panel === "search" ? null : "search")}>
-              <Search className="h-[18px] w-[18px]" />
-            </button>
-          )}
-          <button
-            className={`btn-icon ${pageBookmark ? "text-red-400" : ""}`}
+          {canAnnotate && <BarButton icon={Search} aria-label="Search in book" title="Search" onClick={() => togglePanel("search")} />}
+          <BarButton
+            icon={BookmarkIcon}
+            className={pageBookmark ? "text-red-400" : ""}
+            iconClass={pageBookmark ? "fill-current" : ""}
             aria-label={pageBookmark ? "Remove bookmark from this page" : "Bookmark this page"}
             aria-pressed={!!pageBookmark}
             title={pageBookmark ? "Remove bookmark (B)" : "Bookmark this page (B)"}
             disabled={!position}
             onClick={toggleBookmark}
-          >
-            <BookmarkIcon className={`h-[18px] w-[18px] ${pageBookmark ? "fill-current" : ""}`} />
-          </button>
-          {isPdf && (
-            <button className="btn-icon" aria-label="Write on the page" title="Write on the page (pen, highlighter)" onClick={startInking}>
-              <PenLine className="h-[18px] w-[18px]" />
-            </button>
-          )}
-          <button
-            className="btn-icon"
+          />
+          {isPdf && <BarButton icon={PenLine} aria-label="Write on the page" title="Write on the page (pen, highlighter)" onClick={startInking} />}
+          <BarButton
+            icon={NotebookText}
             aria-label="Notebook: highlights and bookmarks"
             title="Notebook: highlights and bookmarks"
             onClick={() => openNotebook(canAnnotate ? "highlights" : "bookmarks")}
           >
-            <NotebookText className="h-[18px] w-[18px]" />
             {(canAnnotate ? highlights.length : 0) + bookmarks.length > 0 && (
               <span className="ml-0.5 text-xs tabular-nums opacity-70">{(canAnnotate ? highlights.length : 0) + bookmarks.length}</span>
             )}
-          </button>
+          </BarButton>
           {isComic && (
-            <button
-              className={`btn-icon ${magnifier ? "bg-white/20 text-teal-300" : ""}`}
+            <BarButton
+              icon={ZoomIn}
+              className={magnifier ? "bg-white/20 text-teal-300" : ""}
               aria-label="Magnifier"
               aria-pressed={magnifier}
               title={magnifier ? "Magnifier on: move over the page (tap here to turn off)" : "Magnifier"}
               onClick={() => setMagnifier((m) => !m)}
-            >
-              <ZoomIn className="h-[18px] w-[18px]" />
-            </button>
+            />
           )}
-          {!isPdf && (
-            <button
-              className="btn-icon"
-              aria-label={isComic ? "Pages" : "Contents"}
-              title={isComic ? "Pages" : "Contents"}
-              onClick={() => setPanel(panel === "toc" ? null : "toc")}
-            >
-              <TableOfContents className="h-[18px] w-[18px]" />
-            </button>
-          )}
-          <button className="btn-icon" aria-label="Display settings" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
+          {!isPdf && <BarButton icon={TableOfContents} aria-label={isComic ? "Pages" : "Contents"} title={isComic ? "Pages" : "Contents"} onClick={() => togglePanel("toc")} />}
+          <button className="btn-icon" aria-label="Display settings" onClick={() => togglePanel("settings")}>
             Aa
           </button>
         </div>
@@ -930,55 +814,31 @@ export function ReaderPage() {
         </div>
       )}
 
-      {selection && !panel && !lookup && !noteFor && !discuss && (
+      {menu && !panel && !lookup && !noteFor && (
         <HighlightMenu
-          rect={selection.rect}
-          onColor={(c) => void addHighlight(c)}
-          onNote={() => setNoteFor({ selection })}
-          onDictionary={hasDictionary && isWord(selection.text) ? () => setLookup({ mode: "dictionary", text: selection.text, rect: selection.rect }) : undefined}
-          onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: selection.text, rect: selection.rect }) : undefined}
-          onDiscuss={
-            clubs.length
-              ? () => {
-                  setDiscuss({ quote: selection.text, locator: selection.cfi });
-                  reader.current?.clearSelection?.();
-                }
-              : undefined
-          }
-          onCopy={() => {
-            copyText(selection.text);
-            reader.current?.clearSelection?.();
-          }}
-        />
-      )}
-      {activeHighlight && !panel && !lookup && !noteFor && (
-        <HighlightMenu
-          rect={activeHighlight.rect}
-          current={activeHighlight.highlight.color}
-          onColor={(c) => void changeHighlight(activeHighlight.highlight, { color: c })}
+          key={menu.highlight ? "highlight" : "selection"}
+          rect={menu.rect}
+          current={menu.highlight?.color}
+          onColor={(c) => void (menu.highlight ? changeHighlight(menu.highlight, { color: c }) : addHighlight(c))}
           onNote={() => {
-            setNoteFor({ highlight: activeHighlight.highlight });
-            setActiveHighlight(null);
+            setNoteFor(menu.noteFor);
+            if (menu.highlight) menu.done();
           }}
-          onDictionary={
-            hasDictionary && isWord(activeHighlight.highlight.text)
-              ? () => setLookup({ mode: "dictionary", text: activeHighlight.highlight.text, rect: activeHighlight.rect })
-              : undefined
-          }
-          onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: activeHighlight.highlight.text, rect: activeHighlight.rect }) : undefined}
+          onDictionary={hasDictionary && isWord(menu.text) ? () => setLookup({ mode: "dictionary", text: menu.text, rect: menu.rect }) : undefined}
+          onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: menu.text, rect: menu.rect }) : undefined}
           onDiscuss={
             clubs.length
               ? () => {
-                  setDiscuss({ quote: activeHighlight.highlight.text, locator: activeHighlight.highlight.cfi });
-                  setActiveHighlight(null);
+                  setDiscuss({ quote: menu.text, locator: menu.cfi });
+                  menu.done();
                 }
               : undefined
           }
           onCopy={() => {
-            copyText(activeHighlight.highlight.text);
-            setActiveHighlight(null);
+            copyText(menu.text);
+            menu.done();
           }}
-          onDelete={() => void removeHighlight(activeHighlight.highlight)}
+          onDelete={menu.highlight ? () => void removeHighlight(menu.highlight!) : undefined}
         />
       )}
       {isPdf && inking && (
@@ -1023,36 +883,17 @@ export function ReaderPage() {
           onDeleteHighlight={(h) => void removeHighlight(h)}
           onEditNote={(h) => setNoteFor({ highlight: h })}
           onExport={exportHighlights}
-          onSelectHighlight={(h) => {
-            reader.current?.goToHref?.(h.cfi);
-            setPanel(null);
-          }}
-          onSelectBookmark={(b) => {
-            reader.current?.goToHref?.(b.locator);
-            setPanel(null);
-          }}
+          onSelectHighlight={(h) => goAndClose(h.cfi)}
+          onSelectBookmark={(b) => goAndClose(b.locator)}
           onRenameBookmark={renameBookmark}
           onDeleteBookmark={removeBookmark}
           inkPages={isPdf ? inkPageList : undefined}
           thumbnail={inkThumbnail}
-          onSelectInkPage={(page) => {
-            reader.current?.goToHref?.(`page:${page}`);
-            setPanel(null);
-          }}
+          onSelectInkPage={(page) => goAndClose(`page:${page}`)}
         />
       )}
       {panel === "settings" && <SettingsPanel kind={isPdf ? "pdf" : isComic ? "comic" : "text"} onClose={() => setPanel(null)} />}
-      {panel === "toc" && toc && (
-        <TocPanel
-          toc={toc}
-          title={isComic ? "Pages" : "Contents"}
-          onClose={() => setPanel(null)}
-          onSelect={(href) => {
-            reader.current?.goToHref?.(href);
-            setPanel(null);
-          }}
-        />
-      )}
+      {panel === "toc" && toc && <TocPanel toc={toc} title={isComic ? "Pages" : "Contents"} onClose={() => setPanel(null)} onSelect={goAndClose} />}
     </div>
   );
 }

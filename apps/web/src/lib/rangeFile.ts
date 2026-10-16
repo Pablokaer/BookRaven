@@ -46,12 +46,12 @@ export async function saveWholeFile(key: string, blob: Blob) {
   const cache = await openCache();
   if (!cache) return;
   await cache.put(key, new Response(blob, { headers: { "Content-Type": blob.type } }));
-  await forgetParts(cache, key);
+  await deleteKeys(cache, `${key}/`);
 }
 
-async function forgetParts(cache: Cache, key: string) {
+async function deleteKeys(cache: Cache, prefix: string) {
   for (const req of await cache.keys()) {
-    if (new URL(req.url).pathname.startsWith(`${key}/`)) await cache.delete(req);
+    if (new URL(req.url).pathname.startsWith(prefix)) await cache.delete(req);
   }
 }
 
@@ -59,10 +59,7 @@ async function forgetParts(cache: Cache, key: string) {
 export async function forgetSaved(prefix: string) {
   if (lastOpened?.key.startsWith(prefix)) lastOpened = null;
   const cache = await openCache();
-  if (!cache) return;
-  for (const req of await cache.keys()) {
-    if (new URL(req.url).pathname.startsWith(prefix)) await cache.delete(req);
-  }
+  if (cache) await deleteKeys(cache, prefix);
 }
 
 /** The whole file saved under `key`, if any. */
@@ -154,14 +151,7 @@ class RemoteFile implements RangeFile {
     const first = Math.floor(start / CHUNK);
     const last = Math.floor((end - 1) / CHUNK);
     for (let i = first; i <= last; i++) {
-      if (!this.memory.has(i) && !this.pending.has(i) && !this.saved.has(i)) {
-        return this.queue.run(async () => {
-          const res = await apiFetch(this.path, { headers: { Range: `bytes=${start}-${end - 1}` } });
-          if (!res.ok) throw new ApiError(res.status, null);
-          const data = new Uint8Array(await res.arrayBuffer());
-          return res.status === 200 ? data.subarray(start, end) : data;
-        }, false);
-      }
+      if (this.isMissing(i)) return this.queue.run(() => this.fetchBytes(start, end), false);
     }
     return this.load(start, end, 0, false);
   }
@@ -180,8 +170,7 @@ class RemoteFile implements RangeFile {
       run = null;
     };
     for (let i = first; i <= aheadLast; i++) {
-      const missing = !this.memory.has(i) && !this.pending.has(i) && !this.saved.has(i);
-      if (missing) {
+      if (this.isMissing(i)) {
         run ??= i;
       } else {
         flush(i - 1);
@@ -200,6 +189,19 @@ class RemoteFile implements RangeFile {
       out.set(c.subarray(from, to), i * CHUNK + from - start);
     }
     return out;
+  }
+
+  /** A piece neither in memory, nor downloading, nor saved on the device. */
+  private isMissing(i: number) {
+    return !this.memory.has(i) && !this.pending.has(i) && !this.saved.has(i);
+  }
+
+  /** Bytes [from, to) in one request (a server without range support sends the whole file). */
+  private async fetchBytes(from: number, to: number) {
+    const res = await apiFetch(this.path, { headers: { Range: `bytes=${from}-${to - 1}` } });
+    if (!res.ok) throw new ApiError(res.status, null);
+    const data = new Uint8Array(await res.arrayBuffer());
+    return res.status === 200 ? data.subarray(from, to) : data;
   }
 
   private chunk(i: number, urgent: boolean): Promise<Uint8Array> {
@@ -238,10 +240,7 @@ class RemoteFile implements RangeFile {
     const request = this.queue.run(async () => {
       for (let attempt = 0; ; attempt++) {
         try {
-          const res = await apiFetch(this.path, { headers: { Range: `bytes=${from}-${to - 1}` } });
-          if (!res.ok) throw new ApiError(res.status, null);
-          let data = new Uint8Array(await res.arrayBuffer());
-          if (res.status === 200) data = data.subarray(from, to);
+          const data = await this.fetchBytes(from, to);
           if (data.length !== to - from) throw new Error("Incomplete download");
           return data;
         } catch (err) {

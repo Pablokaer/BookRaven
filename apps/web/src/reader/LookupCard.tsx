@@ -12,6 +12,7 @@ import {
   type WordLookup,
 } from "../lib/lookup";
 import { useSettings } from "../lib/settings";
+import { useDocumentEvent } from "../lib/useLatest";
 
 /** Floating card with the dictionary entry of a selected word, or a translation of the selected text. */
 export function LookupCard({
@@ -27,11 +28,7 @@ export function LookupCard({
   rect: DOMRect;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDocumentEvent("keydown", (e) => e.key === "Escape" && onClose());
 
   const width = Math.min(380, window.innerWidth - 16);
   const left = Math.min(Math.max(8, rect.left + rect.width / 2 - width / 2), window.innerWidth - width - 8);

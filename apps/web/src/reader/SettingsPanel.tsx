@@ -1,16 +1,18 @@
 import { FONTS, fontFaceCss, type FontId } from "../lib/fonts";
 import { THEMES, useSettings, type ThemeId } from "../lib/settings";
+import { PanelShell } from "./PanelShell";
 
 // Load the bundled fonts in the app document too, so the font buttons preview them.
 const previewStyle = document.createElement("style");
 previewStyle.textContent = FONTS.map((f) => fontFaceCss(f.id)).join("\n");
 document.head.append(previewStyle);
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
       <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</div>
       {children}
+      {hint && <p className="text-xs text-neutral-500">{hint}</p>}
     </div>
   );
 }
@@ -44,18 +46,48 @@ function Stepper({
   );
 }
 
+/** A row of chips, one per option; the chosen one is on. */
+function Choice<T extends string | number | boolean>({ options, value, onChange }: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
+  return (
+    <div className={`grid ${options.length === 3 ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
+      {options.map(([option, label]) => (
+        <button key={String(option)} onClick={() => onChange(option)} className={`chip ${value === option ? "chip-on" : ""}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-4">
+      <span>
+        {label}
+        {hint && <span className="block text-xs text-neutral-500">{hint}</span>}
+      </span>
+      <input type="checkbox" className="h-5 w-5 accent-teal-600" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    </label>
+  );
+}
+
+type StepKey = "fontSize" | "lineHeight" | "letterSpacing" | "pageWidth" | "margin" | "marginY";
+
+/** The ebook steppers: label, setting, min, max, step and how the value shows. */
+const TEXT_STEPPERS: [string, StepKey, number, number, number, (v: number) => string][] = [
+  ["Font size", "fontSize", 60, 250, 10, (v) => `${v}%`],
+  ["Line spacing", "lineHeight", 1, 2.4, 0.1, (v) => v.toFixed(1)],
+  ["Letter spacing", "letterSpacing", -0.05, 0.3, 0.01, (v) => (v === 0 ? "Book" : `${v > 0 ? "+" : ""}${v.toFixed(2)}`)],
+  ["Page width", "pageWidth", 400, 1400, 40, (v) => `${v}px`],
+  ["Side margins", "margin", 0, 20, 2, (v) => `${v}%`],
+  ["Top & bottom", "marginY", 0, 160, 8, (v) => `${v}px`],
+];
+
 export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic"; onClose: () => void }) {
   const { settings: s, update } = useSettings();
 
   return (
-    <div className="panel right-0 w-full max-w-sm" role="dialog" aria-label="Reading settings">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Display</h2>
-        <button className="btn-icon" onClick={onClose} aria-label="Close settings">
-          ✕
-        </button>
-      </div>
-
+    <PanelShell side="right" label="Reading settings" title="Display" closeLabel="Close settings" closeIcon="✕" onClose={onClose}>
       <Row label="Theme">
         <div className="grid grid-cols-4 gap-2">
           {(Object.keys(THEMES) as ThemeId[]).map((id) => (
@@ -87,83 +119,41 @@ export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic
 
       {kind === "comic" ? (
         <>
-          <Row label="Layout">
-            <div className="grid grid-cols-2 gap-2">
-              {([false, true] as const).map((scroll) => (
-                <button key={String(scroll)} onClick={() => update({ comicScroll: scroll })} className={`chip ${s.comicScroll === scroll ? "chip-on" : ""}`}>
-                  {scroll ? "Vertical scroll" : "Pages"}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-neutral-500">Vertical scroll shows the pages as one continuous strip, for webtoons and manhwa.</p>
+          <Row label="Layout" hint="Vertical scroll shows the pages as one continuous strip, for webtoons and manhwa.">
+            <Choice options={[[false, "Pages"], [true, "Vertical scroll"]]} value={s.comicScroll} onChange={(v) => update({ comicScroll: v })} />
           </Row>
           <Row label="Page fit">
-            <div className="grid grid-cols-2 gap-2">
-              {(["page", "width"] as const).map((fit) => (
-                <button key={fit} onClick={() => update({ comicFit: fit })} className={`chip ${s.comicFit === fit ? "chip-on" : ""}`}>
-                  {fit === "page" ? "Whole page" : "Page width"}
-                </button>
-              ))}
-            </div>
+            <Choice options={[["page", "Whole page"], ["width", "Page width"]]} value={s.comicFit} onChange={(v) => update({ comicFit: v })} />
           </Row>
           {!s.comicScroll && (
             <>
-              <Row label="Pages on screen">
-                <div className="grid grid-cols-2 gap-2">
-                  {([false, true] as const).map((spreads) => (
-                    <button
-                      key={String(spreads)}
-                      onClick={() => update({ comicSpreads: spreads })}
-                      className={`chip ${s.comicSpreads === spreads ? "chip-on" : ""}`}
-                    >
-                      {spreads ? "Two pages" : "One page"}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-neutral-500">Two pages are shown side by side on wide screens, with the cover on its own.</p>
+              <Row label="Pages on screen" hint="Two pages are shown side by side on wide screens, with the cover on its own.">
+                <Choice options={[[false, "One page"], [true, "Two pages"]]} value={s.comicSpreads} onChange={(v) => update({ comicSpreads: v })} />
               </Row>
-              <Row label="Reading direction">
-                <div className="grid grid-cols-3 gap-2">
-                  {(["auto", "ltr", "rtl"] as const).map((dir) => (
-                    <button key={dir} onClick={() => update({ comicDirection: dir })} className={`chip ${s.comicDirection === dir ? "chip-on" : ""}`}>
-                      {dir === "auto" ? "Auto" : dir === "ltr" ? "Left → right" : "Manga ←"}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-neutral-500">Auto reads right to left when the comic says it is manga.</p>
+              <Row label="Reading direction" hint="Auto reads right to left when the comic says it is manga.">
+                <Choice
+                  options={[["auto", "Auto"], ["ltr", "Left → right"], ["rtl", "Manga ←"]]}
+                  value={s.comicDirection}
+                  onChange={(v) => update({ comicDirection: v })}
+                />
               </Row>
             </>
           )}
         </>
       ) : kind === "pdf" ? (
         <>
-          <Row label="Page fit">
-            <div className="grid grid-cols-2 gap-2">
-              {(["page", "width"] as const).map((fit) => (
-                <button
-                  key={fit}
-                  onClick={() => update({ pdfFit: fit })}
-                  className={`chip ${s.pdfFit === fit ? "chip-on" : ""}`}
-                >
-                  {fit === "page" ? "Whole page" : "Page width"}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-neutral-500">
-              PDFs have a fixed layout, so font and spacing options apply to ebooks only. Pinch, double-tap or Ctrl + scroll to zoom.
-            </p>
+          <Row label="Page fit" hint="PDFs have a fixed layout, so font and spacing options apply to ebooks only. Pinch, double-tap or Ctrl + scroll to zoom.">
+            <Choice options={[["page", "Whole page"], ["width", "Page width"]]} value={s.pdfFit} onChange={(v) => update({ pdfFit: v })} />
           </Row>
-          <Row label="Margins">
+          <Row label="Margins" hint="Space between the page and the edges of the screen.">
             <Stepper value={s.pdfMargin} onChange={(v) => update({ pdfMargin: v })} min={0} max={48} step={4} format={(v) => `${v}px`} />
-            <p className="text-xs text-neutral-500">Space between the page and the edges of the screen.</p>
           </Row>
-          <label className="flex items-center justify-between gap-4">
-            <span>
-              Crop white margins
-              <span className="block text-xs text-neutral-500">Shows only the part of each page with content, so the text is larger.</span>
-            </span>
-            <input type="checkbox" className="h-5 w-5 accent-teal-600" checked={s.pdfCrop} onChange={(e) => update({ pdfCrop: e.target.checked })} />
-          </label>
+          <Toggle
+            label="Crop white margins"
+            hint="Shows only the part of each page with content, so the text is larger."
+            checked={s.pdfCrop}
+            onChange={(v) => update({ pdfCrop: v })}
+          />
         </>
       ) : (
         <>
@@ -182,93 +172,20 @@ export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic
             </div>
           </Row>
           <div className="grid grid-cols-2 gap-4">
-            <Row label="Font size">
-              <Stepper
-                value={s.fontSize}
-                onChange={(v) => update({ fontSize: v })}
-                min={60}
-                max={250}
-                step={10}
-                format={(v) => `${v}%`}
-              />
-            </Row>
-            <Row label="Line spacing">
-              <Stepper
-                value={s.lineHeight}
-                onChange={(v) => update({ lineHeight: v })}
-                min={1}
-                max={2.4}
-                step={0.1}
-                format={(v) => v.toFixed(1)}
-              />
-            </Row>
-            <Row label="Letter spacing">
-              <Stepper
-                value={s.letterSpacing}
-                onChange={(v) => update({ letterSpacing: v })}
-                min={-0.05}
-                max={0.3}
-                step={0.01}
-                format={(v) => (v === 0 ? "Book" : `${v > 0 ? "+" : ""}${v.toFixed(2)}`)}
-              />
-            </Row>
-            <Row label="Page width">
-              <Stepper
-                value={s.pageWidth}
-                onChange={(v) => update({ pageWidth: v })}
-                min={400}
-                max={1400}
-                step={40}
-                format={(v) => `${v}px`}
-              />
-            </Row>
-            <Row label="Side margins">
-              <Stepper
-                value={s.margin}
-                onChange={(v) => update({ margin: v })}
-                min={0}
-                max={20}
-                step={2}
-                format={(v) => `${v}%`}
-              />
-            </Row>
-            <Row label="Top & bottom">
-              <Stepper
-                value={s.marginY}
-                onChange={(v) => update({ marginY: v })}
-                min={0}
-                max={160}
-                step={8}
-                format={(v) => `${v}px`}
-              />
-            </Row>
+            {TEXT_STEPPERS.map(([label, key, min, max, step, format]) => (
+              <Row key={key} label={label}>
+                <Stepper value={s[key]} onChange={(v) => update({ [key]: v })} min={min} max={max} step={step} format={format} />
+              </Row>
+            ))}
           </div>
-          <Row label="Pages on screen">
-            <div className="grid grid-cols-2 gap-2">
-              {([1, 2] as const).map((c) => (
-                <button key={c} onClick={() => update({ columns: c })} className={`chip ${s.columns === c ? "chip-on" : ""}`}>
-                  {c === 1 ? "One page" : "Two pages"}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-neutral-500">The page is centered; on narrow or portrait screens one page is always shown.</p>
+          <Row label="Pages on screen" hint="The page is centered; on narrow or portrait screens one page is always shown.">
+            <Choice options={[[1, "One page"], [2, "Two pages"]]} value={s.columns} onChange={(v) => update({ columns: v })} />
           </Row>
-          <label className="flex items-center justify-between gap-4">
-            <span>Justify text</span>
-            <input type="checkbox" className="h-5 w-5 accent-teal-600" checked={s.justify} onChange={(e) => update({ justify: e.target.checked })} />
-          </label>
-          <label className="flex items-center justify-between gap-4">
-            <span>Use theme colors instead of the book's</span>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-teal-600"
-              checked={s.overrideColors}
-              onChange={(e) => update({ overrideColors: e.target.checked })}
-            />
-          </label>
+          <Toggle label="Justify text" checked={s.justify} onChange={(v) => update({ justify: v })} />
+          <Toggle label="Use theme colors instead of the book's" checked={s.overrideColors} onChange={(v) => update({ overrideColors: v })} />
         </>
       )}
       <p className="text-xs text-neutral-500">These settings sync to all your devices.</p>
-    </div>
+    </PanelShell>
   );
 }
