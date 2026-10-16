@@ -37,9 +37,11 @@ for _ in $(seq 1 60); do
     "fetch('http://localhost:3000/api/config').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))" \
     2>/dev/null; then
     docker image prune -f >/dev/null
-    # Every deploy builds the images, and Docker keeps each build's layers as cache. Keep the
-    # last 3 days (later builds stay fast) and drop the rest; a failed cleanup never fails a deploy.
-    docker builder prune -f --filter until=72h >/dev/null || echo "deploy: could not prune the build cache" >&2
+    # Every deploy builds the images, and Docker keeps each build's layers as cache. Keep at most
+    # 8 GB, dropping what was used longest ago (the latest builds stay cached, so the next one is
+    # fast). --all: by default only dangling cache goes. Needs buildx (Ubuntu's docker-buildx
+    # package); without it, or on any error, the deploy still succeeds and just says so.
+    docker builder prune -af --max-used-space 8gb >/dev/null || echo "deploy: could not prune the build cache (is buildx installed?)" >&2
     echo "deploy: done"
     exit 0
   fi
