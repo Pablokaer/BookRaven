@@ -1,4 +1,6 @@
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router";
 import { Landscape } from "../components/dashboard/Landscape";
 import logoIcon from "../assets/logo.webp";
 import wordmark from "../assets/wordmark.webp";
@@ -6,12 +8,24 @@ import { Field } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
 
-/** Centered card over the landscape, shared by the sign-in and password-reset screens. Headings are centered; form fields read left to right. */
-export function AuthLayout({ children }: { children: ReactNode }) {
+/**
+ * Centered card over the landscape, shared by the sign-in and password-reset screens. Headings are centered; form fields read left to right.
+ * `homeLink` adds a link back to the landing page (only inside a router).
+ */
+export function AuthLayout({ children, homeLink = false }: { children: ReactNode; homeLink?: boolean }) {
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
       <Landscape className="absolute inset-0 h-full w-full opacity-70" />
       <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
+      {homeLink && (
+        <Link
+          to="/"
+          className="absolute left-3 top-[calc(env(safe-area-inset-top)+12px)] inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-elevated hover:text-fg"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Home
+        </Link>
+      )}
       <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl">
         <div className="mb-7 flex flex-col items-center gap-3">
           <img src={logoIcon} alt="" className="h-16 w-16 rounded-2xl" />
@@ -20,12 +34,25 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         </div>
         {children}
       </div>
-    </div>
+    </main>
   );
 }
 
-export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+export type LoginMode = "signin" | "signup" | "forgot";
+
+export function LoginPage({
+  onSignedIn,
+  initialMode = "signin",
+  onModeChange,
+  homeLink = false,
+}: {
+  onSignedIn: () => void;
+  initialMode?: "signin" | "signup";
+  /** Called when the form switches between sign-in, sign-up and reset (to keep the address in step). */
+  onModeChange?: (mode: LoginMode) => void;
+  homeLink?: boolean;
+}) {
+  const [mode, setMode] = useState<LoginMode>(initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,12 +66,19 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
     apiJson<ServerConfig>("/api/config").then(setCfg).catch(() => setError("Cannot reach the server"));
   }, []);
 
-  const switchMode = (next: typeof mode) => {
+  const switchMode = (next: LoginMode) => {
     setMode(next);
     setError(null);
     setSent(false);
     setVerify(false);
+    onModeChange?.(next);
   };
+
+  // A sign-up link on a server that takes no new accounts: show the sign-in form instead.
+  const signupClosed = cfg?.allowSignup === false;
+  useEffect(() => {
+    if (signupClosed && mode === "signup") switchMode("signin");
+  }, [signupClosed, mode]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,7 +132,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
 
   if (mode === "forgot") {
     return (
-      <AuthLayout>
+      <AuthLayout homeLink={homeLink}>
         <h2 className="mb-2 font-semibold">Reset your password</h2>
         {sent ? (
           <p className="text-sm text-muted">
@@ -126,7 +160,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
 
   if (verify) {
     return (
-      <AuthLayout>
+      <AuthLayout homeLink={homeLink}>
         <h2 className="mb-2 font-semibold">Confirm your email</h2>
         <p className="text-sm text-muted">
           We sent a confirmation link to <span className="text-fg">{email}</span>. Open it to finish signing in. Check your spam folder if it does not
@@ -142,7 +176,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout homeLink={homeLink}>
       <form onSubmit={submit} className="space-y-4">
         {mode === "signup" && (
           <Field label="Name">
