@@ -18,6 +18,18 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-word-dictionary",
+    date: "2026-10-16",
+    title: "A dictionary that knows the language",
+    items: [
+      "Select a single word and tap Dictionary: it tells you which language the word is in and translates it into the language you choose.",
+      "Works with English, Spanish, Portuguese, French and Italian, even for a foreign word in the middle of a book.",
+      "If a word exists in more than one language, tap one under Also in to see its meaning there.",
+      "Definitions from Wiktionary are shown below the translation.",
+      "Translate now recognizes the language of the passage you select, so a quote in another language than the book's is translated too.",
+    ],
+  },
+  {
     id: "2026-10-16-lighter-app",
     date: "2026-10-16",
     title: "A lighter, smoother library",

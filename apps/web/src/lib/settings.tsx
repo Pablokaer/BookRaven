@@ -3,6 +3,7 @@ import { apiJson } from "./api";
 import { deviceId } from "./device";
 import { onServerEvent } from "./events";
 import type { FontId } from "./fonts";
+import { dictionaryTarget, type WordLanguage } from "./lookup";
 
 export type ThemeId = "light" | "sepia" | "dark" | "black";
 
@@ -44,7 +45,11 @@ export type ReaderSettings = {
   comicScroll: boolean;
   /** Language selected text is translated into. */
   translateTo: string;
+  /** Language the dictionary translates a selected word into. */
+  dictionaryTo: WordLanguage;
 };
+
+const defaultTranslateTo = navigator.language?.startsWith("pt") ? (navigator.language === "pt-PT" ? "pt-PT" : "pt-BR") : (navigator.language?.split("-")[0] ?? "en");
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
   theme: "light",
@@ -67,7 +72,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   comicSpreads: true,
   comicDirection: "auto",
   comicScroll: false,
-  translateTo: navigator.language?.startsWith("pt") ? (navigator.language === "pt-PT" ? "pt-PT" : "pt-BR") : (navigator.language?.split("-")[0] ?? "en"),
+  translateTo: defaultTranslateTo,
+  dictionaryTo: dictionaryTarget(defaultTranslateTo),
 };
 
 /** `surround` is the area outside the page: a shade darker than `bg`. */

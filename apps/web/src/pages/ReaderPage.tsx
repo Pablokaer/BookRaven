@@ -101,7 +101,7 @@ export function ReaderPage() {
   const [chrome, setChrome] = useState(true);
   const [panel, setPanel] = useState<"settings" | "toc" | "notebook" | "search" | null>(null);
   const [notebookTab, setNotebookTab] = useState<NotebookTab>("highlights");
-  const [lookup, setLookup] = useState<{ mode: "define" | "translate"; text: string; rect: DOMRect } | null>(null);
+  const [lookup, setLookup] = useState<{ mode: "dictionary" | "translate"; text: string; rect: DOMRect } | null>(null);
   const [noteFor, setNoteFor] = useState<{ highlight: Highlight } | { selection: TextSelection } | null>(null);
   const [bookLanguage, setBookLanguage] = useState<string | null>(null);
   const [magnifier, setMagnifier] = useState(false);
@@ -114,6 +114,8 @@ export function ReaderPage() {
   const [params] = useSearchParams();
   const jumpTo = useRef(params.get("at"));
   const [features, setFeatures] = useState<Pick<ServerConfig, "dictionaryEnabled" | "translateEnabled"> | null>(null);
+  // The word dictionary detects a word's language with the dictionary and translates it: either is enough.
+  const hasDictionary = !!(features?.dictionaryEnabled || features?.translateEnabled);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   /** The book whose bookmarks are loaded (null while loading). */
@@ -933,7 +935,7 @@ export function ReaderPage() {
           rect={selection.rect}
           onColor={(c) => void addHighlight(c)}
           onNote={() => setNoteFor({ selection })}
-          onDefine={features?.dictionaryEnabled && isWord(selection.text) ? () => setLookup({ mode: "define", text: selection.text, rect: selection.rect }) : undefined}
+          onDictionary={hasDictionary && isWord(selection.text) ? () => setLookup({ mode: "dictionary", text: selection.text, rect: selection.rect }) : undefined}
           onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: selection.text, rect: selection.rect }) : undefined}
           onDiscuss={
             clubs.length
@@ -958,9 +960,9 @@ export function ReaderPage() {
             setNoteFor({ highlight: activeHighlight.highlight });
             setActiveHighlight(null);
           }}
-          onDefine={
-            features?.dictionaryEnabled && isWord(activeHighlight.highlight.text)
-              ? () => setLookup({ mode: "define", text: activeHighlight.highlight.text, rect: activeHighlight.rect })
+          onDictionary={
+            hasDictionary && isWord(activeHighlight.highlight.text)
+              ? () => setLookup({ mode: "dictionary", text: activeHighlight.highlight.text, rect: activeHighlight.rect })
               : undefined
           }
           onTranslate={features?.translateEnabled ? () => setLookup({ mode: "translate", text: activeHighlight.highlight.text, rect: activeHighlight.rect }) : undefined}
