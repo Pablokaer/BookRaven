@@ -6,6 +6,7 @@ import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { broadcast, publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
+import { log } from "../lib/log.js";
 import { quotaOf } from "../lib/quota.js";
 import { removeBookFile, removeCover } from "../lib/storage.js";
 import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
@@ -34,12 +35,14 @@ async function unpublishFile(sha256: string) {
 async function deleteBooks(books: { id: string; user_id: string; sha256: string }[]) {
   if (!books.length) return;
   await query("DELETE FROM book WHERE id = ANY($1)", [books.map((b) => b.id)]);
-  await Promise.all(books.map((b) => removeCover(b.id).catch(() => {})));
+  await Promise.all(books.map((b) => removeCover(b.id).catch((err) => log.warn({ err, bookId: b.id }, "could not remove a deleted book's cover"))));
   for (const b of books) publish(b.user_id, "book.deleted", { id: b.id });
   const shas = [...new Set(books.map((b) => b.sha256))];
   const { rows } = await query<{ sha256: string }>("SELECT DISTINCT sha256 FROM book WHERE sha256 = ANY($1)", [shas]);
   const still = new Set(rows.map((r) => r.sha256));
-  await Promise.all(shas.filter((sha) => !still.has(sha)).map((sha) => removeBookFile(sha).catch(() => {})));
+  await Promise.all(
+    shas.filter((sha) => !still.has(sha)).map((sha) => removeBookFile(sha).catch((err) => log.warn({ err, sha256: sha }, "could not remove a deleted book's file"))),
+  );
 }
 
 type UserRow = {

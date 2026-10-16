@@ -3,6 +3,7 @@ import { runAuthMigrations } from "./auth.js";
 import { config, googleEnabled } from "./config.js";
 import { pool, runAppMigrations } from "./db.js";
 import { backfillKoreaderHashes } from "./lib/koreader.js";
+import { log } from "./lib/log.js";
 import { ensureStorageDirs } from "./lib/storage.js";
 
 async function main() {
@@ -24,6 +25,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  log.fatal({ err }, "the server could not start");
   process.exit(1);
 });

@@ -153,7 +153,11 @@ SMTP_URL=smtps://resend:<api key>@smtp.resend.com:465
 MAIL_FROM=BookRaven <no-reply@books.example.com>
 ```
 
-The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work: …`. Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
+The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work` (with the reason). Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
+
+### Logs
+
+The API writes JSON lines to standard output (`docker compose logs -f api`). `LOG_LEVEL` in `.env` sets how much: `info` by default in production, `debug` in development; `warn` or `error` keep only problems. At `info` you get one line when a request arrives and one when it is answered (status and time), plus failures that don't break the request: emails that could not be sent, dictionary or translation services that answer with an error, files that could not be removed after a book was deleted. Health checks and the readers' range requests for a book are frequent, so they are logged at `debug` only (their errors still show). Keys in URLs (share and invite links, password-reset and verification links) are written as `[redacted]`.
 
 ### Automatic deploys (GitHub Actions → VPS)
 

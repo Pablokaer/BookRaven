@@ -318,7 +318,7 @@ export async function bookRoutes(app: FastifyInstance) {
         });
       } catch (err) {
         if (stored && !(await query("SELECT 1 FROM book WHERE sha256 = $1 LIMIT 1", [upload.sha256])).rowCount) {
-          await removeBookFile(upload.sha256).catch(() => {});
+          await removeBookFile(upload.sha256).catch((e) => request.log.warn({ err: e }, "could not remove the file of a failed upload"));
         }
         if (err instanceof QuotaExceededError) return reply.code(413).send(quotaBody(err));
         throw err;

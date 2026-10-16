@@ -15,7 +15,11 @@ async function orUnavailable<T>(reply: FastifyReply, fn: () => Promise<T>) {
   try {
     return await fn();
   } catch (err) {
-    if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") return reply.code(503).send({ error: "unavailable" });
+    if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") {
+      // Without a message the provider is simply turned off: nothing went wrong.
+      if ((err as Error).message) reply.log.warn({ err }, "lookup service unavailable");
+      return reply.code(503).send({ error: "unavailable" });
+    }
     throw err;
   }
 }
