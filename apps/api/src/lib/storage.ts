@@ -26,7 +26,10 @@ import { config } from "../config.js";
  * Uploads are always streamed to a local temp folder first (to hash and validate them).
  */
 
-/** Object store operations; keys look like "books/ab/cd/<sha256>" or "covers/<id>.img". */
+/**
+ * Object store operations; keys look like "books/ab/cd/<sha256>", "covers/<id>.img" or
+ * "derived/ab/cd/<sha256>.cbz" (a CBZ copy of a RAR/7z/TAR comic, see comicConvert.ts).
+ */
 interface Driver {
   /** Moves a local temp file into the store (no-op if the key already exists). */
   putFile(key: string, localPath: string): Promise<void>;
@@ -38,7 +41,7 @@ interface Driver {
   copy(from: string, to: string): Promise<void>;
 }
 
-const tmpDir = path.join(config.storageDir, "tmp");
+export const tmpDir = path.join(config.storageDir, "tmp");
 
 class LocalDriver implements Driver {
   private file(key: string) {
@@ -129,12 +132,13 @@ const driver: Driver = config.storageDriver === "s3" ? new S3Driver() : new Loca
 export async function ensureStorageDirs() {
   await fs.mkdir(tmpDir, { recursive: true });
   if (config.storageDriver === "local") {
-    await Promise.all(["books", "covers"].map((d) => fs.mkdir(path.join(config.storageDir, d), { recursive: true })));
+    await Promise.all(["books", "covers", "derived"].map((d) => fs.mkdir(path.join(config.storageDir, d), { recursive: true })));
   }
 }
 
 export const bookKey = (sha256: string) => `books/${sha256.slice(0, 2)}/${sha256.slice(2, 4)}/${sha256}`;
 export const coverKey = (bookId: string) => `covers/${bookId}.img`;
+export const cbzKey = (sha256: string) => `derived/${sha256.slice(0, 2)}/${sha256.slice(2, 4)}/${sha256}.cbz`;
 
 export type TempFile = { tmpPath: string; sha256: string; size: number; head: Buffer };
 
@@ -182,7 +186,10 @@ export async function removeTemp(tmpPath: string | undefined) {
 
 export const objectSize = (key: string) => driver.size(key);
 export const readObject = (key: string, start?: number, end?: number) => driver.read(key, start, end);
-export const removeBookFile = (sha256: string) => driver.remove(bookKey(sha256));
+/** Moves a local file into the store under `key` (no-op if the key already exists). */
+export const putObject = (key: string, localPath: string) => driver.putFile(key, localPath);
+/** Removes a book file and the CBZ copy made from it, if any. */
+export const removeBookFile = (sha256: string) => Promise.all([driver.remove(bookKey(sha256)), driver.remove(cbzKey(sha256))]).then(() => {});
 export const removeCover = (bookId: string) => driver.remove(coverKey(bookId));
 export const copyCover = (fromBookId: string, toBookId: string) => driver.copy(coverKey(fromBookId), coverKey(toBookId));
 

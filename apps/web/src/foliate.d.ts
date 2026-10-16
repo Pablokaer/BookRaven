@@ -68,11 +68,19 @@ declare module "foliate-js/vendor/zip.js" {
     filename: string;
     directory: boolean;
     uncompressedSize: number;
+    compressedSize: number;
+    /** 0: stored as is, 8: deflated. */
+    compressionMethod: number;
+    encrypted: boolean;
+    /** Offset of the entry's local header in the archive. */
+    offset: number;
     getData<T>(writer: { __type?: T }): Promise<T>;
   };
   export function configure(opts: { useWebWorkers: boolean }): void;
   export class BlobReader {
+    size: number;
     constructor(blob: Blob);
+    readUint8Array(offset: number, length: number): Promise<Uint8Array>;
   }
   export class BlobWriter {
     __type?: Blob;
@@ -85,4 +93,30 @@ declare module "foliate-js/vendor/zip.js" {
     constructor(reader: BlobReader);
     getEntries(): Promise<ZipEntry[]>;
   }
+}
+
+declare module "foliate-js/epub.js" {
+  import type { FoliateBook } from "foliate-js/view.js";
+  export class EPUB {
+    constructor(loader: {
+      entries?: unknown[];
+      loadText: (name: string) => Promise<string> | null;
+      loadBlob: (name: string, type?: string) => Promise<Blob> | null;
+      getSize: (name: string) => number;
+    });
+    init(): Promise<FoliateBook>;
+  }
+}
+
+declare module "foliate-js/mobi.js" {
+  import type { FoliateBook } from "foliate-js/view.js";
+  /** Reads records with `file.slice(a, b).arrayBuffer()`, so any Blob-like object works. */
+  export class MOBI {
+    constructor(opts: { unzlib: (data: Uint8Array) => Uint8Array });
+    open(file: { size: number; slice(start?: number, end?: number): { arrayBuffer(): Promise<ArrayBuffer> } }): Promise<FoliateBook>;
+  }
+}
+
+declare module "foliate-js/vendor/fflate.js" {
+  export function unzlibSync(data: Uint8Array): Uint8Array;
 }

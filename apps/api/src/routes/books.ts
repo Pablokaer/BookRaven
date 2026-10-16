@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { aboutFile } from "../lib/bookAbout.js";
+import { comicAsCbz, CONVERTED_FORMATS } from "../lib/comicConvert.js";
 import { broadcast, publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
 import { isFileBlocked } from "../lib/moderation.js";
@@ -146,7 +147,10 @@ export async function loadOwnedBook(request: FastifyRequest<{ Params: { id: stri
   return rows[0];
 }
 
-/** Serves a stored object with HTTP Range support (needed by pdf.js for large PDFs). */
+/**
+ * Serves a stored object with HTTP Range support: the readers fetch books in pieces
+ * (like a video player streams an MP4), only the parts around the page being read.
+ */
 export async function sendFile(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -154,14 +158,15 @@ export async function sendFile(
   mime: string,
   etag: string,
 ) {
-  const size = await objectSize(key);
-  if (size === null) return reply.code(404).send({ error: "file_missing" });
   reply.header("Accept-Ranges", "bytes");
   reply.header("ETag", `"${etag}"`);
   reply.header("Cache-Control", "private, max-age=31536000, immutable");
   reply.header("Content-Type", mime);
-
+  // Stored objects never change under a key, so a matching ETag needs no storage lookup.
   if (request.headers["if-none-match"] === `"${etag}"`) return reply.code(304).send();
+
+  const size = await objectSize(key);
+  if (size === null) return reply.code(404).send({ error: "file_missing" });
 
   const range = request.headers.range;
   if (range) {
@@ -330,6 +335,9 @@ export async function bookRoutes(app: FastifyInstance) {
         cover = undefined;
       }
 
+      // Make the CBZ copy readers stream from now, so the first open doesn't wait for it.
+      if (CONVERTED_FORMATS.has(format)) void comicAsCbz(upload.sha256).catch((err) => request.log.warn({ err }, "comic conversion failed"));
+
       const created = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [id]);
       const dto = toBookDto(created.rows[0]!);
       publish(request.user.id, "book.created", dto);
@@ -413,16 +421,45 @@ export async function bookRoutes(app: FastifyInstance) {
     return reply.code(204).send();
   });
 
-  /** `?download=1` asks the browser to save the file instead of showing it. */
-  app.get<{ Params: { id: string }; Querystring: { download?: string } }>("/api/books/:id/file", async (request, reply) => {
-    const book = await loadOwnedBook(request, reply);
-    if (!book) return;
-    reply.header(
-      "Content-Disposition",
-      `${request.query.download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(book.original_filename)}`,
-    );
-    return sendFile(request, reply, bookKey(book.sha256), book.mime_type, book.sha256);
-  });
+  /**
+   * `?download=1` asks the browser to save the file instead of showing it. `?as=cbz` serves
+   * a RAR/7z/TAR comic as CBZ (made on first use), which readers can fetch page by page.
+   * Readers send many small range requests while reading, hence the higher rate limit and
+   * the light query (no progress join).
+   */
+  app.get<{ Params: { id: string }; Querystring: { download?: string; as?: string } }>(
+    "/api/books/:id/file",
+    { config: { rateLimit: { max: 3000, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { rows } = UUID_RE.test(id)
+        ? await query<Pick<BookRow, "sha256" | "format" | "mime_type" | "original_filename">>(
+            "SELECT sha256, format, mime_type, original_filename FROM book WHERE id = $1 AND user_id = $2",
+            [id, request.user.id],
+          )
+        : { rows: [] };
+      const book = rows[0];
+      if (!book) return reply.code(404).send({ error: "not_found" });
+
+      let key = bookKey(book.sha256);
+      let { mime_type: mime, original_filename: filename } = book;
+      let etag = book.sha256;
+      if (request.query.as === "cbz" && book.format !== "cbz") {
+        if (!CONVERTED_FORMATS.has(book.format)) return reply.code(400).send({ error: "not_a_comic_archive" });
+        const converted = await comicAsCbz(book.sha256);
+        if (!converted) return reply.code(422).send({ error: "unconvertible" });
+        key = converted;
+        mime = MIME_TYPES.cbz;
+        filename = filename.replace(/\.[^.]*$/, "") + ".cbz";
+        etag = `${book.sha256}-cbz`;
+      }
+      reply.header(
+        "Content-Disposition",
+        `${request.query.download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      );
+      return sendFile(request, reply, key, mime, etag);
+    },
+  );
 
   app.get<{ Params: { id: string } }>("/api/books/:id/cover", async (request, reply) => {
     const book = await loadOwnedBook(request, reply);

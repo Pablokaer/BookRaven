@@ -24,8 +24,8 @@ backup() {
   pg_dump --format=custom --file="$work/database.dump"
 
   if [ -d "$DATA_DIR/books" ]; then
-    # Temp uploads are never worth keeping.
-    tar -czf "$work/files.tar.gz" -C "$DATA_DIR" --exclude=./tmp .
+    # Temp uploads are never worth keeping, and the CBZ copies of comics are made again when needed.
+    tar -czf "$work/files.tar.gz" -C "$DATA_DIR" --exclude=./tmp --exclude=./derived .
   fi
 
   # Only a complete backup gets its final name.
