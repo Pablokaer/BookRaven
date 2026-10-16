@@ -153,10 +153,15 @@ export async function opdsRoutes(app: FastifyInstance) {
   app.get("/opds/public", async (request, reply) => {
     const page = pageOf(request);
     const { rows } = await query<BookRow & { owner_name: string | null }>(
-      `SELECT * FROM (
-         SELECT DISTINCT ON (b.sha256) b.*, u.name AS owner_name, false AS is_shared
-         FROM book b JOIN "user" u ON u.id = b.user_id WHERE b.is_public ORDER BY b.sha256, b.published_at
-       ) t ORDER BY published_at DESC LIMIT ${PAGE_SIZE + 1} OFFSET ${(page - 1) * PAGE_SIZE}`,
+      // Same listing as /api/public: dedup and paging by id first, full rows for this page only.
+      `WITH pick AS (
+         SELECT id, published_at FROM (
+           SELECT DISTINCT ON (sha256) id, published_at FROM book WHERE is_public ORDER BY sha256, published_at
+         ) d ORDER BY published_at DESC LIMIT ${PAGE_SIZE + 1} OFFSET ${(page - 1) * PAGE_SIZE}
+       )
+       SELECT b.*, u.name AS owner_name, false AS is_shared
+       FROM pick JOIN book b ON b.id = pick.id JOIN "user" u ON u.id = b.user_id
+       ORDER BY pick.published_at DESC`,
     );
     const next = rows.length > PAGE_SIZE ? `/opds/public?page=${page + 1}` : null;
     return reply.type(ACQ).send(feed({ id: "readsync:public", title: "Public Library", self: "/opds/public", kind: ACQ, next, entries: rows.slice(0, PAGE_SIZE).map((b) => bookEntry(b, "public")) }));

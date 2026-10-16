@@ -322,6 +322,11 @@ class RemoteFile implements RangeFile {
 /** The last file opened stays open: reopening the reader (or switching comic modes) reuses what it downloaded. */
 let lastOpened: { key: string; file: Promise<RangeFile> } | null = null;
 
+/** Forgets the open file kept in memory (sign-out; the saved copies go with BOOK_CACHE). */
+export function forgetOpenedFile() {
+  lastOpened = null;
+}
+
 /** Opens the file at API `path` for range reads, saved on the device under `key`. */
 export function openRemoteFile(path: string, key: string): Promise<RangeFile> {
   if (lastOpened?.key !== key) {

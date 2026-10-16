@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Landscape } from "../components/dashboard/Landscape";
-import logoIcon from "../assets/logo.png";
-import wordmark from "../assets/wordmark.png";
+import logoIcon from "../assets/logo.webp";
+import wordmark from "../assets/wordmark.webp";
 import { Field } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";

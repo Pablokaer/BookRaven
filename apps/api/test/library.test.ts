@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectFormat } from "../src/lib/formats.js";
-import { adminSession, api, fakePdf, signUp, upload } from "./helpers.js";
+import { adminSession, api, fakePdf, getApp, signUp, upload } from "./helpers.js";
 
 describe("format detection", () => {
   it("uses magic bytes, not just the extension", () => {
@@ -90,6 +90,39 @@ describe("sharing and the public library", () => {
 
     expect((await api(owner, "DELETE", `/api/public/${book.id}`)).statusCode).toBe(204);
     expect((await api(stranger, "GET", "/api/public")).json().map((b: { id: string }) => b.id)).not.toContain(book.id);
+  });
+
+  it("lists a file published by several people once, as its earliest publication, newest first", async () => {
+    const owner = await signUp(undefined, "Owner");
+    const reader = await signUp();
+    const file = fakePdf();
+    const first = (await upload(owner, "same.pdf", file, { title: "Same file" })).json();
+    const second = (await upload(reader, "same.pdf", file, { title: "Same file" })).json();
+    const other = (await upload(reader, "other.pdf", fakePdf(), { title: "Other file" })).json();
+    for (const [u, b] of [[owner, first], [reader, second], [reader, other]] as const) {
+      expect((await api(u, "PATCH", `/api/books/${b.id}`, { isPublic: true })).statusCode).toBe(200);
+    }
+
+    const ours = (list: { id: string }[]) => list.filter((b) => [first.id, second.id, other.id].includes(b.id));
+    const seenByReader = ours((await api(reader, "GET", "/api/public")).json());
+    expect(seenByReader).toMatchObject([
+      { id: other.id, ownBookId: other.id, isMine: true },
+      { id: first.id, ownBookId: second.id, isMine: false, publishedBy: "Owner" },
+    ]);
+    expect(ours((await api(owner, "GET", "/api/public")).json())).toMatchObject([
+      { id: other.id, ownBookId: null, isMine: false },
+      { id: first.id, ownBookId: first.id, isMine: true },
+    ]);
+
+    // The OPDS public feed lists the same entries.
+    const { password } = (await api(reader, "POST", "/api/app-passwords", { name: "Kobo" })).json();
+    const feed = await (await getApp()).inject({
+      method: "GET",
+      url: "/opds/public",
+      headers: { authorization: `Basic ${Buffer.from(`${reader.email}:${password}`).toString("base64")}` },
+    });
+    const ids = [...feed.body.matchAll(/urn:uuid:([0-9a-f-]{36})/g)].map((m) => m[1]);
+    expect(ids.filter((id) => [first.id, second.id, other.id].includes(id!))).toEqual([other.id, first.id]);
   });
 
   it("keeps the description and tells a book's page about other readers and the public entry", async () => {

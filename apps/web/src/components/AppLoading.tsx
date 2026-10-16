@@ -1,4 +1,4 @@
-import logoIcon from "../assets/logo.png";
+import logoIcon from "../assets/logo.webp";
 
 /** Full-screen placeholder while the app starts: the app logo, gently pulsing. */
 export function AppLoading() {

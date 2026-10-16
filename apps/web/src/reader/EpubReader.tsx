@@ -63,14 +63,22 @@ function bookCss(s: ReaderSettings): string {
   `;
 }
 
+/** The book CSS last given to each renderer (a new renderer starts without one). */
+const appliedCss = new WeakMap<Element, string>();
+
 function applySettings(view: FoliateView, s: ReaderSettings, comic: boolean) {
   const r = view.renderer;
   if (!r) return;
+  // foliate lays the whole section out again on every attribute set, even to the same value:
+  // only touch what changed, so unrelated settings changes don't re-render the page.
+  const set = (name: string, value: string) => {
+    if (r.getAttribute(name) !== value) r.setAttribute(name, value);
+  };
   const t = THEMES[s.theme];
   const host = view.parentElement;
   if (comic) {
     // Fixed-layout pages: only the fit and the surrounding color apply; the view fills the screen.
-    r.setAttribute("zoom", s.comicFit === "width" ? "fit-width" : "fit-page");
+    set("zoom", s.comicFit === "width" ? "fit-width" : "fit-page");
     view.style.background = "transparent";
     view.style.boxShadow = "none";
     if (host) {
@@ -80,13 +88,17 @@ function applySettings(view: FoliateView, s: ReaderSettings, comic: boolean) {
     }
     return;
   }
-  r.setAttribute("flow", "paginated");
-  r.setAttribute("animated", "");
-  r.setAttribute("gap", `${s.margin}%`);
-  r.setAttribute("margin", `${s.marginY}px`);
-  r.setAttribute("max-inline-size", `${s.pageWidth}px`);
-  r.setAttribute("max-column-count", String(s.columns));
-  r.setStyles?.(bookCss(s));
+  set("flow", "paginated");
+  set("animated", "");
+  set("gap", `${s.margin}%`);
+  set("margin", `${s.marginY}px`);
+  set("max-inline-size", `${s.pageWidth}px`);
+  set("max-column-count", String(s.columns));
+  const css = bookCss(s);
+  if (r.setStyles && appliedCss.get(r) !== css) {
+    r.setStyles(css);
+    appliedCss.set(r, css);
+  }
   view.style.background = t.bg;
   view.style.boxShadow = t.bg === t.surround ? "0 0 0 1px rgb(255 255 255 / 0.12)" : "0 0 24px rgb(0 0 0 / 0.08)";
   // The host centers the view (one page, or a spread) and paints the area around it.

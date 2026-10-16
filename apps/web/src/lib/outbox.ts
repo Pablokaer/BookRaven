@@ -33,6 +33,8 @@ export type OutboxStore<T> = {
   load(): Promise<Queued<T>[]>;
   add(item: Queued<T>): Promise<void>;
   remove(items: Queued<T>[]): Promise<void>;
+  /** Forgets every stored change (sign-out). */
+  clear(): Promise<void>;
 };
 
 /** Keeps changes in memory only (tests, or browsers without storage). */
@@ -42,6 +44,7 @@ export function memoryStore<T>(): OutboxStore<T> {
     load: async () => [...items],
     add: async (item) => void (items = [...items, item]),
     remove: async (gone) => void (items = items.filter((i) => !gone.includes(i))),
+    clear: async () => void (items = []),
   };
 }
 
@@ -87,6 +90,14 @@ export function localStorageStore<T>(key: string, legacy?: { key: string; conver
       const seqs = new Set(gone.map((i) => i.seq));
       write(read().filter((i) => !seqs.has(i.seq)));
     },
+    clear: async () => {
+      try {
+        localStorage.removeItem(key);
+        if (legacy) localStorage.removeItem(legacy.key);
+      } catch {
+        /* unavailable: nothing stored */
+      }
+    },
   };
 }
 
@@ -122,6 +133,10 @@ export function cacheStore<T>(cacheName: string, prefix: string, legacy?: () => 
       }).catch(() => [] as Queued<T>[]),
     add: (item) => run((cache) => cache.put(url(item.seq), new Response(JSON.stringify(item), { headers: { "Content-Type": "application/json" } }))).catch(() => {}),
     remove: (gone) => run(async (cache) => void (await Promise.all(gone.map((i) => cache.delete(url(i.seq)))))).catch(() => {}),
+    clear: () =>
+      run(async (cache) => {
+        for (const req of await cache.keys()) if (new URL(req.url).pathname.startsWith(prefix)) await cache.delete(req);
+      }).catch(() => {}),
   };
 }
 
@@ -134,6 +149,8 @@ export type Outbox<T> = {
   flush(): Promise<void>;
   /** Resolves once the changes stored by earlier sessions are loaded. */
   ready: Promise<void>;
+  /** Drops every waiting change, here and in storage, unsent (sign-out: the next account must not send them). */
+  clear(): Promise<void>;
 };
 
 export function createOutbox<T>(options: {
@@ -232,5 +249,13 @@ export function createOutbox<T>(options: {
     pending: () => queue,
     flush,
     ready,
+    async clear() {
+      await ready;
+      clearTimeout(timer);
+      timer = undefined;
+      attempt = 0;
+      queue = [];
+      await options.store.clear();
+    },
   };
 }

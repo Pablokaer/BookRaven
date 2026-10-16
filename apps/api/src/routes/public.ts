@@ -77,18 +77,26 @@ export async function publicRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
 
   app.get("/api/public", async (request) => {
-    // The same file published by several people is listed once (earliest publication).
+    // The same file published by several people is listed once (earliest publication). The
+    // dedup and the limit only look at ids (book_public_sha_idx); full rows and the viewer's
+    // own copy are fetched for the 1000 listed books only.
     const { rows } = await query<PublicRow & { own_book_id: string | null }>(
-      `SELECT * FROM (
-         SELECT DISTINCT ON (b.sha256) b.*, u.name AS owner_name, cb.source, cb.source_url, cb.download_count,
-                (SELECT m.id FROM book m WHERE m.user_id = $1 AND m.sha256 = b.sha256) AS own_book_id
-         FROM book b JOIN "user" u ON u.id = b.user_id
-         LEFT JOIN catalog_book cb ON cb.book_id = b.id
-         WHERE b.is_public
-         ORDER BY b.sha256, b.published_at
-       ) t
-       ORDER BY published_at DESC
-       LIMIT 1000`,
+      `WITH pick AS (
+         SELECT id, published_at FROM (
+           SELECT DISTINCT ON (sha256) id, published_at FROM book
+           WHERE is_public
+           ORDER BY sha256, published_at
+         ) d
+         ORDER BY published_at DESC
+         LIMIT 1000
+       )
+       SELECT b.*, u.name AS owner_name, cb.source, cb.source_url, cb.download_count,
+              (SELECT m.id FROM book m WHERE m.user_id = $1 AND m.sha256 = b.sha256) AS own_book_id
+       FROM pick JOIN book b ON b.id = pick.id JOIN "user" u ON u.id = b.user_id
+       LEFT JOIN LATERAL (
+         SELECT c.source, c.source_url, c.download_count FROM catalog_book c WHERE c.book_id = b.id LIMIT 1
+       ) cb ON true
+       ORDER BY pick.published_at DESC`,
       [request.user.id],
     );
     return rows.map((r) => toPublicDto(r, request.user));

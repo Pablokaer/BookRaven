@@ -152,6 +152,14 @@ export function withPendingInk(bookId: string, page: number, strokes: Stroke[], 
 
 export const flushInk = () => outbox.flush();
 
+/** Forgets unsent handwriting and the offline copy of every page (sign-out). */
+export async function clearInk() {
+  for (const t of writeTimers.values()) clearTimeout(t);
+  writeTimers.clear();
+  await outbox.clear();
+  if (typeof caches !== "undefined") await caches.delete(STORE).catch(() => {});
+}
+
 let installed = false;
 export function installInkFlushers() {
   if (installed) return;

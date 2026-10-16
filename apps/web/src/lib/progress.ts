@@ -96,11 +96,25 @@ async function send(bookId: string, keepalive = false) {
   }
 }
 
-/** Sends everything immediately (page hide, app background, back online). */
-export function flushProgress(keepalive = false) {
+/** Sends everything immediately (page hide, app background, back online); resolves once answered. */
+export async function flushProgress(keepalive = false) {
   for (const t of timers.values()) clearTimeout(t);
   timers.clear();
-  for (const bookId of Object.keys(readOutbox())) void send(bookId, keepalive);
+  await Promise.all(Object.keys(readOutbox()).map((bookId) => send(bookId, keepalive)));
+}
+
+/** Drops the positions not yet sent (sign-out: the next account must not send them). */
+export function clearProgress() {
+  for (const t of timers.values()) clearTimeout(t);
+  timers.clear();
+  clearTimeout(retryTimer);
+  attempt = 0;
+  lastLocal.clear();
+  try {
+    localStorage.removeItem(OUTBOX_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function fetchProgress(bookId: string) {

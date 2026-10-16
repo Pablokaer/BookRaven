@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createOutbox, memoryStore, retryDelay, settle, type OutboxStore, type Queued } from "./outbox";
+import { createOutbox, localStorageStore, memoryStore, retryDelay, settle, type OutboxStore, type Queued } from "./outbox";
 
 type Item = { name: string; key?: string; note?: string };
 
@@ -121,5 +121,33 @@ describe("outbox", () => {
     await box.flush();
     expect(sent).toEqual([["stored-1"], ["new"]]);
     expect(await store.load()).toEqual([]);
+  });
+});
+
+describe("clearing an outbox (sign-out)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("drops waiting changes, in memory and in storage, and never sends them later", async () => {
+    const store = memoryStore<Item>();
+    const { box, sent } = setup(["offline"], {}, store);
+    box.push({ name: "a" });
+    box.push({ name: "b" });
+    await box.flush();
+    await box.clear();
+    expect(box.pending()).toEqual([]);
+    expect(await store.load()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(10_000); // the planned retry is cancelled
+    box.push({ name: "next" });
+    await box.flush();
+    expect(sent).toEqual([["next"]]);
+  });
+
+  it("removes the stored queue from localStorage, the legacy key too", async () => {
+    localStorage.setItem("test.queue", JSON.stringify([{ name: "a", seq: 1 }]));
+    localStorage.setItem("test.legacy", "{}");
+    await localStorageStore<Item>("test.queue", { key: "test.legacy", convert: () => [] }).clear();
+    expect(localStorage.getItem("test.queue")).toBeNull();
+    expect(localStorage.getItem("test.legacy")).toBeNull();
   });
 });

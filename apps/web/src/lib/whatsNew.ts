@@ -18,6 +18,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-quick-wins",
+    date: "2026-10-16",
+    title: "Snappier app, safer sign-out",
+    items: [
+      "The app and the sign-in page start faster: the logo images are now a much smaller download.",
+      "Changing the font size, contrast or other reading settings redraws an ebook's page once instead of several times, so the reader reacts more smoothly.",
+      "The Public Library loads faster.",
+      "Signing out on a shared device now also removes your downloaded books, handwriting and any changes not yet sent, after giving them a moment to reach the server, so the next person never sees them.",
+    ],
+  },
+  {
     id: "2026-10-16-range-loading",
     date: "2026-10-16",
     title: "Books open much faster",
