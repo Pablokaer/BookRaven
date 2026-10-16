@@ -41,6 +41,9 @@ export async function buildServer() {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Range", "If-None-Match"],
     exposedHeaders: ["set-auth-token", "Content-Range", "Accept-Ranges", "Content-Length", "ETag"],
+    // The Android app (another origin) reads books with many range requests: let it reuse the
+    // preflight for 2 hours (Chromium's cap) instead of sending one before nearly every request.
+    maxAge: 7200,
   });
   await app.register(rateLimit, { max: 600, timeWindow: "1 minute" });
   await app.register(multipart, {

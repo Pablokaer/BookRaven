@@ -1,12 +1,13 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { authHeaders, type Highlight } from "../lib/api";
-import { bookFileUrl, cachedBookFile } from "../lib/books";
+import type { Highlight } from "../lib/api";
+import { openBookFile } from "../lib/books";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
 import { MAX_STROKE_POINTS, type InkTool, type Stroke } from "../lib/ink";
 import { drawStrokes, strokePoint, touchesStroke } from "../lib/inkDraw";
 import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
 import { canvasPixelRatio, contentBox, fitScale, FULL_PAGE, type PageBox } from "../lib/pdfLayout";
 import { MAX_ZOOM, pinchController, type PinchController } from "../lib/pinchZoom";
+import { CHUNK, type RangeFile } from "../lib/rangeFile";
 import { THEMES, type ReaderSettings } from "../lib/settings";
 import { zoneFromX, type ReaderHandle, type ReaderProps, type SearchResult } from "./types";
 
@@ -22,6 +23,24 @@ function pageFilter(s: ReaderSettings) {
     default:
       return "none";
   }
+}
+
+/**
+ * Bytes pdf.js asked for. pdf.js waits for every range it requests, so once the PDF is open
+ * a failed download is retried (when the device is back online, if it went offline) instead
+ * of leaving a page blank for good. Null once the PDF is closed.
+ */
+async function readRange(file: RangeFile, begin: number, end: number, closed: () => boolean, keepTrying: () => boolean): Promise<Uint8Array | null> {
+  for (let attempt = 0; !closed(); attempt++) {
+    try {
+      return await file.read(begin, end);
+    } catch (err) {
+      if (!keepTrying()) throw err;
+      if (!navigator.onLine) await new Promise((r) => window.addEventListener("online", r, { once: true }));
+      else await new Promise((r) => setTimeout(r, Math.min(30_000, 2000 * 2 ** attempt)));
+    }
+  }
+  return null;
 }
 
 function parsePage(locator: string | null) {
@@ -390,28 +409,34 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     },
   }));
 
-  // Open the copy saved on this device if there is one (works offline), otherwise
-  // stream it with HTTP range requests (large PDFs start fast).
+  // pdf.js asks for the byte ranges it needs (the cross-reference table, then each page's
+  // objects) and gets them from the copy saved on this device or, piece by piece, from the
+  // server: opening a big PDF downloads little more than the pages on screen.
   useEffect(() => {
     let cancelled = false;
     let task: ReturnType<typeof pdfjs.getDocument> | null = null;
+    let loaded = false;
+    const fail = (err: { message?: string } | undefined) =>
+      propsRef.current.onError(navigator.onLine ? (err?.message ?? "Could not open this PDF") : "This PDF is not saved on this device. Connect to the internet to open it.");
     const open = async () => {
-      const saved = await cachedBookFile(props.book.id).catch(() => null);
+      const file = await openBookFile(props.book);
       if (cancelled) throw new Error("cancelled");
-      task = saved
-        ? pdfjs.getDocument({ data: new Uint8Array(await saved.arrayBuffer()) })
-        : pdfjs.getDocument({
-            url: bookFileUrl(props.book.id),
-            httpHeaders: authHeaders(),
-            withCredentials: true,
-            disableAutoFetch: true,
-            rangeChunkSize: 256 * 1024,
+      const transport = new pdfjs.PDFDataRangeTransport(file.size, await file.read(0, Math.min(file.size, CHUNK)));
+      transport.requestDataRange = (begin: number, end: number) =>
+        void readRange(file, begin, end, () => cancelled, () => loaded)
+          .then((data) => data && !cancelled && transport.onDataRange(begin, data))
+          .catch((err) => {
+            if (cancelled) return;
+            fail(err);
+            void task?.destroy();
           });
+      task = pdfjs.getDocument({ range: transport, disableAutoFetch: true, disableStream: true, rangeChunkSize: CHUNK });
       return task.promise;
     };
     open()
       .then(async (d) => {
         if (cancelled) return void d.loadingTask.destroy();
+        loaded = true;
         crops.current.clear();
         pageTexts.current.clear();
         for (const b of prepared.current.values()) b.cancel();
@@ -423,7 +448,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         propsRef.current.onReady({ totalPages: d.numPages, language: lang });
       })
       .catch((err) => {
-        if (!cancelled) propsRef.current.onError(navigator.onLine ? (err?.message ?? "Could not open this PDF") : "This PDF is not saved on this device. Connect to the internet to open it.");
+        if (!cancelled) fail(err);
       });
     return () => {
       cancelled = true;

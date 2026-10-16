@@ -1,7 +1,7 @@
 import { BookOpen, CloudDownload, Download, FolderInput, Globe, Heart, Info, MoreHorizontal, Share2, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { Book } from "../../lib/api";
-import { downloadBook } from "../../lib/books";
+import { saveForOffline } from "../../lib/books";
 import { downloadOwnBook, updateBook } from "../../lib/library";
 import { useLibrary } from "../../lib/libraryStore";
 import { Menu } from "../ui/Menu";
@@ -78,7 +78,7 @@ export function BookMenu({ book, className }: { book: Book; className?: string }
           label: "Save for offline reading",
           icon: <CloudDownload />,
           onSelect: () =>
-            void downloadBook(book)
+            void saveForOffline(book)
               .then(() => window.alert(`“${book.title}” is saved on this device and opens without internet.`))
               .catch(() => window.alert("Could not save it, try again.")),
         },

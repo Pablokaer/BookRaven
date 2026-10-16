@@ -1,4 +1,7 @@
-import type { Book } from "./api";
+import { ApiError, type Book } from "./api";
+import { cachedBookFile, downloadBook, openBookFile, readsAsCbz } from "./books";
+import { blobRangeFile, type RangeFile } from "./rangeFile";
+import { localDataStart, openRangeZip } from "./rangeZip";
 
 /** Comic book archives: ZIP, RAR, 7-Zip and TAR containers of page images. */
 export const COMIC_FORMATS = ["cbz", "cbr", "cb7", "cbt"] as const;
@@ -31,8 +34,13 @@ export type ComicInfo = { title?: string; author?: string; rtl: boolean };
 export type ComicArchive = {
   pages: { name: string; size: number }[];
   loadPage: (name: string) => Promise<Blob>;
+  /** The first `bytes` of a page image, for its size (when cheaper than the whole page). */
+  loadHead?: (name: string, bytes: number) => Promise<Blob>;
   info: ComicInfo | null;
 };
+
+/** Pages downloaded ahead of the one being read (and one behind, for going back). */
+const PREFETCH_AHEAD = 3;
 
 /** Reads ComicInfo.xml (the de facto standard metadata file in comic archives). */
 function parseComicInfo(xml: string): ComicInfo | null {
@@ -52,16 +60,44 @@ function sortPages<T extends { name: string }>(list: T[]) {
   return list.filter((p) => IMAGE_RE.test(p.name) && !isJunk(p.name)).sort((a, b) => collator.compare(a.name, b.name));
 }
 
-async function openZip(file: Blob): Promise<ComicArchive> {
-  const { configure, ZipReader, BlobReader, BlobWriter, TextWriter } = await import("foliate-js/vendor/zip.js");
-  configure({ useWebWorkers: false });
-  const entries = await new ZipReader(new BlobReader(file)).getEntries();
+/**
+ * A CBZ read by ranges: its directory first, then each page image when it is shown. The next
+ * pages are downloaded in the background, like a video player buffers what comes next.
+ */
+async function openZip(file: RangeFile): Promise<ComicArchive> {
+  const { zip, entries } = await openRangeZip(file);
   const byName = new Map(entries.map((e) => [e.filename, e]));
   const infoEntry = entries.find((e) => /(^|\/)comicinfo\.xml$/i.test(e.filename));
+  const pages = sortPages(entries.filter((e) => !e.directory).map((e) => ({ name: e.filename, size: e.uncompressedSize })));
+  const indexOf = new Map(pages.map((p, i) => [p.name, i]));
+  const prefetchAround = (name: string) => {
+    if (!file.prefetch) return;
+    const at = indexOf.get(name) ?? -1;
+    for (let i = at + 1; i <= at + PREFETCH_AHEAD; i++) prefetchPage(i);
+    prefetchPage(at - 1);
+  };
+  const prefetchPage = (i: number) => {
+    const entry = pages[i] && byName.get(pages[i].name);
+    // The local header is 30 bytes plus the name and an "extra" field (rarely over a few hundred bytes).
+    if (entry) file.prefetch!(entry.offset, entry.offset + entry.compressedSize + 30 + entry.filename.length * 4 + 1024);
+  };
   return {
-    pages: sortPages(entries.filter((e) => !e.directory).map((e) => ({ name: e.filename, size: e.uncompressedSize }))),
-    loadPage: (name) => byName.get(name)!.getData(new BlobWriter(mimeOf(name))),
-    info: infoEntry ? parseComicInfo(await infoEntry.getData(new TextWriter())) : null,
+    pages,
+    loadPage: (name) => {
+      prefetchAround(name);
+      return byName.get(name)!.getData(new zip.BlobWriter(mimeOf(name)));
+    },
+    loadHead: async (name, bytes) => {
+      const entry = byName.get(name)!;
+      if (entry.compressionMethod !== 0 || entry.encrypted) return entry.getData(new zip.BlobWriter(mimeOf(name)));
+      // One small request: the local header (30 bytes, the name and an "extra" field) and the image's first bytes.
+      const peek = (file.peek ?? file.read).bind(file);
+      const room = 30 + 4 * entry.filename.length + 1024;
+      const head = await peek(entry.offset, entry.offset + room + bytes);
+      const start = localDataStart(head);
+      return new Blob([head.subarray(start, start + Math.min(bytes, entry.compressedSize)) as BlobPart]);
+    },
+    info: infoEntry ? parseComicInfo(await infoEntry.getData(new zip.TextWriter())) : null,
   };
 }
 
@@ -88,21 +124,42 @@ async function openWith7z(file: Blob): Promise<ComicArchive> {
   }
 }
 
-export async function openComicArchive(file: Blob, format: ComicFormat): Promise<ComicArchive> {
-  const archive = format === "cbz" ? await openZip(file) : await openWith7z(file);
+export async function openComicArchive(file: Blob | RangeFile, format: ComicFormat): Promise<ComicArchive> {
+  const archive =
+    format === "cbz"
+      ? await openZip(file instanceof Blob ? blobRangeFile(file) : file)
+      : await openWith7z(file instanceof Blob ? file : new Blob([(await file.read(0, file.size)) as BlobPart]));
   if (!archive.pages.length) throw new Error("No pages found: this archive has no images.");
   return archive;
 }
 
 /**
- * The last opened comic stays extracted, so switching between paged and scrolling
- * modes (or reopening after a layout change) does not unpack a RAR/7z again.
+ * Opens a book's comic, reading it by ranges. RAR, 7z and TAR archives can't be read a page at
+ * a time, so they are read from the server's CBZ copy; a whole original saved on this device
+ * (from before the copies existed), or an archive the server couldn't convert, is unpacked here.
+ */
+async function loadComic(book: Book): Promise<ComicArchive> {
+  const format = book.format as ComicFormat;
+  if (!readsAsCbz(format)) return openComicArchive(await openBookFile(book), format);
+  const savedCbz = await cachedBookFile(book.id, { cbz: true });
+  if (savedCbz) return openComicArchive(savedCbz, "cbz");
+  const original = await cachedBookFile(book.id);
+  if (original) return openComicArchive(original, format);
+  const cbz = await openBookFile(book, { cbz: true }).catch((err) =>
+    err instanceof ApiError && err.status === 422 ? null : Promise.reject(err),
+  );
+  return cbz ? openComicArchive(cbz, "cbz") : openComicArchive(await downloadBook(book), format);
+}
+
+/**
+ * The last opened comic stays open, so switching between paged and scrolling modes (or
+ * reopening after a layout change) does not read its directory (or unpack a RAR/7z) again.
  */
 let current: { bookId: string; archive: Promise<ComicArchive> } | null = null;
 
-export function getComicArchive(book: Book, file: () => Promise<Blob>): Promise<ComicArchive> {
+export function getComicArchive(book: Book): Promise<ComicArchive> {
   if (current?.bookId !== book.id) {
-    const archive = file().then((f) => openComicArchive(f, book.format as ComicFormat));
+    const archive = loadComic(book);
     archive.catch(() => current?.archive === archive && (current = null));
     current = { bookId: book.id, archive };
   }
@@ -171,16 +228,32 @@ export function cachedWidePages(bookId: string): number[] | null {
 
 /**
  * Finds double-page scans (images wider than tall). They are shown on their own in
- * two-page mode instead of squeezed next to another page. Reads only image headers.
+ * two-page mode instead of squeezed next to another page. Reads only image headers
+ * (the first bytes of each page) where the archive allows it.
  */
 export async function scanWidePages(bookId: string, archive: ComicArchive, signal: AbortSignal) {
   const wide: number[] = [];
-  for (let i = 0; i < archive.pages.length; i++) {
-    if (signal.aborted) return null;
-    const size = await imageSize(await archive.loadPage(archive.pages[i]!.name)).catch(() => null);
-    if (size && size.width > size.height * 1.15) wide.push(i);
-    if (i % 8 === 7) await new Promise((r) => setTimeout(r)); // stay responsive
-  }
+  // Most headers are in the first 4 KB; JPEGs with a big EXIF block need more.
+  const sizeOf = async (name: string) => {
+    for (const bytes of archive.loadHead ? [4096, 64 * 1024] : []) {
+      const size = await imageSize(await archive.loadHead!(name, bytes)).catch(() => null);
+      if (size) return size;
+    }
+    return imageSize(await archive.loadPage(name)).catch(() => null);
+  };
+  let next = 0;
+  // A few pages at a time: each header is a small download of its own.
+  const worker = async () => {
+    while (next < archive.pages.length && !signal.aborted) {
+      const i = next++;
+      const size = await sizeOf(archive.pages[i]!.name).catch(() => null);
+      if (size && size.width > size.height * 1.15) wide.push(i);
+      await new Promise((r) => setTimeout(r)); // stay responsive
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  if (signal.aborted) return null;
+  wide.sort((a, b) => a - b);
   try {
     localStorage.setItem(WIDE_KEY(bookId), JSON.stringify(wide));
   } catch {

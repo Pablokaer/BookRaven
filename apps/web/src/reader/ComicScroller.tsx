@@ -1,5 +1,4 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { downloadBook } from "../lib/books";
 import { comicIndexFromLocator, comicLocator, getComicArchive, type ComicArchive } from "../lib/comics";
 import { attachLens } from "../lib/lens";
 import { pinchController, scrollSurface, type PinchController } from "../lib/pinchZoom";
@@ -106,10 +105,10 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     },
   }));
 
-  // Open (or reuse) the extracted archive.
+  // Open (or reuse) the archive: pages download as they scroll into view.
   useEffect(() => {
     let cancelled = false;
-    getComicArchive(props.book, () => downloadBook(props.book))
+    getComicArchive(props.book)
       .then((a) => {
         if (cancelled) return;
         setArchive(a);

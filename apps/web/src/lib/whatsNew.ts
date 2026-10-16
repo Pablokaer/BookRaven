@@ -18,6 +18,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-range-loading",
+    date: "2026-10-16",
+    title: "Books open much faster",
+    items: [
+      "Books are downloaded the way videos stream: only the pages around the one you are reading, with the next ones loading in the background.",
+      "A big PDF, EPUB or comic opens after downloading a small part of it, and pages you already read open again without downloading anything.",
+      "CBR, CB7 and CBT comics no longer download and unpack the whole archive before the first page.",
+      "Books you've opened before start right away from your library, even with a slow connection.",
+    ],
+  },
+  {
     id: "2026-10-15-whats-new",
     date: "2026-10-15",
     title: "What's new, right in the app",

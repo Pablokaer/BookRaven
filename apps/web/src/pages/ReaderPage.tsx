@@ -1,6 +1,6 @@
 import { compare as compareCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut } from "lucide-react";
 import { apiJson, type Book, type Bookmark, type Highlight, type HighlightColor, type Progress, type ServerConfig } from "../lib/api";
@@ -25,6 +25,7 @@ import {
   type Stroke,
 } from "../lib/ink";
 import { getBook } from "../lib/books";
+import { useLibrary } from "../lib/libraryStore";
 import { listClubs, type ClubSummary } from "../lib/clubs";
 import { isComicFormat } from "../lib/comics";
 import { deviceId } from "../lib/device";
@@ -41,11 +42,13 @@ import { LookupCard } from "../reader/LookupCard";
 import { NoteDialog } from "../reader/NoteDialog";
 import { InkToolbar, useInkTools } from "../reader/InkToolbar";
 import { NotebookPanel, type InkPageSummary, type NotebookTab } from "../reader/NotebookPanel";
-import { PdfReader } from "../reader/PdfReader";
 import { SearchPanel } from "../reader/SearchPanel";
 import { SettingsPanel } from "../reader/SettingsPanel";
 import { TocPanel } from "../reader/TocPanel";
 import type { ReaderHandle, TapZone, TextSelection } from "../reader/types";
+
+// pdf.js is big: only PDFs load it.
+const PdfReader = lazy(() => import("../reader/PdfReader").then((m) => ({ default: m.PdfReader })));
 
 type Remote = Pick<Progress, "locator" | "percentage" | "label" | "deviceName" | "updatedAt">;
 
@@ -146,15 +149,31 @@ export function ReaderPage() {
   const reader = useRef<ReaderHandle>(null);
   const positionRef = useRef<Position | null>(null);
 
+  const { books: library } = useLibrary();
+  const libraryRef = useRef(library);
+  libraryRef.current = library;
+  /** The server's progress, when the book opened from the library's copy (it may be newer). */
+  const [serverProgress, setServerProgress] = useState<Progress | null>(null);
+
   useEffect(() => {
     let cancelled = false;
+    // The library already has the book: open it right away (also offline) and check the server meanwhile.
+    const known = libraryRef.current?.find((b) => b.id === id) ?? null;
+    if (known) {
+      setStartLocator(initialLocator(known));
+      setBook(known);
+    }
     getBook(id)
       .then((b) => {
         if (cancelled) return;
-        setStartLocator(initialLocator(b));
-        setBook(b);
+        if (!known) {
+          setStartLocator(initialLocator(b));
+          setBook(b);
+        } else if (b.progress && b.progress.updatedAt !== known.progress?.updatedAt) {
+          setServerProgress(b.progress);
+        }
       })
-      .catch(() => !cancelled && setError("Book not found"));
+      .catch(() => !cancelled && !known && setError("Book not found"));
     return () => {
       cancelled = true;
       flushProgress();
@@ -586,6 +605,10 @@ export function ReaderPage() {
     [id],
   );
 
+  useEffect(() => {
+    if (serverProgress) offerRemote(serverProgress);
+  }, [serverProgress, offerRemote]);
+
   // Another device moved forward: offer to jump there (live, via SSE).
   useEffect(
     () =>
@@ -707,26 +730,28 @@ export function ReaderPage() {
     <div className="relative h-dvh w-full overflow-hidden" style={{ background: theme.surround, color: theme.fg }}>
       <div className="h-full w-full" style={{ filter: settings.contrast !== 100 ? `contrast(${settings.contrast}%)` : undefined }}>
         {book && (
-          <ReaderComponent
-            ref={reader}
-            book={book}
-            // Switching reader (e.g. comic pages <-> vertical scroll) starts where you are now.
-            initialLocator={position?.locator ?? startLocator}
-            settings={settings}
-            onRelocate={onRelocate}
-            onTap={onTap}
-            onKeyDown={onKeyDown}
-            onReady={onReady}
-            onError={setError}
-            highlights={canAnnotate ? highlights : undefined}
-            onSelection={onSelection}
-            onHighlightClick={onHighlightClick}
-            magnifier={isComic && magnifier}
-            onZoom={setPdfZoom}
-            ink={isPdf ? ink : undefined}
-            inkMode={isPdf && inking ? inkTools.mode : null}
-            onInkChange={onInkChange}
-          />
+          <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center opacity-60">Loading…</div>}>
+            <ReaderComponent
+              ref={reader}
+              book={book}
+              // Switching reader (e.g. comic pages <-> vertical scroll) starts where you are now.
+              initialLocator={position?.locator ?? startLocator}
+              settings={settings}
+              onRelocate={onRelocate}
+              onTap={onTap}
+              onKeyDown={onKeyDown}
+              onReady={onReady}
+              onError={setError}
+              highlights={canAnnotate ? highlights : undefined}
+              onSelection={onSelection}
+              onHighlightClick={onHighlightClick}
+              magnifier={isComic && magnifier}
+              onZoom={setPdfZoom}
+              ink={isPdf ? ink : undefined}
+              inkMode={isPdf && inking ? inkTools.mode : null}
+              onInkChange={onInkChange}
+            />
+          </Suspense>
         )}
       </div>
 

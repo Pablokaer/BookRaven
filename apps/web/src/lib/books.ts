@@ -1,5 +1,6 @@
 import { apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
 import { comicFormatOfName, openComicArchive } from "./comics";
+import { blobRangeFile, forgetSaved, openRemoteFile, savedWholeFile, saveWholeFile, type RangeFile } from "./rangeFile";
 
 export const SUPPORTED_EXTENSIONS = [".pdf", ".epub", ".mobi", ".azw3", ".azw", ".fb2", ".cbz", ".cbr", ".cb7", ".cbt"];
 
@@ -24,40 +25,67 @@ export function bookFileUrl(id: string) {
   return apiUrl(`/api/books/${id}/file`);
 }
 
-const CACHE = "readsync-books-v1";
+/** Cache Storage key of a book's file saved on this device (`.cbz`: the CBZ copy of a RAR/7z/TAR comic). */
+const savedKey = (id: string, cbz = false) => `/books/${id}${cbz ? ".cbz" : ""}`;
+
+/** RAR, 7z and TAR comics are read from the server's CBZ copy of them (see openComicFile). */
+export const readsAsCbz = (format: string) => format === "cbr" || format === "cb7" || format === "cbt";
 
 /**
- * Downloads a book file (EPUB/MOBI/...) and keeps it in Cache Storage so reopening
- * a book (or reading offline) does not download it again. Files never change for a
- * given book id, so the cache never needs invalidation, only deletion.
+ * Downloads a whole book file and keeps it in Cache Storage so reopening it (or reading
+ * offline) does not download it again. Files never change for a given book id, so the cache
+ * never needs invalidation, only deletion. Readers use openBookFile instead, which downloads
+ * only the parts being read; this is for "Save for offline reading" and FB2 (one XML file).
  */
-export async function downloadBook(book: Book): Promise<File> {
-  const key = `/books/${book.id}`;
-  let blob: Blob | null = null;
-  const cache = "caches" in window ? await caches.open(CACHE).catch(() => null) : null;
-  const hit = await cache?.match(key);
-  if (hit) blob = await hit.blob();
+export async function downloadBook(book: Book, opts: { cbz?: boolean } = {}): Promise<File> {
+  const key = savedKey(book.id, opts.cbz);
+  let blob = await savedWholeFile(key).catch(() => null);
   if (!blob) {
-    const res = await apiFetch(`/api/books/${book.id}/file`);
-    if (!res.ok) throw new ApiError(res.status, null);
+    const res = await apiFetch(`/api/books/${book.id}/file${opts.cbz ? "?as=cbz" : ""}`);
+    if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
     blob = await res.blob();
-    await cache?.put(key, new Response(blob, { headers: { "Content-Type": blob.type } })).catch(() => {});
+    // Saving it can take a while for big files: the book opens meanwhile.
+    void saveWholeFile(key, blob).catch(() => {});
   }
   return new File([blob], book.filename, { type: blob.type });
 }
 
-/** The book's file if it was saved on this device (opened before, or kept for offline). */
-export async function cachedBookFile(id: string): Promise<Blob | null> {
-  if (!("caches" in window)) return null;
-  const cache = await caches.open(CACHE).catch(() => null);
-  const hit = await cache?.match(`/books/${id}`);
-  return hit ? hit.blob() : null;
+/** Keeps the whole book on this device. Comics in RAR/7z/TAR keep the CBZ copy the reader uses. */
+export async function saveForOffline(book: Book) {
+  if (readsAsCbz(book.format)) {
+    const ok = await downloadBook(book, { cbz: true }).then(
+      () => true,
+      (err) => (err instanceof ApiError && err.status === 422 ? false : Promise.reject(err)),
+    );
+    if (ok) return;
+  }
+  const key = savedKey(book.id);
+  if (await savedWholeFile(key).catch(() => null)) return;
+  const res = await apiFetch(`/api/books/${book.id}/file`);
+  if (!res.ok) throw new ApiError(res.status, null);
+  await saveWholeFile(key, await res.blob());
 }
 
+/**
+ * A book's file for range reads: the copy saved on this device if there is a whole one,
+ * otherwise the server's, downloaded piece by piece as the reader asks for them.
+ * `cbz` opens the CBZ copy of a RAR/7z/TAR comic.
+ */
+export async function openBookFile(book: Book, opts: { cbz?: boolean } = {}): Promise<RangeFile> {
+  const key = savedKey(book.id, opts.cbz);
+  const saved = await savedWholeFile(key).catch(() => null);
+  if (saved) return blobRangeFile(saved);
+  return openRemoteFile(`/api/books/${book.id}/file${opts.cbz ? "?as=cbz" : ""}`, key);
+}
+
+/** The book's whole file (or CBZ copy) if it was saved on this device (kept for offline, or read to the end). */
+export function cachedBookFile(id: string, opts: { cbz?: boolean } = {}): Promise<Blob | null> {
+  return savedWholeFile(savedKey(id, opts.cbz)).catch(() => null);
+}
+
+/** Forgets everything saved on this device for a book (its file, CBZ copy and downloaded pieces). */
 export async function forgetCachedBook(id: string) {
-  if (!("caches" in window)) return;
-  const cache = await caches.open(CACHE).catch(() => null);
-  await cache?.delete(`/books/${id}`);
+  await forgetSaved(savedKey(id));
 }
 
 // ---------- Metadata extraction (client-side, before upload) ----------

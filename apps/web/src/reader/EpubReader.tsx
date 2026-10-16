@@ -1,8 +1,8 @@
 import type { FoliateView, RelocateDetail } from "foliate-js/view.js";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Overlayer } from "foliate-js/overlayer.js";
-import { downloadBook } from "../lib/books";
-import { cachedWidePages, getComicArchive, isComicFormat, makeComicBook, scanWidePages } from "../lib/comics";
+import { cachedWidePages, getComicArchive, isComicFormat, makeComicBook, scanWidePages, type ComicArchive } from "../lib/comics";
+import { openEbook } from "../lib/ebooks";
 import { fontFaceCss, fontFamily } from "../lib/fonts";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
 import { attachLens } from "../lib/lens";
@@ -193,12 +193,16 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
     const scanAbort = new AbortController();
 
     (async () => {
-      await import("foliate-js/view.js");
       const { book, settings } = propsRef.current;
+      // The reader's code and the book's first bytes download at the same time.
+      const [, opened] = await Promise.all([
+        import("foliate-js/view.js"),
+        isComicFormat(book.format) ? getComicArchive(book) : openEbook(book),
+      ]);
       let source: File | object;
       let scan: (() => void) | null = null;
       if (isComicFormat(book.format)) {
-        const archive = await getComicArchive(book, () => downloadBook(book));
+        const archive = opened as ComicArchive;
         const rtl = settings.comicDirection === "auto" ? !!archive.info?.rtl : settings.comicDirection === "rtl";
         source = makeComicBook(archive, { book, spreads: settings.comicSpreads, rtl, wide: wideRef.current ?? [] });
         // First time in two-page mode: look for double-page scans in the background.
@@ -209,7 +213,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
             });
         }
       } else {
-        source = await downloadBook(book);
+        source = opened;
       }
       if (cancelled || !hostRef.current) return;
 
@@ -344,7 +348,10 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       });
     })().catch((err) => {
       console.error(err);
-      if (!cancelled) propsRef.current.onError(err?.message ?? "Could not open this book");
+      if (cancelled) return;
+      propsRef.current.onError(
+        navigator.onLine ? (err?.message ?? "Could not open this book") : "This book is not saved on this device. Connect to the internet to open it.",
+      );
     });
 
     return () => {
