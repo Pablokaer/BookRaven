@@ -37,6 +37,9 @@ for _ in $(seq 1 60); do
     "fetch('http://localhost:3000/api/config').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))" \
     2>/dev/null; then
     docker image prune -f >/dev/null
+    # Every deploy builds the images, and Docker keeps each build's layers as cache. Keep the
+    # last 3 days (later builds stay fast) and drop the rest; a failed cleanup never fails a deploy.
+    docker builder prune -f --filter until=72h >/dev/null || echo "deploy: could not prune the build cache" >&2
     echo "deploy: done"
     exit 0
   fi
