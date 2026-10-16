@@ -33,7 +33,8 @@ export function byAdded(a: Book, b: Book) {
   return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }
 
-const COLLECTION_COLORS = ["#16c9b2", "#f59e0b", "#a78bfa", "#f472b6", "#60a5fa", "#4ade80", "#fb7185", "#facc15"];
+/** Muted inks that sit with the literary palette; each keeps the place of the color it replaced. */
+const COLLECTION_COLORS = ["#c9a474", "#d08b5b", "#a99bc4", "#c98aa0", "#8fa9c4", "#9db38a", "#c27b7b", "#e3cc9f"];
 
 /** Stable color per collection, derived from its id. */
 export function collectionColor(folder: Pick<Folder, "id">) {

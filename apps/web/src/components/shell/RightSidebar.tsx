@@ -22,7 +22,7 @@ export function Widget({ title, action, children }: { title: string; action?: Re
   return (
     <section className="surface p-5">
       <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="font-display text-[1.2rem] font-semibold leading-tight text-ivory">{title}</h2>
         {action}
       </div>
       {children}

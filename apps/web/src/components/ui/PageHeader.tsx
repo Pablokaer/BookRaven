@@ -1,17 +1,19 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { Fleuron } from "./Ornaments";
 
 type Props = { title: string; icon?: LucideIcon; subtitle?: ReactNode; actions?: ReactNode; className?: string; children?: ReactNode };
 
-/** A page's title, with an optional icon before it, a line under it (then `children`) and `actions` on the right. */
+/** A page's title set like a chapter opening, with an optional icon before it, a line under it (then `children`) and `actions` on the right. */
 export function PageHeader({ title, icon: Icon, subtitle, actions, className = "mb-8", children }: Props) {
   const text = (
     <>
-      <h1 className={`${Icon ? "flex items-center gap-3 " : ""}font-display text-3xl font-bold tracking-tight`}>
-        {Icon && <Icon className="h-7 w-7 text-accent" />}
+      <h1 className={`${Icon ? "flex items-center gap-3 " : ""}font-display text-[2.15rem] font-semibold leading-[1.05] text-ivory sm:text-[2.5rem]`}>
+        {Icon && <Icon className="h-6 w-6 shrink-0 text-accent" strokeWidth={1.6} />}
         {title}
       </h1>
-      {subtitle && <p className="mt-1.5 text-sm text-muted">{subtitle}</p>}
+      <Fleuron className="mt-3 w-16 text-gold/50" />
+      {subtitle && <p className="mt-2.5 text-sm text-muted">{subtitle}</p>}
       {children}
     </>
   );

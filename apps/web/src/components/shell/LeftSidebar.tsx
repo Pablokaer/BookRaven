@@ -48,7 +48,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
       compact ? "justify-center" : ""
-    } ${isActive ? "bg-primary/25 text-fg" : "text-muted hover:bg-white/5 hover:text-fg"}`;
+    } ${isActive ? "bg-gold/10 text-ivory" : "text-muted hover:bg-parchment/5 hover:text-fg"}`;
 
   return (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto overflow-x-hidden px-3 pb-6 pt-5" aria-label="Main">
@@ -67,7 +67,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
                   <span className={`[&>svg]:h-[18px] [&>svg]:w-[18px] ${isActive ? "text-accent" : ""}`}>{item.icon}</span>
                   <span className={`flex-1 truncate ${hide}`}>{item.label}</span>
                   {!compact && item.count ? (
-                    <span className="rounded-full bg-white/6 px-2 py-0.5 text-[11px] tabular-nums text-muted">{item.count}</span>
+                    <span className="rounded-full bg-parchment/6 px-2 py-0.5 text-[11px] tabular-nums text-muted">{item.count}</span>
                   ) : null}
                 </>
               )}

@@ -7,6 +7,7 @@ import { toggled } from "../../lib/sets";
 import { readString, writeString } from "../../lib/storage";
 import { Menu } from "../ui/Menu";
 import { BookCard, BookRow } from "./BookCard";
+import { Fleuron, Medallion, VIGNETTES, type Vignette } from "../ui/Ornaments";
 
 type Filter = "all" | "shared" | "recent" | "comics" | Book["format"];
 type Sort = "activity" | "added" | "title" | "author" | "progress";
@@ -51,12 +52,17 @@ export function BookGridSkeleton({ count = 6 }: { count?: number }) {
   );
 }
 
+/** Nothing to show yet: an engraved vignette sealed with the page's icon, like a blank page in an old book. */
 export function EmptyState({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {
+  let h = 0;
+  for (const ch of title) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const plates = Object.keys(VIGNETTES) as Vignette[];
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-dashed border-line px-6 py-14 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent [&>svg]:h-5 [&>svg]:w-5">{icon}</div>
-      <h3 className="font-display text-lg font-semibold">{title}</h3>
-      {children && <div className="mt-2 max-w-sm text-sm text-muted">{children}</div>}
+    <div className="flex flex-col items-center border-y border-gold/12 px-6 py-14 text-center">
+      <Medallion plate={plates[h % plates.length]!} seal={icon} className="h-28 w-28" />
+      <h3 className="mt-6 font-display text-[1.6rem] font-semibold leading-tight text-ivory">{title}</h3>
+      <Fleuron className="mt-3 w-16 text-gold/50" />
+      {children && <div className="mt-3 max-w-sm text-sm leading-relaxed text-muted">{children}</div>}
     </div>
   );
 }

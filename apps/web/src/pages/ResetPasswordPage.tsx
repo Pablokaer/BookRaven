@@ -31,8 +31,7 @@ export function ResetPasswordPage({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <AuthLayout>
-      <h2 className="mb-3 font-semibold">Choose a new password</h2>
+    <AuthLayout heading="Choose a new password">
       {!token || linkError ? (
         <p className="text-sm text-muted">This reset link is invalid or has expired. Ask for a new one from the sign-in screen.</p>
       ) : done ? (

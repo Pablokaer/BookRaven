@@ -10,11 +10,11 @@ export function ProgressRing({ value, size = 132, stroke = 10, children }: { val
       <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <defs>
           <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#087f78" />
-            <stop offset="1" stopColor="#20dfca" />
+            <stop offset="0" stopColor="#7a5c34" />
+            <stop offset="1" stopColor="#e3cc9f" />
           </linearGradient>
         </defs>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(255 255 255 / 0.07)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(245 238 223 / 0.08)" strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}
