@@ -1,38 +1,76 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Landscape } from "../components/dashboard/Landscape";
 import logoIcon from "../assets/logo.webp";
 import wordmark from "../assets/wordmark.webp";
 import { Field, PasswordField } from "../components/ui/Field";
+import { ArchedPlate, Fleuron } from "../components/ui/Ornaments";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
 
 /**
- * Centered card over the landscape, shared by the sign-in and password-reset screens. Headings are centered; form fields read left to right.
- * `homeLink` adds a link back to the landing page (only inside a router).
+ * The sign-in, sign-up and password screens: the raven's arched plate beside the form on wide
+ * screens, above it on phones, and the form on a card framed like a bookplate. Headings are
+ * centered; form fields read left to right. `homeLink` adds a link back to the landing page (only
+ * inside a router).
  */
-export function AuthLayout({ children, homeLink = false }: { children: ReactNode; homeLink?: boolean }) {
+export function AuthLayout({
+  children,
+  heading,
+  lead,
+  homeLink = false,
+}: {
+  children: ReactNode;
+  heading: string;
+  lead?: ReactNode;
+  homeLink?: boolean;
+}) {
   return (
-    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden p-4">
-      <Landscape className="absolute inset-0 h-full w-full opacity-70" />
-      <div className="absolute inset-0 bg-gradient-to-b from-app/40 via-app/70 to-app" />
+    <main className="lit lit-grain lit-grain-night relative min-h-dvh overflow-x-clip lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+      {/* Moonlight from above, a candle's warmth low on the left. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(50% 40% at 30% 0%, rgb(170 184 198 / 0.16), transparent 70%), radial-gradient(40% 40% at 0% 100%, rgb(201 164 116 / 0.12), transparent 70%), linear-gradient(180deg, #0b1d2e, #071521 50%)",
+        }}
+      />
+      <aside
+        aria-hidden="true"
+        className="relative flex justify-center px-4 pt-[calc(env(safe-area-inset-top)+4.5rem)] lg:items-center lg:border-r lg:border-gold/15 lg:p-12"
+      >
+        <figure className="w-[min(58vw,250px)] lg:w-[min(30vw,400px)]">
+          <ArchedPlate sizes="(min-width: 1024px) 30vw, 58vw" priority />
+          <figcaption className="-mt-4 hidden text-center font-literary text-[16px] italic leading-snug text-silver lg:block">
+            &ldquo;Deep into that darkness peering, long I stood there wondering&hellip;&rdquo;
+            <span className="mt-2 block font-sans text-[10.5px] not-italic uppercase tracking-[0.2em] text-silver/70">Plate after Gustave Doré, 1884</span>
+          </figcaption>
+        </figure>
+      </aside>
+
       {homeLink && (
         <Link
           to="/"
-          className="absolute left-3 top-[calc(env(safe-area-inset-top)+12px)] inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-elevated hover:text-fg"
+          className="absolute left-3 top-[calc(env(safe-area-inset-top)+12px)] z-20 inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-silver transition hover:bg-navy hover:text-ivory"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Home
         </Link>
       )}
-      <div className="relative w-full max-w-sm animate-rise rounded-3xl border border-line/80 bg-card/85 p-7 text-center shadow-pop backdrop-blur-xl">
-        <div className="mb-7 flex flex-col items-center gap-3">
-          <img src={logoIcon} alt="" className="h-16 w-16 rounded-2xl" />
-          <img src={wordmark} alt="BookRaven" className="h-9 w-auto" />
-          <p className="text-sm text-muted">Your books, on every device.</p>
+
+      <div className="relative z-10 -mt-24 flex justify-center px-4 pb-[max(3rem,env(safe-area-inset-bottom))] lg:mt-0 lg:items-center lg:px-10 lg:py-16">
+        <div className="relative w-full max-w-sm animate-rise rounded-md border border-gold/25 bg-navy/90 px-6 pb-8 pt-8 text-center shadow-[0_40px_80px_-30px_rgb(0_0_0/0.9)] backdrop-blur-md sm:px-8">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-[6px] rounded-[3px] border border-gold/10" />
+          <div className="flex items-center justify-center gap-3">
+            <img src={logoIcon} alt="" className="h-11 w-11 rounded-[11px]" />
+            <img src={wordmark} alt="BookRaven" className="h-7 w-auto" />
+          </div>
+          <h1 className="mt-7 font-literary text-[2.1rem] font-medium leading-[1.05] text-ivory text-balance">{heading}</h1>
+          <Fleuron className="mx-auto mt-4 w-20 text-gold/60" />
+          {lead && <p className="mt-4 text-sm leading-relaxed text-silver">{lead}</p>}
+          <div className="mt-7">{children}</div>
         </div>
-        {children}
       </div>
     </main>
   );
@@ -143,8 +181,7 @@ export function LoginPage({
 
   if (mode === "forgot") {
     return (
-      <AuthLayout homeLink={homeLink}>
-        <h2 className="mb-2 font-semibold">Reset your password</h2>
+      <AuthLayout homeLink={homeLink} heading="Reset your password">
         {sent ? (
           <p className="text-sm text-muted">
             If an account exists for <span className="text-fg">{email}</span>, we sent it a link to choose a new password. The link works for one
@@ -167,8 +204,7 @@ export function LoginPage({
 
   if (verify) {
     return (
-      <AuthLayout homeLink={homeLink}>
-        <h2 className="mb-2 font-semibold">Confirm your email</h2>
+      <AuthLayout homeLink={homeLink} heading="Confirm your email">
         <p className="text-sm text-muted">
           We sent a confirmation link to <span className="text-fg">{email}</span>. Open it to finish signing in. Check your spam folder if it does not
           arrive.
@@ -179,7 +215,11 @@ export function LoginPage({
   }
 
   return (
-    <AuthLayout homeLink={homeLink}>
+    <AuthLayout
+      homeLink={homeLink}
+      heading={mode === "signin" ? "Welcome back, reader." : "Begin your library."}
+      lead={mode === "signin" ? "Sign in and your books open where you left them." : "One account for every book you own, on every device."}
+    >
       <form onSubmit={submit} className="space-y-4">
         {mode === "signup" && (
           <Field label="Name">

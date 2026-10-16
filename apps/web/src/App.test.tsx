@@ -118,7 +118,7 @@ describe("routing by sign-in state", () => {
 
   it("shows a signed-out visitor the landing page at /, with the ways in", async () => {
     await open("/", signedOut);
-    expect(landingTitle()?.textContent).toContain("Pick up where you left off");
+    expect(landingTitle()?.textContent).toContain("Every book holds a world");
     expect(link("Sign in")?.getAttribute("href")).toBe("/login");
     expect(link("Create an account")?.getAttribute("href")).toBe("/signup");
     expect(container.querySelector('input[type="password"]')).toBeNull();

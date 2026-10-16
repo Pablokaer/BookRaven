@@ -97,6 +97,9 @@ importers:
       '@fontsource/atkinson-hyperlegible':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource/cormorant-garamond':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@fontsource/literata':
         specifier: ^5.3.0
         version: 5.3.0
@@ -104,9 +107,6 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/opendyslexic':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/playfair-display':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/source-sans-3':
@@ -677,6 +677,9 @@ packages:
   '@fontsource/atkinson-hyperlegible@5.3.0':
     resolution: {integrity: sha512-Sp8Ve8+rQmENY2Lv02VH7sLpntzTTvnncnJMTbRE7DX6TLxGraN4ykZfzaUWIoCFmaomwkvNiqmlPkrKBuDoSA==}
 
+  '@fontsource/cormorant-garamond@5.3.0':
+    resolution: {integrity: sha512-weuGsCirGVWBWqpt6YUp0yLThTe4G8YO45noq8wxeJCRvEpq5lFrxNMFSTxcyOyV5k5otzJ8guDzYegdYlcLMQ==}
+
   '@fontsource/literata@5.3.0':
     resolution: {integrity: sha512-9JGMT5+YfBK49thoMq9ASaMRJErHT4V4QuMhAEwKHRLreOsIMP2xP6ZRLhPJ0e6YlET+kjWTJuN7LAxt9/gWGQ==}
 
@@ -685,9 +688,6 @@ packages:
 
   '@fontsource/opendyslexic@5.3.0':
     resolution: {integrity: sha512-BVYIW/ghc1U2iAghhYTN+GFWiZ3lnCy8Jf2KkZC23aHQHBNcMqKT718zckfqVxRx4qsXJmIMPWvczirRuhmtsg==}
-
-  '@fontsource/playfair-display@5.3.0':
-    resolution: {integrity: sha512-uJSABalvdWc10fEPppQjQocamT21LEyRfzzWfRfqbkPz+sRv+kKpYDKyluBUskvJREkJTos9epj1WjQROGu99Q==}
 
   '@fontsource/source-sans-3@5.3.1':
     resolution: {integrity: sha512-O3YxvbotUOgYI2Zx0bBcEMNjnwitRf9P2+9pd54sMoux1NHrdXnMwZusw2P78lFhEzOPN4glOEQmX0ASaS68uA==}
@@ -3692,13 +3692,13 @@ snapshots:
 
   '@fontsource/atkinson-hyperlegible@5.3.0': {}
 
+  '@fontsource/cormorant-garamond@5.3.0': {}
+
   '@fontsource/literata@5.3.0': {}
 
   '@fontsource/merriweather@5.3.0': {}
 
   '@fontsource/opendyslexic@5.3.0': {}
-
-  '@fontsource/playfair-display@5.3.0': {}
 
   '@fontsource/source-sans-3@5.3.1': {}
 

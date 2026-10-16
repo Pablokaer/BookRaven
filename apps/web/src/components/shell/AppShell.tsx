@@ -187,7 +187,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
     >
       {/* Left sidebar (tablet: icons only; phone: drawer) */}
       <aside
-        className={`sticky top-0 hidden h-dvh shrink-0 border-r border-line/60 bg-sidebar pt-[env(safe-area-inset-top)] transition-[width] duration-300 ease-out md:block ${
+        className={`lit-grain lit-grain-night sticky top-0 hidden h-dvh shrink-0 border-r border-gold/12 bg-sidebar pt-[env(safe-area-inset-top)] transition-[width] duration-300 ease-out md:block ${
           compact ? "w-[76px]" : "w-64"
         }`}
       >
@@ -197,7 +197,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
       {mobileNav && (
         <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <div className="absolute inset-0 animate-fade bg-black/60 backdrop-blur-sm" onClick={() => setMobileNav(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-slide-in border-r border-line bg-sidebar pt-[env(safe-area-inset-top)] shadow-pop">
+          <aside className="lit-grain lit-grain-night absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-slide-in border-r border-gold/15 bg-sidebar pt-[env(safe-area-inset-top)] shadow-pop">
             <button className="icon-btn absolute right-3 top-[calc(env(safe-area-inset-top)+18px)]" aria-label="Close navigation" onClick={() => setMobileNav(false)}>
               <X className="h-4 w-4" />
             </button>

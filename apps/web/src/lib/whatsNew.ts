@@ -20,6 +20,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-illustrated-look",
+    date: "2026-10-16",
+    title: "A new look",
+    items: [
+      "BookRaven now looks like an illustrated book: midnight blue and parchment, gold details and classic serif titles, on every page.",
+      "The front page and the sign-in screen are illustrated with Gustave Doré's engravings for The Raven.",
+      "Empty pages, the welcome panel and books without a cover have their own engraved and cloth-bound designs.",
+      "A bookshelf on the front page opens each section of the Public Library once you sign in.",
+    ],
+  },
+  {
     id: "2026-10-16-reader-memory",
     date: "2026-10-16",
     title: "Lighter on long books",

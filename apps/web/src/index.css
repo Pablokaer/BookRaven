@@ -1,24 +1,73 @@
 @import "tailwindcss";
+@import "./literary.css";
 
-/* ---- Design tokens (dark teal library theme) ---- */
+/* ---- Literary palette and type (the front page): midnight and raven blues lit by parchment and a
+   little gold. Static, so plain CSS (literary.css) can read them as variables too. ---- */
+@theme static {
+  --color-midnight: #071521;
+  --color-navy: #0c2033;
+  --color-raven: #243f5a;
+  --color-parchment: #eee3d0;
+  --color-ivory: #f5eedf;
+  --color-gold: #c9a474;
+  --color-gold-deep: #7a5c34;
+  --color-silver: #aab8c6;
+  --color-ink: #151b23;
+  --color-sepia: #5a5348;
+
+  --font-literary: "Cormorant Garamond", "EB Garamond", Garamond, Georgia, serif;
+}
+
+/* ---- Design tokens: the app's surfaces in the literary palette above ---- */
 @theme {
-  --color-app: #071315;
-  --color-sidebar: #09191c;
-  --color-card: #102327;
-  --color-elevated: #173137;
-  --color-accent: #16c9b2;
-  --color-accent-hover: #20dfca;
-  --color-primary: #087f78;
-  --color-primary-hover: #0a968e;
-  --color-fg: #f3f7f6;
-  --color-muted: #9baeb2;
-  --color-line: #244045;
+  --color-app: #071521;
+  --color-sidebar: #0a1a2b;
+  --color-card: #0e2236;
+  --color-elevated: #163049;
+  --color-accent: #c9a474;
+  --color-accent-hover: #dcbd90;
+  --color-primary: #9a7848;
+  --color-primary-hover: #b08c5a;
+  --color-fg: #f0e8d9;
+  --color-muted: #a7b5c3;
+  --color-line: #22384f;
+
+  /* The reader's chrome is written with Tailwind's neutral and teal scales (src/reader/*): they
+     are redrawn here as parchment-to-midnight and gold, so it matches the rest of the app. */
+  --color-neutral-50: #f7f2e8;
+  --color-neutral-100: #eee7da;
+  --color-neutral-200: #ddd4c4;
+  --color-neutral-300: #c4bcad;
+  --color-neutral-400: #979590;
+  --color-neutral-500: #6e7178;
+  --color-neutral-600: #4e5663;
+  --color-neutral-700: #34404f;
+  --color-neutral-800: #1e2c3c;
+  --color-neutral-900: #122133;
+  --color-neutral-950: #0a1524;
+  --color-teal-50: #f8f1e4;
+  --color-teal-100: #efe1c6;
+  --color-teal-200: #e3cc9f;
+  --color-teal-300: #d6b784;
+  --color-teal-400: #c9a474;
+  --color-teal-500: #b48d5c;
+  --color-teal-600: #9a7848;
+  --color-teal-700: #7a5c34;
+  --color-teal-800: #5b4428;
+  --color-teal-900: #3d2e1c;
+  --color-teal-950: #241b10;
+
+  /* Crisper corners, closer to print than to app cards. */
+  --radius-lg: 0.4rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.625rem;
+  --radius-3xl: 0.875rem;
 
   --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-display: "Cormorant Garamond", "EB Garamond", Garamond, Georgia, serif;
 
-  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 10px 30px -18px rgb(0 0 0 / 0.8);
-  --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(36 64 69 / 0.9);
+  --shadow-card: 0 1px 0 0 rgb(245 238 223 / 0.03) inset, 0 10px 30px -18px rgb(0 0 0 / 0.85);
+  --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.75), 0 0 0 1px rgb(201 164 116 / 0.18);
 
   --animate-pop: pop 140ms ease-out;
   --animate-fade: fade 160ms ease-out;
@@ -69,8 +118,26 @@ body,
 
 body {
   @apply bg-app font-sans text-fg antialiased;
+  /* Moonlight from the upper right, as on the front page. */
+  background-image: radial-gradient(70rem 40rem at 100% -10%, rgb(36 63 90 / 0.45), transparent 65%);
+  background-attachment: fixed;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+}
+/* Paper grain under everything, above the night sky. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--lit-grain);
+  opacity: 0.08;
+  filter: invert(1);
+  mix-blend-mode: screen;
+}
+::selection {
+  background: rgb(201 164 116 / 0.35);
 }
 
 :focus-visible {
@@ -90,34 +157,35 @@ body {
 }
 
 @layer components {
+  /* Primary action: warm ivory with a gold edge, like the front page's. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-primary-hover active:scale-[0.98] disabled:pointer-events-none disabled:opacity-60;
+    @apply inline-flex items-center justify-center gap-2 rounded-md bg-ivory px-4 py-2.5 text-sm font-semibold text-ink shadow-[0_0_0_1px_rgb(201_164_116/0.55),0_10px_24px_-14px_rgb(0_0_0/0.9)] transition hover:bg-[#fff8ea] hover:shadow-[0_0_0_1px_var(--color-gold),0_14px_30px_-14px_rgb(201_164_116/0.45)] active:translate-y-px disabled:pointer-events-none disabled:opacity-60;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-line bg-card/60 px-4 py-2.5 text-sm font-medium text-fg transition hover:border-accent/40 hover:bg-elevated active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-gold/30 bg-transparent px-4 py-2.5 text-sm font-medium text-fg transition hover:border-gold/70 hover:bg-gold/[0.06] active:translate-y-px;
   }
   .btn-ghost {
-    @apply inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-muted transition hover:bg-elevated hover:text-fg active:scale-[0.98];
+    @apply inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted transition hover:bg-elevated hover:text-fg active:translate-y-px;
   }
   .icon-btn {
-    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted transition hover:bg-elevated hover:text-fg active:scale-95;
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-elevated hover:text-fg active:scale-95;
   }
   .surface {
-    @apply rounded-2xl border border-line/80 bg-card/70 shadow-card;
+    @apply rounded-xl border border-line/80 bg-card/70 shadow-card;
   }
   /* Loading placeholder: a faintly lit base with a moving highlight sweep. Use in place of a
      flat dark fill so a cold start looks intentionally busy rather than broken. */
   .skeleton {
-    @apply relative overflow-hidden rounded bg-white/[0.07];
+    @apply relative overflow-hidden rounded bg-parchment/[0.07];
   }
   .skeleton::after {
     content: "";
     @apply absolute inset-0 -translate-x-full;
-    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.1), transparent);
+    background: linear-gradient(90deg, transparent, rgb(245 238 223 / 0.1), transparent);
     animation: shimmer 1.4s ease-in-out infinite;
   }
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted;
+    @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-muted;
   }
   .pill {
     @apply inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-sm text-muted transition hover:border-accent/40 hover:text-fg;
@@ -129,7 +197,7 @@ body {
     @apply inline-flex h-10 min-w-10 items-center justify-center rounded-full px-2 text-lg hover:bg-black/10 dark:hover:bg-white/10;
   }
   .input {
-    @apply rounded-xl border border-line bg-card px-3 py-2 text-sm text-fg outline-none transition placeholder:text-muted/70 focus:border-accent/70 focus:ring-2 focus:ring-accent/20;
+    @apply rounded-md border border-line bg-card px-3 py-2 text-sm text-fg outline-none transition placeholder:text-muted/70 focus:border-accent/70 focus:ring-2 focus:ring-accent/20;
   }
   /* iOS Safari zooms into any focused field under 16px; keep touch devices at 16px. */
   @media (pointer: coarse) {
@@ -138,16 +206,17 @@ body {
     }
   }
   .chip {
-    @apply rounded-lg border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700;
+    @apply rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700;
   }
   .chip-on {
-    @apply border-teal-600 bg-teal-50 text-teal-900 dark:bg-teal-950 dark:text-teal-100;
+    @apply border-gold-deep bg-gold/15 text-ink dark:border-gold dark:bg-gold/15 dark:text-parchment;
   }
+  /* Reader side panels: parchment by day, midnight by night. */
   .panel {
-    @apply absolute top-0 bottom-0 z-40 space-y-5 overflow-y-auto bg-white p-5 pt-[calc(env(safe-area-inset-top)+20px)] text-neutral-900 shadow-2xl dark:bg-neutral-900 dark:text-neutral-100;
+    @apply absolute top-0 bottom-0 z-40 space-y-5 overflow-y-auto bg-ivory p-5 pt-[calc(env(safe-area-inset-top)+20px)] text-ink shadow-2xl dark:bg-navy dark:text-parchment;
   }
   .reader-bar {
-    @apply absolute inset-x-0 z-20 bg-neutral-900/90 text-white backdrop-blur transition duration-200;
+    @apply absolute inset-x-0 z-20 bg-midnight/90 text-parchment shadow-[0_1px_0_rgb(201_164_116/0.15)] backdrop-blur transition duration-200;
   }
 }
 
@@ -230,7 +299,7 @@ body {
     cursor: default;
   }
   ::selection {
-    background: rgb(22 201 178 / 0.35);
+    background: rgb(201 164 116 / 0.4);
   }
 }
 

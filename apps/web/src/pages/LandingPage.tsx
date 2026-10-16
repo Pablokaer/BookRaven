@@ -1,35 +1,27 @@
-import {
-  ArrowRight,
-  Bookmark,
-  ChartColumn,
-  ChevronLeft,
-  FileText,
-  Highlighter,
-  Images,
-  Library,
-  ListTree,
-  PenLine,
-  Server,
-  Share2,
-  Smartphone,
-  Type,
-  UsersRound,
-  WifiOff,
-} from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { ArrowRight, ChevronLeft, ListTree, Smartphone, Type } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router";
+import clouds1600 from "../assets/landing/raven-clouds-1600.webp";
+import clouds900 from "../assets/landing/raven-clouds-900.webp";
+import scholar560 from "../assets/landing/scholar-560.webp";
+import scholar880 from "../assets/landing/scholar-880.webp";
 import logoIcon from "../assets/logo.webp";
 import wordmark from "../assets/wordmark.webp";
-import { Landscape } from "../components/dashboard/Landscape";
+import { ArchedPlate, Edge, Feather, Fleuron, Medallion, type Vignette } from "../components/ui/Ornaments";
 import { apiJson, type ServerConfig } from "../lib/api";
-import { THEMES } from "../lib/settings";
+import { THEME_INFO, THEME_ORDER } from "../lib/themes";
 
 /**
  * What a signed-out visitor sees at "/" on the web: what BookRaven does, and the way in (sign in,
  * create an account). Static apart from /api/config, which says whether this server takes sign-ups.
+ *
+ * Laid out like an illustrated edition: the plates are Gustave Doré's engravings for Poe's
+ * "The Raven" (1884, public domain), toned to the midnight and parchment palette.
  */
 export function LandingPage() {
   const [cfg, setCfg] = useState<ServerConfig | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  useReveal(root);
 
   useEffect(() => {
     apiJson<ServerConfig>("/api/config")
@@ -39,7 +31,7 @@ export function LandingPage() {
 
   useEffect(() => {
     const previous = document.title;
-    document.title = "BookRaven · Your books, on every device";
+    document.title = "BookRaven · Every book holds a world";
     return () => {
       document.title = previous;
     };
@@ -49,433 +41,642 @@ export function LandingPage() {
   const signupOpen = cfg?.allowSignup !== false;
 
   return (
-    <div className="min-h-dvh overflow-x-clip bg-app">
+    <div ref={root} className="lit min-h-dvh overflow-x-clip">
       <a
         href="#main"
-        className="sr-only z-50 rounded-lg bg-card px-4 py-2 text-sm text-fg shadow-pop focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+        className="sr-only z-50 rounded-[3px] bg-ivory px-4 py-2 text-sm text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
       >
         Skip to content
       </a>
 
-      <header className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 pt-[env(safe-area-inset-top)] sm:h-20 sm:px-8">
-        <Link to="/" className="flex items-center gap-2.5 rounded-lg" aria-label="BookRaven home">
-          <img src={logoIcon} alt="" width={36} height={36} className="h-9 w-9 rounded-[10px]" />
-          <img src={wordmark} alt="" width={110} height={26} className="h-[26px] w-auto" />
+      <Header signupOpen={signupOpen} />
+
+      <main id="main">
+        <Hero signupOpen={signupOpen} />
+        <LibraryChapter />
+        <Journey />
+        <Shelves />
+        <Finale signupOpen={signupOpen} />
+      </main>
+
+      <Colophon signupOpen={signupOpen} />
+    </div>
+  );
+}
+
+/** Marks each `.lit-reveal` element once it scrolls into view, so it fades up (see literary.css). */
+function useReveal(root: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const items = root.current?.querySelectorAll<HTMLElement>(".lit-reveal");
+    if (!items?.length) return;
+    if (typeof IntersectionObserver === "undefined") {
+      items.forEach((el) => el.setAttribute("data-shown", ""));
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          e.target.setAttribute("data-shown", "");
+          io.unobserve(e.target);
+        }
+      },
+      { rootMargin: "0px 0px -6% 0px", threshold: 0.08 },
+    );
+    items.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [root]);
+}
+
+/** A reveal delay, for staggering the items of a group. */
+const delay = (ms: number) => ({ "--lit-delay": `${ms}ms` }) as CSSProperties;
+
+function Header({ signupOpen }: { signupOpen: boolean }) {
+  // Clear over the hero; once the page scrolls, a midnight band keeps the links readable.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  return (
+    <header
+      className={`fixed inset-x-0 top-0 z-40 pt-[env(safe-area-inset-top)] transition-[background-color,box-shadow,backdrop-filter] duration-500 ${
+        scrolled ? "bg-midnight/85 shadow-[0_1px_0_rgb(201_164_116/0.16)] backdrop-blur-md" : "bg-transparent"
+      }`}
+    >
+      <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-4 px-5 sm:h-20 sm:px-8">
+        <Link to="/" className="flex items-center gap-3 rounded-[3px]" aria-label="BookRaven home">
+          <img src={logoIcon} alt="" width={40} height={40} className="h-10 w-10 rounded-[11px] shadow-[0_6px_18px_-6px_rgb(0_0_0/0.8)] sm:h-11 sm:w-11" />
+          <img src={wordmark} alt="" width={110} height={26} className="h-[24px] w-auto sm:h-[26px]" />
         </Link>
-        <nav aria-label="Account" className="flex items-center gap-1.5 sm:gap-2">
-          <Link to="/login" className="btn-ghost h-10 px-3.5 font-medium text-fg">
+        <nav aria-label="Main" className="flex items-center gap-1 sm:gap-2">
+          <ul className="mr-3 hidden items-center gap-7 text-[14px] text-silver lg:flex">
+            {[
+              ["#library", "The library"],
+              ["#journey", "How it works"],
+              ["#shelves", "Public Library"],
+            ].map(([href, label]) => (
+              <li key={href}>
+                <a href={href} className="rounded-[2px] py-2 transition-colors hover:text-ivory">
+                  {label}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <Link to="/login" className="lit-link min-h-10 whitespace-nowrap px-3 text-[14px] text-ivory">
             Sign in
           </Link>
           {signupOpen && (
-            <Link to="/signup" className="btn hidden h-10 sm:inline-flex">
+            <Link to="/signup" className="lit-btn lit-btn-sm hidden sm:inline-flex">
               Create account
             </Link>
           )}
         </nav>
-      </header>
-
-      <main id="main">
-        <Hero signupOpen={signupOpen} />
-        <Formats />
-        <HowItWorks />
-        <Features />
-        <OnYourServer />
-        <Closing signupOpen={signupOpen} />
-      </main>
-
-      <footer className="border-t border-line/70">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-5 px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] text-center text-sm text-muted sm:flex-row sm:justify-between sm:px-8 sm:text-left">
-          <p className="flex flex-col items-center gap-2.5 sm:flex-row">
-            <img src={logoIcon} alt="" width={24} height={24} className="h-6 w-6 rounded-md" />
-            <span>
-              <span className="font-medium text-fg">BookRaven</span> · a self-hosted reader for ebooks, PDFs and comics
-            </span>
-          </p>
-          <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
-            <Link to="/login" className="hover:text-fg">
-              Sign in
-            </Link>
-            {signupOpen && (
-              <Link to="/signup" className="hover:text-fg">
-                Create account
-              </Link>
-            )}
-            <a href="https://github.com/Pablokaer/BookRaven" className="hover:text-fg" rel="noopener noreferrer" target="_blank">
-              Source code<span className="sr-only"> (opens GitHub in a new tab)</span>
-            </a>
-          </nav>
-        </div>
-      </footer>
-    </div>
+      </div>
+    </header>
   );
 }
 
 /** Primary and secondary way in. When the server takes no sign-ups, signing in is all there is. */
 function Actions({ signupOpen, className = "" }: { signupOpen: boolean; className?: string }) {
   return (
-    <div className={`flex flex-wrap items-center gap-3 ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-6 gap-y-3 ${className}`}>
       {signupOpen ? (
         <>
-          <Link to="/signup" className="btn group h-12 px-5 text-[15px]">
+          <Link to="/signup" className="lit-btn group">
             Create an account
-            <ArrowRight className="h-4 w-4 transition-transform motion-safe:group-hover:translate-x-0.5" aria-hidden="true" />
+            <ArrowRight className="h-4 w-4 transition-transform duration-300 motion-safe:group-hover:translate-x-1" aria-hidden="true" />
           </Link>
-          <Link to="/login" className="btn-outline h-12 px-5 text-[15px]">
+          <Link to="/login" className="lit-link text-ivory">
             Sign in
           </Link>
         </>
       ) : (
         <>
-          <Link to="/login" className="btn group h-12 px-5 text-[15px]">
+          <Link to="/login" className="lit-btn group">
             Sign in
-            <ArrowRight className="h-4 w-4 transition-transform motion-safe:group-hover:translate-x-0.5" aria-hidden="true" />
+            <ArrowRight className="h-4 w-4 transition-transform duration-300 motion-safe:group-hover:translate-x-1" aria-hidden="true" />
           </Link>
-          <p className="text-sm text-muted">New accounts are by invitation on this server.</p>
+          <p className="text-sm text-silver">New accounts are by invitation on this server.</p>
         </>
       )}
     </div>
   );
 }
 
-/** A section's eyebrow, title and lead: centered over the content on narrow screens, left-aligned from `lg`. */
-function SectionIntro({ id, eyebrow, title, children }: { id: string; eyebrow: string; title: string; children?: ReactNode }) {
-  return (
-    <div className="text-center lg:text-left">
-      <p className="eyebrow text-accent">{eyebrow}</p>
-      <h2 id={id} className="mt-3 font-display text-[2rem] font-bold leading-[1.1] tracking-[-0.01em] text-balance sm:text-[2.5rem]">
-        {title}
-      </h2>
-      {children && <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted text-pretty lg:mx-0">{children}</p>}
-    </div>
-  );
-}
+/* ------------------------------------------------------------------------------------------------ */
 
 function Hero({ signupOpen }: { signupOpen: boolean }) {
   return (
-    <section aria-labelledby="hero-title" className="mx-auto grid max-w-6xl items-center gap-14 px-5 pb-20 pt-10 sm:px-8 sm:pt-16 lg:grid-cols-12 lg:gap-10 lg:pb-28 lg:pt-20">
-      {/* Centered while the hero is one column (phones, tablets); beside the preview it reads from the left. */}
-      <div className="text-center motion-safe:animate-rise lg:col-span-5 lg:text-left">
-        <p className="eyebrow text-accent text-balance">Self-hosted reader · ebooks, PDFs &amp; comics</p>
-        <h1
-          id="hero-title"
-          className="mt-5 font-display text-[2.75rem] font-bold leading-[1.02] tracking-[-0.02em] text-balance sm:text-6xl lg:text-[4.1rem]"
-        >
-          Pick up where you left off. <span className="text-accent">On any device.</span>
-        </h1>
-        <p className="mx-auto mt-6 max-w-[34rem] text-[17px] leading-relaxed text-muted text-pretty lg:mx-0">
-          Read in the browser or the Android app, and your place, highlights and bookmarks follow you, down to the sentence. E-ink readers keep up
-          through KOReader.
-        </p>
-        <Actions signupOpen={signupOpen} className="mt-9 justify-center lg:justify-start" />
-      </div>
-      <div className="lg:col-span-7">
-        <ReaderPreview />
+    <section aria-labelledby="hero-title" className="lit-grain lit-grain-night relative">
+      {/* Moonlight from the upper right, a candle's warmth low on the left. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(55% 45% at 80% 6%, rgb(170 184 198 / 0.16), transparent 70%), radial-gradient(42% 38% at 6% 96%, rgb(201 164 116 / 0.13), transparent 70%), linear-gradient(180deg, #0b1d2e 0%, #071521 55%)",
+        }}
+      />
+      <div className="mx-auto grid max-w-[1240px] px-5 pb-28 pt-24 sm:px-8 sm:pt-28 lg:min-h-[min(100svh,1000px)] lg:grid-cols-12 lg:items-center lg:gap-8 lg:pb-32 lg:pt-28">
+        <div className="relative lg:order-2 lg:col-span-5 lg:col-start-8">
+          <figure className="lit-reveal relative mx-auto w-[min(76vw,340px)] sm:w-[380px] lg:mr-0 lg:w-full lg:max-w-[460px]">
+            <ArchedPlate sizes="(min-width: 1024px) 460px, (min-width: 640px) 380px, 76vw" priority />
+            <figcaption className="-mt-6 hidden text-center font-literary text-[15px] italic leading-snug text-silver lg:block">
+              &ldquo;Perched upon a bust of Pallas just above my chamber door.&rdquo;
+              <span className="mt-1.5 block font-sans text-[10.5px] not-italic uppercase tracking-[0.2em] text-silver/70">
+                Plate after Gustave Doré, 1884
+              </span>
+            </figcaption>
+          </figure>
+          <ReaderCard className="absolute -left-20 bottom-28 hidden lg:block xl:-left-28" />
+        </div>
+
+        <div className="relative z-10 -mt-20 text-center sm:-mt-24 lg:order-1 lg:col-span-7 lg:mt-0 lg:text-left">
+          <p className="lit-eyebrow lit-reveal text-gold" style={delay(100)}>
+            A library of your own<span className="hidden sm:inline"> · ebooks, PDFs &amp; comics</span>
+          </p>
+          <h1
+            id="hero-title"
+            className="lit-title lit-reveal mt-6 text-[3.5rem] text-ivory sm:text-[5rem] lg:text-[5.9rem] xl:text-[6.6rem]"
+            style={delay(180)}
+          >
+            Every book <br className="hidden sm:block" />holds <em className="italic text-gold">a world.</em>
+          </h1>
+          <p
+            className="lit-reveal mx-auto mt-7 max-w-[33rem] text-[16.5px] leading-[1.75] text-silver text-pretty sm:text-[17.5px] lg:mx-0"
+            style={delay(260)}
+          >
+            Your stories, your collection, kept on a server of your own. Read in the browser, the Android app or on an e-reader, and every device opens on the
+            very sentence where you stopped.
+          </p>
+          <div className="lit-reveal" style={delay(340)}>
+            <Actions signupOpen={signupOpen} className="mt-10 justify-center lg:justify-start" />
+          </div>
+          <div className="lit-reveal mt-12 flex items-center justify-center gap-4 lg:justify-start" style={delay(420)}>
+            <Fleuron className="hidden w-16 text-gold/60 sm:block" />
+            <p className="text-[11.5px] uppercase tracking-[0.2em] text-silver/80">EPUB · MOBI · AZW3 · FB2 · PDF · CBZ · CBR · CB7 · CBT</p>
+          </div>
+          <ReaderCard className="lit-reveal mx-auto mt-14 w-fit lg:hidden" style={delay(200)} />
+        </div>
       </div>
     </section>
   );
 }
 
 /**
- * The core feature, drawn with the app's own pieces: the web reader (sepia theme) and, on a
- * phone in the dark theme, the prompt the reader shows when another device read further.
+ * The product, quietly: a page of the reader in its paper theme, with a highlight, a bookmark and
+ * the note the reader shows when another device read further.
  */
-function ReaderPreview() {
-  const sepia = THEMES.sepia;
-  const dark = THEMES.dark;
+function ReaderCard({ className = "", style }: { className?: string; style?: CSSProperties }) {
   return (
-    <figure className="relative mr-3 pb-12 sm:mr-8 sm:pb-16">
-      <figcaption className="sr-only">
-        The same book open in the web reader and on a phone. The phone offers to jump to the page reached on the computer.
-      </figcaption>
+    <figure className={className} style={style}>
+      <figcaption className="sr-only">The reader open on a page of The Raven, with a highlight, a bookmark and the place synced from a phone.</figcaption>
       <div aria-hidden="true" className="select-none">
-        <div className="overflow-hidden rounded-2xl shadow-pop" style={{ background: sepia.bg, color: sepia.fg }}>
-          <div className="flex h-11 items-center gap-3 border-b px-4 text-[13px]" style={{ borderColor: sepia.surround }}>
-            <ChevronLeft className="h-4 w-4 opacity-70" />
-            <span className="truncate font-medium">Moby-Dick; or, The Whale</span>
-            <span className="ml-auto flex items-center gap-3.5 opacity-70">
-              <ListTree className="h-4 w-4" />
-              <Type className="h-4 w-4" />
-              <Bookmark className="h-4 w-4" />
+        <div className="w-[272px] rotate-[-2.5deg] rounded-[3px] bg-ivory text-ink shadow-[0_30px_60px_-24px_rgb(0_0_0/0.9),0_0_0_1px_rgb(201_164_116/0.35)]">
+          <div className="flex items-center gap-2 border-b border-ink/10 px-3.5 py-2.5 text-[11px] text-sepia">
+            <ChevronLeft className="h-3.5 w-3.5" />
+            <span className="truncate font-semibold text-ink">The Raven</span>
+            <span className="truncate">· Edgar Allan Poe</span>
+            <span className="ml-auto flex items-center gap-2.5">
+              <ListTree className="h-3.5 w-3.5" />
+              <Type className="h-3.5 w-3.5" />
             </span>
           </div>
-          <div className="relative h-[300px] overflow-hidden px-6 pt-7 font-serif text-[13.5px] leading-[1.75] sm:h-[400px] sm:px-12 sm:pt-10 sm:text-[15px]">
-            <p className="text-center text-[10px] uppercase tracking-[0.25em] [font-variant-numeric:lining-nums]">Chapter 1</p>
-            <p className="mb-6 mt-1 text-center font-display text-2xl">Loomings</p>
-            <p className="text-justify hyphens-auto">
-              Call me Ishmael. Some years ago, never mind how long precisely, having little or no money in my purse, and nothing particular to
-              interest me on shore, I thought I would sail about a little and see the watery part of the world.{" "}
-              <mark className="rounded-[2px] px-0.5 text-inherit" style={{ background: "rgb(250 204 21 / 0.45)" }}>
-                It is a way I have of driving off the spleen and regulating the circulation.
-              </mark>{" "}
-              Whenever I find myself growing grim about the mouth; whenever it is a damp, drizzly November in my soul; whenever I find myself
-              involuntarily pausing before coffin warehouses, then, I account it high time to get to sea as soon as I can.
+          <div className="relative px-5 pb-3 pt-4 text-left font-literary text-[14.5px] leading-[1.5]">
+            <span className="absolute -top-px right-4 h-8 w-3.5 bg-gold [clip-path:polygon(0_0,100%_0,100%_100%,50%_76%,0_100%)]" />
+            <p className="text-center font-sans text-[9px] uppercase tracking-[0.28em] text-sepia">Stanza I</p>
+            <p className="mt-2.5">
+              Once upon a midnight dreary, while I pondered, weak and weary,{" "}
+              <mark className="rounded-[1px] bg-gold/40 px-0.5 text-inherit">Over many a quaint and curious volume of forgotten lore</mark>
+              &mdash; While I nodded, nearly napping, suddenly there came a tapping&hellip;
             </p>
-            <p className="mt-3 indent-6 text-justify hyphens-auto">
-              There now is your insular city of the Manhattoes, belted round by wharves as Indian isles by coral reefs; commerce surrounds it with
-              her surf.
-            </p>
-            <p className="mt-3 indent-6 text-justify hyphens-auto">
-              Circumambulate the city of a dreamy Sabbath afternoon. Go from Corlears Hook to Coenties Slip, and from thence, by Whitehall,
-              northward. What do you see? Posted like silent sentinels all around the town, stand thousands upon thousands of mortal men fixed in
-              ocean reveries.
-            </p>
-            <div className="absolute inset-x-0 bottom-0 h-20" style={{ background: `linear-gradient(transparent, ${sepia.bg})` }} />
           </div>
-          <div className="flex items-center gap-3 px-4 pb-3 text-[11px] opacity-70">
-            <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: sepia.surround }}>
-              <div className="h-full w-[4%] rounded-full bg-primary" />
+          <div className="flex items-center gap-2.5 px-4 pb-3 text-[10px] text-sepia">
+            <div className="h-[3px] flex-1 overflow-hidden rounded-full bg-ink/10">
+              <div className="h-full w-[38%] bg-gold-deep" />
             </div>
-            4%
+            38%
           </div>
         </div>
-
-        {/* The phone: same book, a little behind, offered the newer position. */}
-        <div className="absolute -right-3 bottom-0 w-[56%] max-w-[250px] rounded-[2rem] bg-[#0b0b0b] p-[7px] shadow-pop ring-1 ring-white/10 motion-safe:animate-rise motion-safe:[animation-delay:250ms] motion-safe:[animation-fill-mode:both] sm:-right-8 sm:w-[46%]">
-          <div className="relative h-[250px] overflow-hidden rounded-[1.6rem] px-2.5 pt-3 sm:h-[300px]" style={{ background: dark.bg, color: dark.fg }}>
-            <div className="rounded-xl bg-neutral-900 p-3 text-[10.5px] leading-snug text-white shadow-2xl ring-1 ring-white/10 motion-safe:animate-pop motion-safe:[animation-delay:650ms] motion-safe:[animation-fill-mode:both] sm:text-[11.5px]">
-              You reached <b>4%</b> on <b>Windows PC</b> just now.
-              <div className="mt-2.5 flex justify-end gap-1 whitespace-nowrap">
-                <span className="rounded-md px-1.5 py-1 text-neutral-300">Stay here</span>
-                <span className="rounded-md bg-teal-600 px-1.5 py-1 font-medium">Jump there</span>
-              </div>
-            </div>
-            <p className="mt-4 px-1.5 text-justify font-serif text-[10.5px] leading-[1.65] sm:text-[11.5px]">
-              Call me Ishmael. Some years ago, never mind how long precisely, having little or no money in my purse, and nothing particular to
-              interest me on shore, I thought I would sail about a little and see the watery part of the world. It is a way I have of driving off
-              the spleen and regulating the circulation.
-            </p>
-            <div className="absolute inset-x-0 bottom-0 h-14" style={{ background: `linear-gradient(transparent, ${dark.bg})` }} />
-          </div>
+        <div className="relative z-10 -mt-3 ml-10 inline-flex items-center gap-2 rounded-full bg-navy px-3.5 py-2 text-[11.5px] text-parchment shadow-[0_12px_30px_-12px_rgb(0_0_0/0.9)] ring-1 ring-gold/30">
+          <Smartphone className="h-3.5 w-3.5 text-gold" />
+          Continued from your phone · just now
         </div>
       </div>
     </figure>
   );
 }
 
-const FORMATS: [string, string[]][] = [
-  ["Ebooks", ["EPUB", "MOBI", "AZW3", "FB2"]],
-  ["Documents", ["PDF"]],
-  ["Comics", ["CBZ", "CBR", "CB7", "CBT"]],
-];
+/* ------------------------------------------------------------------------------------------------ */
 
-function Formats() {
-  return (
-    <section aria-labelledby="formats-title" className="border-y border-line/70 bg-sidebar/60">
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-5 py-6 sm:px-8 md:flex-row md:gap-10">
-        <h2 id="formats-title" className="eyebrow shrink-0">
-          Opens
-        </h2>
-        <dl className="flex flex-wrap justify-center gap-x-10 gap-y-3 md:justify-start">
-          {FORMATS.map(([group, list]) => (
-            <div key={group} className="flex items-baseline gap-3">
-              <dt className="text-sm text-muted">{group}</dt>
-              <dd className="text-sm font-semibold tracking-wide text-fg">{list.join(" · ")}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </section>
-  );
-}
-
-const STEPS: { title: string; text: string }[] = [
+const ARTICLES: { title: string; text: string }[] = [
   {
-    title: "Add your books",
-    text: "Drop in EPUB, PDF and comic files, or bring a whole Calibre library. Title, author and cover are read from each file, and duplicates are skipped.",
+    title: "Every format, one shelf",
+    text: "EPUB, MOBI, AZW3 and FB2, PDFs, and comics as CBZ, CBR, CB7 or CBT. Drop them in, or bring a whole Calibre library and your Goodreads shelves: title, author and cover are read from each file, and duplicates are skipped.",
   },
   {
-    title: "Read on whatever is closest",
-    text: "The web reader, the Android app, or KOReader on an e-ink device. Books stream in pieces, so a large PDF opens without downloading the whole file.",
+    title: "Your place, on every device",
+    text: "The web reader, the Android app and KOReader on e-ink keep one bookmark of where you are, down to the sentence. Positions are saved offline too, and the newest one always wins.",
   },
   {
-    title: "Continue where you stopped",
-    text: "Your position is saved as you read, even offline, and the newest one always wins. Open the book anywhere else and you are on the same sentence.",
+    title: "Notes in the margin",
+    text: "Highlights in four colors, notes and bookmarks, a pen for writing on PDFs, and a dictionary and translation for any word you select.",
+  },
+  {
+    title: "Books for company",
+    text: "Share a book or a whole collection by link, publish it to the Public Library, or read together in a book club and talk about passages.",
   },
 ];
 
-function HowItWorks() {
+const ROMAN = ["I", "II", "III", "IV"];
+
+function LibraryChapter() {
   return (
-    <section aria-labelledby="how-title" className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-28">
-      <div className="lg:col-span-4">
-        <SectionIntro id="how-title" eyebrow="How it works" title="Bring your books. Read anywhere." />
-      </div>
-      <ol className="lg:col-span-7 lg:col-start-6">
-        {STEPS.map((step, i) => (
-          <li key={step.title} className="grid grid-cols-[3rem_1fr] gap-x-4 border-t border-line/80 py-7 first:border-t-0 first:pt-0 sm:grid-cols-[4rem_1fr] lg:first:pt-2">
-            <span className="font-display text-2xl font-semibold tabular-nums text-accent" aria-hidden="true">
-              {String(i + 1).padStart(2, "0")}
-            </span>
-            <div>
-              <h3 className="text-lg font-semibold">{step.title}</h3>
-              <p className="mt-2 max-w-xl leading-relaxed text-muted">{step.text}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
+    <section id="library" aria-labelledby="library-title" className="lit-parchment lit-grain relative scroll-mt-16">
+      <Edge className="text-parchment" />
+      <div className="mx-auto grid max-w-[1240px] gap-20 px-5 pb-28 pt-24 sm:px-8 lg:grid-cols-12 lg:gap-10 lg:pb-40 lg:pt-36">
+        <Collage className="lg:col-span-5" />
 
-type Feature = { icon: ReactNode; title: string; text: string };
+        <div className="lg:col-span-6 lg:col-start-7">
+          <p className="lit-eyebrow lit-reveal text-gold-deep">Chapter I · The library</p>
+          <h2 id="library-title" className="lit-title lit-reveal mt-5 text-[2.9rem] sm:text-[3.8rem] lg:text-[4.3rem]" style={delay(80)}>
+            A library of your own, <em className="italic text-gold-deep">kept on your own shelves.</em>
+          </h2>
+          <p className="lit-dropcap lit-reveal mt-9 max-w-[36rem] text-[17px] leading-[1.8] text-ink/85 text-pretty" style={delay(160)}>
+            BookRaven gathers the books you own into one library that lives on a server of your choosing, not in a store&rsquo;s cloud. It reads DRM-free files,
+            so the books you bring are the books you keep, with every highlight, note and reading hour that comes with them.
+          </p>
 
-const FEATURE_GROUPS: { label: string; items: Feature[] }[] = [
-  {
-    label: "Read",
-    items: [
-      {
-        icon: <Type />,
-        title: "Ebooks set the way you like",
-        text: "Eight bundled fonts, spacing, margins, one or two pages, light, sepia and dark themes, contents and full-text search.",
-      },
-      {
-        icon: <FileText />,
-        title: "PDFs that zoom",
-        text: "Pinch or Ctrl + scroll up to 4×, crop white margins, and select text to highlight or search.",
-      },
-      {
-        icon: <Images />,
-        title: "Comics and manga",
-        text: "Two-page spreads, right-to-left manga and a vertical scroll for webtoons, with pinch-to-zoom.",
-      },
-    ],
-  },
-  {
-    label: "Annotate",
-    items: [
-      {
-        icon: <Highlighter />,
-        title: "Highlights and notes",
-        text: "Four colors, notes, export to Markdown, and dictionary or translation for any selected word.",
-      },
-      {
-        icon: <PenLine />,
-        title: "Handwriting on PDFs",
-        text: "Pen, highlighter and eraser, pressure-sensitive with a stylus, ignoring a palm resting on the screen.",
-      },
-      {
-        icon: <Bookmark />,
-        title: "Bookmarks",
-        text: "Mark a page with one tap or the B key. Bookmarks sync to your other devices and work offline.",
-      },
-    ],
-  },
-  {
-    label: "Beyond the page",
-    items: [
-      {
-        icon: <Share2 />,
-        title: "Share and publish",
-        text: "Send a book or a collection by link, or publish it to the server's Public Library for everyone on it.",
-      },
-      {
-        icon: <UsersRound />,
-        title: "Book clubs",
-        text: "Read together: members see each other's progress and discuss passages.",
-      },
-      {
-        icon: <ChartColumn />,
-        title: "Reading stats",
-        text: "Time read, streaks, a yearly goal and a heatmap of the last 26 weeks.",
-      },
-    ],
-  },
-];
-
-function Features() {
-  return (
-    <section aria-labelledby="features-title" className="border-t border-line/70">
-      <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 lg:py-28">
-        <SectionIntro id="features-title" eyebrow="Features" title="One library for everything you read.">
-          Each format gets a reader made for it, and what you do inside a book goes with you to every device.
-        </SectionIntro>
-        <div className="mt-14 grid gap-x-10 gap-y-12 md:grid-cols-3">
-          {FEATURE_GROUPS.map((group) => (
-            <div key={group.label}>
-              <h3 className="border-b border-line pb-3 font-display text-xl font-semibold">{group.label}</h3>
-              <ul>
-                {group.items.map((f) => (
-                  <li key={f.title} className="flex gap-3.5 border-b border-line/60 py-5">
-                    <span className="mt-0.5 shrink-0 text-accent [&>svg]:h-[18px] [&>svg]:w-[18px]" aria-hidden="true">
-                      {f.icon}
-                    </span>
-                    <div>
-                      <h4 className="font-medium">{f.title}</h4>
-                      <p className="mt-1.5 text-sm leading-relaxed text-muted">{f.text}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          <ol className="mt-16 grid gap-x-12 gap-y-12 sm:grid-cols-2">
+            {ARTICLES.map((a, i) => (
+              <li key={a.title} className={`lit-reveal ${i % 2 === 1 ? "sm:translate-y-14" : ""}`} style={delay(i * 90)}>
+                <div className="flex items-baseline gap-3 border-t border-ink/20 pt-4">
+                  <span className="font-literary text-[1.7rem] italic leading-none text-gold-deep" aria-hidden="true">
+                    {ROMAN[i]}.
+                  </span>
+                  <h3 className="font-literary text-[1.65rem] font-semibold leading-tight">{a.title}</h3>
+                </div>
+                <p className="mt-3 text-[15px] leading-[1.75] text-sepia">{a.text}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </div>
     </section>
   );
 }
 
-const SERVER_FACTS: Feature[] = [
+/** A plate, a loose manuscript page and a quill, laid on the parchment together. */
+function Collage({ className = "" }: { className?: string }) {
+  return (
+    <div className={`relative mx-auto w-full max-w-[470px] lg:sticky lg:top-28 lg:mt-6 lg:self-start ${className}`}>
+      <figure className="lit-reveal relative ml-[10%] w-[90%]">
+        <div className="bg-[#e6d8bf] p-2.5 shadow-[0_30px_50px_-30px_rgb(21_27_35/0.7)] ring-1 ring-ink/20">
+          <div className="overflow-hidden ring-1 ring-ink/30">
+            <img
+              src={scholar560}
+              srcSet={`${scholar560} 560w, ${scholar880} 880w`}
+              sizes="(min-width: 1024px) 420px, 90vw"
+              width={880}
+              height={1251}
+              loading="lazy"
+              decoding="async"
+              alt="An engraving of a scholar in an armchair beside his bookshelves, a beam of lamplight crossing the dark room."
+              className="lit-parallax h-auto w-full"
+            />
+          </div>
+        </div>
+        <figcaption className="mt-3 pl-1 font-literary text-[14px] italic text-sepia">
+          Plate II · &ldquo;Over many a quaint and curious volume of forgotten lore&rdquo;
+        </figcaption>
+      </figure>
+
+      <div
+        aria-hidden="true"
+        className="lit-reveal absolute -left-1 bottom-20 w-[56%] max-w-[250px] rotate-[-5deg] bg-ivory px-5 py-5 font-literary text-[14px] italic leading-[1.9] text-ink/75 shadow-[0_24px_40px_-22px_rgb(21_27_35/0.7)] sm:-left-6"
+        style={{
+          ...delay(240),
+          backgroundImage: "repeating-linear-gradient(180deg, transparent 0 25.5px, rgb(36 63 90 / 0.14) 25.5px 26.6px)",
+        }}
+      >
+        <p>Deep into that darkness peering, long I stood there wondering, fearing, doubting, dreaming dreams no mortal ever dared to dream before&hellip;</p>
+        <p className="mt-2 text-right not-italic text-[11px] uppercase tracking-[0.25em] text-gold-deep">— E. A. Poe</p>
+      </div>
+
+      <Feather className="lit-feather absolute -right-2 -top-14 h-60 w-auto text-gold-deep/70 sm:-right-10" style={{ transform: "rotate(-24deg)" }} />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+
+const JOURNEY: { title: string; text: string; plate: Vignette; alt: string }[] = [
   {
-    icon: <Server />,
-    title: "Your files, your server",
-    text: "Books, notes and reading history are kept by this server, on its disk or in its own storage bucket.",
+    title: "Discover",
+    text: "Browse the Public Library: public-domain classics from Project Gutenberg, Standard Ebooks and Wikisource, with suggestions drawn from what you read.",
+    plate: "arrival",
+    alt: "A raven flying in past a heavy curtain.",
   },
   {
-    icon: <WifiOff />,
-    title: "Works offline",
-    text: "The library opens without a connection, and books you have opened keep working.",
+    title: "Collect",
+    text: "Upload EPUBs, PDFs and comics, or import a Calibre library. Sort them into collections, tags and favorites.",
+    plate: "shelves",
+    alt: "Leather-bound books stacked on a draped table.",
   },
   {
-    icon: <Smartphone />,
-    title: "An Android app, no store needed",
-    text: "Installed straight from the server, and it keeps itself up to date.",
+    title: "Read",
+    text: "Open a book in the browser, the Android app or KOReader. It streams in pieces, keeps working offline, and remembers your place.",
+    plate: "lamp",
+    alt: "A reader leaning on his desk beside a lamp.",
   },
   {
-    icon: <Library />,
-    title: "Fits in with your other apps",
-    text: "An OPDS catalog, KOReader progress sync, and imports from Goodreads and Calibre.",
+    title: "Share",
+    text: "Send a book or a collection by link, publish it for everyone on the server, or read together in a book club.",
+    plate: "flight",
+    alt: "A raven at a shuttered window, its shadow cast across an ivy-covered wall.",
   },
 ];
 
-function OnYourServer() {
+function Journey() {
   return (
-    <section aria-labelledby="server-title" className="border-t border-line/70 bg-sidebar/60">
-      <div className="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-12 lg:py-24">
-        <div className="lg:col-span-4">
-          <SectionIntro id="server-title" eyebrow="Self-hosted" title="Your library stays yours.">
-            BookRaven runs on a server of its own instead of a store's cloud. It reads DRM-free files, so the books you bring are the books you
-            keep.
-          </SectionIntro>
+    <section id="journey" aria-labelledby="journey-title" className="lit-grain lit-grain-night relative scroll-mt-16 bg-navy text-parchment">
+      <Edge className="text-navy" mirror />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{ background: "radial-gradient(50% 60% at 85% 0%, rgb(36 63 90 / 0.65), transparent 70%), radial-gradient(40% 50% at 0% 100%, rgb(7 21 33 / 0.9), transparent 70%)" }}
+      />
+      <div className="mx-auto max-w-[1240px] px-5 pb-32 pt-24 sm:px-8 lg:pb-44 lg:pt-36">
+        <div className="grid gap-8 lg:grid-cols-12 lg:items-end">
+          <div className="text-center lg:col-span-7 lg:text-left">
+            <p className="lit-eyebrow lit-reveal text-gold">Chapter II · The journey</p>
+            <h2 id="journey-title" className="lit-title lit-reveal mt-5 text-[2.9rem] text-ivory sm:text-[3.8rem] lg:text-[4.3rem]" style={delay(80)}>
+              From the first page found <em className="italic text-gold">to the last one read.</em>
+            </h2>
+          </div>
+          <p className="lit-reveal mx-auto max-w-md text-center text-[16px] leading-[1.75] text-silver lg:col-span-4 lg:col-start-9 lg:mx-0 lg:text-left" style={delay(160)}>
+            Every book takes the same road through BookRaven, and you can join it anywhere: bring your own files, or start from the shelves already
+            there.
+          </p>
         </div>
-        <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:col-span-7 lg:col-start-6">
-          {SERVER_FACTS.map((f) => (
-            <div key={f.title} className="border-t border-line pt-5">
-              <dt className="flex items-center gap-2.5 font-medium">
-                <span className="text-accent [&>svg]:h-[18px] [&>svg]:w-[18px]" aria-hidden="true">
-                  {f.icon}
-                </span>
-                {f.title}
-              </dt>
-              <dd className="mt-2 text-sm leading-relaxed text-muted">{f.text}</dd>
-            </div>
+
+        <ol className="relative mt-20 grid gap-12 md:mt-24 md:grid-cols-4 md:gap-6">
+          {/* The path between the plates, from the second row of medallions down to the first and back. */}
+          <svg
+            className="pointer-events-none absolute inset-x-0 top-0 hidden h-[224px] w-full md:block"
+            viewBox="0 0 1000 224"
+            preserveAspectRatio="none"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M-20 120 C 40 70, 90 80, 125 80 S 300 144, 375 144 S 560 80, 625 80 S 800 144, 875 144 S 980 110, 1020 96"
+              stroke="rgb(201 164 116 / 0.55)"
+              strokeWidth="1"
+              strokeDasharray="1 7"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+          <span aria-hidden="true" className="absolute bottom-6 left-[2.75rem] top-6 w-px bg-gradient-to-b from-gold/0 via-gold/35 to-gold/0 md:hidden" />
+
+          {JOURNEY.map((step, i) => (
+            <li
+              key={step.title}
+              className={`lit-reveal relative grid grid-cols-[5.5rem_1fr] items-start gap-5 md:block md:text-center ${i % 2 === 1 ? "md:mt-16" : ""}`}
+              style={delay(i * 140)}
+            >
+              <Medallion
+                plate={step.plate}
+                alt={step.alt}
+                seal={<span className="font-literary text-[15px] italic">{ROMAN[i]}</span>}
+                className="mx-auto h-[5.5rem] w-[5.5rem] md:h-40 md:w-40 md:p-[7px]"
+              />
+              <div className="md:mt-7">
+                <h3 className="font-literary text-[2rem] font-medium leading-none text-ivory md:text-[2.3rem]">{step.title}</h3>
+                <p className="mt-3 text-[15px] leading-[1.7] text-silver md:mx-auto md:max-w-[15rem]">{step.text}</p>
+              </div>
+            </li>
           ))}
-        </dl>
+        </ol>
       </div>
     </section>
   );
 }
 
-function Closing({ signupOpen }: { signupOpen: boolean }) {
+/* ------------------------------------------------------------------------------------------------ */
+
+/** Spine sizes and bindings, so the shelf looks gathered over the years rather than bought in a set. */
+const SPINES: { h: number; w: number; bg: string; fg: string; lean?: boolean }[] = [
+  { h: 250, w: 50, bg: "#0c2033", fg: "#c9a474" },
+  { h: 278, w: 58, bg: "#5b4428", fg: "#eee3d0" },
+  { h: 232, w: 44, bg: "#243f5a", fg: "#eee3d0" },
+  { h: 266, w: 62, bg: "#151b23", fg: "#c9a474" },
+  { h: 244, w: 48, bg: "#d9c9ab", fg: "#151b23" },
+  { h: 286, w: 56, bg: "#1b3047", fg: "#c9a474" },
+  { h: 238, w: 52, bg: "#7a5c34", fg: "#f5eedf" },
+  { h: 270, w: 46, bg: "#0c2033", fg: "#aab8c6" },
+  { h: 256, w: 60, bg: "#2e3a48", fg: "#c9a474" },
+  { h: 228, w: 44, bg: "#151b23", fg: "#eee3d0" },
+  { h: 262, w: 54, bg: "#243f5a", fg: "#c9a474", lean: true },
+];
+
+function Shelves() {
+  const [hover, setHover] = useState<string | null>(null);
+  const info = hover ? THEME_INFO[hover] : null;
+  const caption = info ? `${info.label} — ${info.blurb}` : "Choose a section to browse its shelf.";
+  // Phones get two shorter shelves; wider screens, one long one.
+  const rows: [string, string[]][] = [
+    ["md:hidden", THEME_ORDER.slice(0, 6)],
+    ["md:hidden", THEME_ORDER.slice(6)],
+    ["hidden md:flex", THEME_ORDER],
+  ];
+
   return (
-    <section aria-labelledby="closing-title" className="relative isolate overflow-hidden border-t border-line/70">
-      <Landscape className="absolute inset-0 -z-10 h-full w-full opacity-60" />
-      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-app via-app/80 to-app/40" />
-      <div className="mx-auto flex max-w-6xl flex-col items-center px-5 py-24 text-center sm:px-8 lg:py-32">
-        <img src={logoIcon} alt="" width={56} height={56} className="h-14 w-14 rounded-2xl" />
-        <h2 id="closing-title" className="mt-7 max-w-2xl font-display text-[2.25rem] font-bold leading-[1.08] tracking-[-0.01em] text-balance sm:text-5xl">
-          Open a book. We&rsquo;ll keep your place.
-        </h2>
-        <Actions signupOpen={signupOpen} className="mt-9 justify-center" />
+    <section id="shelves" aria-labelledby="shelves-title" className="lit-grain relative scroll-mt-16 bg-ivory text-ink">
+      <Edge className="text-ivory" />
+      <div className="mx-auto grid max-w-[1240px] gap-16 px-5 pb-32 pt-24 sm:px-8 lg:grid-cols-12 lg:gap-10 lg:pb-44 lg:pt-36">
+        <div className="text-center lg:col-span-4 lg:text-left">
+          <p className="lit-eyebrow lit-reveal text-gold-deep">Chapter III · The Public Library</p>
+          <h2 id="shelves-title" className="lit-title lit-reveal mt-5 text-[2.9rem] sm:text-[3.6rem] lg:text-[3.7rem]" style={delay(80)}>
+            Shelves of classics, <em className="italic text-gold-deep">open to every reader here.</em>
+          </h2>
+          <p className="lit-reveal mx-auto mt-7 max-w-md text-[16px] leading-[1.75] text-sepia lg:mx-0" style={delay(160)}>
+            Every account on a server shares its Public Library: public-domain books in English and Portuguese, and anything readers choose to publish.
+            Request what is missing and vote for the requests you want most.
+          </p>
+          <dl className="lit-reveal mx-auto mt-9 grid max-w-md gap-3 text-left text-[14px] lg:mx-0" style={delay(220)}>
+            {[
+              ["Sources", "Project Gutenberg · Standard Ebooks · Wikisource"],
+              ["Shelved by", "Eleven sections, from philosophy to children’s books"],
+              ["Suggested", "Recommended for you, from the books you read"],
+            ].map(([k, v]) => (
+              <div key={k} className="grid grid-cols-[6.5rem_1fr] gap-3 border-t border-ink/15 pt-3">
+                <dt className="font-literary text-[15px] italic text-gold-deep">{k}</dt>
+                <dd className="text-sepia">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        <div className="lit-reveal lg:col-span-8 lg:col-start-5 lg:pt-8" style={delay(120)}>
+          <nav aria-label="Public Library sections">
+            {rows.map(([visibility, keys], r) => (
+              <div key={r} className={`${visibility} ${r === 1 ? "mt-10" : ""} flex-col`}>
+                <ul className="flex items-end justify-center gap-[3px] px-2">
+                  {keys.map((key) => {
+                    const s = SPINES[THEME_ORDER.indexOf(key)];
+                    const t = THEME_INFO[key];
+                    return (
+                      <li key={key} className="flex">
+                        <Link
+                          to={`/public?theme=${key}`}
+                          className={`lit-spine relative flex items-center justify-center overflow-hidden rounded-t-[3px] rounded-b-[1px] font-literary text-[15px] font-semibold uppercase tracking-[0.16em] shadow-[inset_-6px_0_10px_-6px_rgb(0_0_0/0.45),inset_5px_0_8px_-6px_rgb(255_255_255/0.25)] max-md:h-[var(--h-sm)] max-md:w-[var(--w-sm)] max-md:text-[13px] md:h-[var(--h)] md:w-[var(--w)] ${s.lean ? "lit-spine-lean" : ""}`}
+                          style={
+                            {
+                              "--h": `${s.h}px`,
+                              "--w": `${s.w}px`,
+                              "--h-sm": `${Math.round(s.h * 0.72)}px`,
+                              "--w-sm": `${Math.round(s.w * 0.88)}px`,
+                              background: s.bg,
+                              color: s.fg,
+                            } as CSSProperties
+                          }
+                          onMouseEnter={() => setHover(key)}
+                          onMouseLeave={() => setHover(null)}
+                          onFocus={() => setHover(key)}
+                          onBlur={() => setHover(null)}
+                        >
+                          <span aria-hidden="true" className="lit-band top-3" />
+                          <span aria-hidden="true" className="lit-band bottom-3" />
+                          {t.label}
+                          <span className="sr-only">: {t.blurb}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div
+                  aria-hidden="true"
+                  className="h-3.5 rounded-[1px] bg-[#3a2c1c] shadow-[0_14px_22px_-10px_rgb(21_27_35/0.6),inset_0_1px_0_rgb(201_164_116/0.45)]"
+                  style={{ backgroundImage: "linear-gradient(180deg, #5b4428, #2f2416)" }}
+                />
+              </div>
+            ))}
+          </nav>
+          <p aria-hidden="true" className="mt-6 min-h-[1.6em] text-center font-literary text-[17px] italic text-sepia transition-opacity">
+            {caption}
+          </p>
+          <p className="mt-2 text-center text-[13px] text-sepia/90">
+            What is on the shelves depends on this server: its administrator chooses what to import.
+          </p>
+        </div>
       </div>
     </section>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+
+function Finale({ signupOpen }: { signupOpen: boolean }) {
+  return (
+    <section aria-labelledby="closing-title" className="relative isolate bg-midnight">
+      <Edge className="text-midnight" mirror />
+      <div aria-hidden="true" className="absolute inset-0 -z-10 overflow-hidden">
+        <img
+          src={clouds900}
+          srcSet={`${clouds900} 900w, ${clouds1600} 1600w`}
+          sizes="100vw"
+          width={1600}
+          height={814}
+          loading="lazy"
+          decoding="async"
+          alt=""
+          className="lit-parallax h-full w-full object-cover object-[50%_18%]"
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(180deg, #071521 0%, rgb(7 21 33 / 0.1) 20%, rgb(7 21 33 / 0.55) 45%, rgb(7 21 33 / 0.6) 70%, #071521 100%), radial-gradient(55% 40% at 50% 62%, rgb(7 21 33 / 0.55), transparent 100%)",
+          }}
+        />
+      </div>
+      <div className="mx-auto flex max-w-[1240px] flex-col items-center px-5 pb-36 pt-36 text-center sm:px-8 lg:pb-48 lg:pt-52">
+        <Fleuron className="lit-reveal w-28 text-gold/70" />
+        <h2 id="closing-title" className="lit-title lit-reveal mt-7 max-w-4xl text-[3.1rem] text-ivory sm:text-[4.5rem] lg:text-[5.6rem]" style={delay(100)}>
+          Your next chapter <em className="italic text-gold">begins here.</em>
+        </h2>
+        <p className="lit-reveal mt-7 max-w-xl text-[17px] leading-[1.75] text-parchment/85" style={delay(180)}>
+          {signupOpen
+            ? "Make an account on this server, add your first book, and open it on whatever is closest."
+            : "Sign in, and the book you were reading opens where you left it."}
+        </p>
+        <div className="lit-reveal" style={delay(260)}>
+          <Actions signupOpen={signupOpen} className="mt-10 justify-center" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const COLOPHON: { title: string; text: ReactNode }[] = [
+  { title: "Your files, your server", text: "Books, notes and reading history are kept by this server, on its disk or in its own storage bucket." },
+  { title: "Works offline", text: "The library opens without a connection, and books you have opened keep working." },
+  { title: "An Android app, no store needed", text: "Installed straight from the server, and it keeps itself up to date." },
+  { title: "Fits in with your other apps", text: "An OPDS catalog, KOReader progress sync, and imports from Goodreads and Calibre." },
+];
+
+function Colophon({ signupOpen }: { signupOpen: boolean }) {
+  return (
+    <footer className="border-t border-gold/15 bg-midnight">
+      <div className="mx-auto max-w-[1240px] px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-16 sm:px-8 lg:pt-20">
+        <div className="grid gap-12 lg:grid-cols-12">
+          <div className="text-center lg:col-span-4 lg:text-left">
+            <p className="flex items-center justify-center gap-3 lg:justify-start">
+              <img src={logoIcon} alt="" width={32} height={32} loading="lazy" className="h-8 w-8 rounded-[9px]" />
+              <img src={wordmark} alt="BookRaven" width={110} height={26} loading="lazy" className="h-[22px] w-auto" />
+            </p>
+            <p className="mx-auto mt-5 max-w-xs font-literary text-[18px] italic leading-snug text-silver lg:mx-0">
+              A self-hosted reader for ebooks, PDFs and comics.
+            </p>
+          </div>
+          <div className="lg:col-span-8">
+            <h2 className="lit-eyebrow text-center text-gold lg:text-left">Colophon</h2>
+            <dl className="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+              {COLOPHON.map((c) => (
+                <div key={c.title} className="border-t border-gold/15 pt-4">
+                  <dt className="font-literary text-[19px] font-semibold text-ivory">{c.title}</dt>
+                  <dd className="mt-1.5 text-[14px] leading-relaxed text-silver">{c.text}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </div>
+
+        <div className="mt-16 flex flex-col items-center gap-6 border-t border-gold/15 pt-8 text-[13px] text-silver lg:flex-row lg:justify-between">
+          <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-7 gap-y-2">
+            <Link to="/login" className="hover:text-ivory">
+              Sign in
+            </Link>
+            {signupOpen && (
+              <Link to="/signup" className="hover:text-ivory">
+                Create account
+              </Link>
+            )}
+            <a href="https://github.com/Pablokaer/BookRaven" className="hover:text-ivory" rel="noopener noreferrer" target="_blank">
+              Source code<span className="sr-only"> (opens GitHub in a new tab)</span>
+            </a>
+          </nav>
+          <p className="max-w-xl text-center text-[12px] leading-relaxed text-silver/75 lg:text-right">
+            Engravings by Gustave Doré for Edgar Allan Poe&rsquo;s <i>The Raven</i> (1884), in the public domain. Set in Cormorant Garamond and Inter.
+          </p>
+        </div>
+      </div>
+    </footer>
   );
 }
