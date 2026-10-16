@@ -121,6 +121,16 @@ export function deleteBookmark(bookId: string, locator: string) {
 
 export const flushBookmarks = () => outbox.flush();
 
+/** Forgets unsent changes and the offline copies (sign-out). */
+export async function clearBookmarks() {
+  await outbox.clear();
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(cacheKey(""))) localStorage.removeItem(k);
+  } catch {
+    /* unavailable: nothing stored */
+  }
+}
+
 let installed = false;
 export function installBookmarkFlushers() {
   if (installed) return;

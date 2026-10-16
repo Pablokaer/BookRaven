@@ -5,7 +5,7 @@ import { requireUser } from "../auth.js";
 import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { broadcast, publish } from "../lib/events.js";
-import { quotaFor } from "../lib/quota.js";
+import { quotaOf } from "../lib/quota.js";
 import { removeBookFile, removeCover } from "../lib/storage.js";
 import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
 
@@ -93,21 +93,19 @@ export async function adminRoutes(app: FastifyInstance) {
        LIMIT 500`,
       [q],
     );
-    return Promise.all(
-      rows.map(async (r) => ({
-        id: r.id,
-        name: r.name,
-        email: r.email,
-        createdAt: new Date(r.createdAt).toISOString(),
-        books: Number(r.books),
-        usedBytes: Number(r.used),
-        isAdmin: isAdmin(r),
-        quotaBytes: await quotaFor(r),
-        quotaOverride: r.quota_bytes != null ? Number(r.quota_bytes) : null,
-        blocked: r.blocked === true,
-        blockedReason: r.blocked_reason,
-      })),
-    );
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      createdAt: new Date(r.createdAt).toISOString(),
+      books: Number(r.books),
+      usedBytes: Number(r.used),
+      isAdmin: isAdmin(r),
+      quotaBytes: quotaOf(r, r.quota_bytes),
+      quotaOverride: r.quota_bytes != null ? Number(r.quota_bytes) : null,
+      blocked: r.blocked === true,
+      blockedReason: r.blocked_reason,
+    }));
   });
 
   async function loadTarget(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
@@ -250,21 +248,21 @@ export async function adminRoutes(app: FastifyInstance) {
     "/api/admin/reports/:id/resolve",
     {
       schema: {
-        body: {
-          type: "object",
-          required: ["action"],
-          additionalProperties: false,
-          properties: {
-            action: { type: "string", enum: ["dismiss", "unpublish", "block", "purge"] },
-            note: { type: "string", maxLength: 1000 },
-          },
+      body: {
+        type: "object",
+        required: ["action"],
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["dismiss", "unpublish", "block", "purge"] },
+          note: { type: "string", maxLength: 1000 },
         },
+      },
       },
     },
     async (request, reply) => {
       if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
       const { rows } = await query<{ sha256: string; title: string; reason: string }>("SELECT sha256, title, reason FROM content_report WHERE id = $1", [
-        request.params.id,
+      request.params.id,
       ]);
       const report = rows[0];
       if (!report) return reply.code(404).send({ error: "not_found" });
@@ -273,24 +271,24 @@ export async function adminRoutes(app: FastifyInstance) {
       let removed = 0;
       if (action !== "dismiss") await unpublishFile(report.sha256);
       if (action === "block" || action === "purge") {
-        await query(
-          `INSERT INTO blocked_file (sha256, title, reason, blocked_by) VALUES ($1, $2, $3, $4) ON CONFLICT (sha256) DO NOTHING`,
-          [report.sha256, report.title, note?.trim() || report.reason, request.user.id],
-        );
+      await query(
+        `INSERT INTO blocked_file (sha256, title, reason, blocked_by) VALUES ($1, $2, $3, $4) ON CONFLICT (sha256) DO NOTHING`,
+        [report.sha256, report.title, note?.trim() || report.reason, request.user.id],
+      );
       }
       if (action === "purge") {
-        const { rows: books } = await query<{ id: string; user_id: string; sha256: string }>("SELECT id, user_id, sha256 FROM book WHERE sha256 = $1", [
-          report.sha256,
-        ]);
-        await deleteBooks(books);
-        removed = books.length;
+      const { rows: books } = await query<{ id: string; user_id: string; sha256: string }>("SELECT id, user_id, sha256 FROM book WHERE sha256 = $1", [
+        report.sha256,
+      ]);
+      await deleteBooks(books);
+      removed = books.length;
       }
 
       // Every open report about the same file is settled by the same decision.
       await query(
-        `UPDATE content_report SET status = $2, resolution = $3, resolved_by = $4, resolved_at = now()
-         WHERE sha256 = $1 AND status = 'open'`,
-        [report.sha256, action === "dismiss" ? "dismissed" : "actioned", note?.trim() || action, request.user.id],
+      `UPDATE content_report SET status = $2, resolution = $3, resolved_by = $4, resolved_at = now()
+       WHERE sha256 = $1 AND status = 'open'`,
+      [report.sha256, action === "dismiss" ? "dismissed" : "actioned", note?.trim() || action, request.user.id],
       );
       return { action, removedCopies: removed };
     },

@@ -6,8 +6,8 @@ import { collectionColor, isInProgress } from "../../lib/bookStats";
 import { fileSize } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
 import { StorageMeter } from "./StorageMeter";
-import logoIcon from "../../assets/logo.png";
-import wordmark from "../../assets/wordmark.png";
+import logoIcon from "../../assets/logo.webp";
+import wordmark from "../../assets/wordmark.webp";
 
 type NavItem = { to: string; label: string; icon: ReactNode; count?: number; end?: boolean };
 

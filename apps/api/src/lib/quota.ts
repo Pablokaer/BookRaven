@@ -18,7 +18,13 @@ export class QuotaExceededError extends Error {
 export async function quotaFor(user: { id: string; email: string }, client: pg.PoolClient | pg.Pool = pool) {
   if (isAdmin(user)) return null;
   const { rows } = await client.query<{ quota_bytes: string | null }>("SELECT quota_bytes FROM account_admin WHERE user_id = $1", [user.id]);
-  return rows[0]?.quota_bytes != null ? Number(rows[0].quota_bytes) : config.quotaBytes;
+  return quotaOf(user, rows[0]?.quota_bytes ?? null);
+}
+
+/** quotaFor, when account_admin.quota_bytes is already at hand. */
+export function quotaOf(user: { email: string }, quotaBytes: string | number | null) {
+  if (isAdmin(user)) return null;
+  return quotaBytes != null ? Number(quotaBytes) : config.quotaBytes;
 }
 
 export async function storageUsed(userId: string, client: pg.PoolClient | pg.Pool = pool) {

@@ -127,10 +127,33 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   booksRef.current = books;
 
   // Keep the localStorage snapshot in step with every change (network refresh, live events,
-  // optimistic edits), so the next cold start hydrates from the latest known state.
+  // optimistic edits), so the next cold start hydrates from the latest known state. `books`
+  // changes on every reading position (this device's own too), so the snapshot is written at
+  // most every 2 s, and right away when the page is hidden or closed and on sign-out.
+  const snapshot = useRef<{ userId: string; books: Book[] } | null>(null);
+  const snapshotTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const saveSnapshot = useCallback(() => {
+    clearTimeout(snapshotTimer.current);
+    snapshotTimer.current = undefined;
+    if (snapshot.current) saveCachedBooks(snapshot.current.userId, snapshot.current.books);
+    snapshot.current = null;
+  }, []);
   useEffect(() => {
-    if (books) saveCachedBooks(userId, books);
-  }, [books, userId]);
+    if (!books) return;
+    if (snapshot.current && snapshot.current.userId !== userId) saveSnapshot();
+    snapshot.current = { userId, books };
+    snapshotTimer.current ??= setTimeout(saveSnapshot, 2000);
+  }, [books, userId, saveSnapshot]);
+  useEffect(() => {
+    const onHidden = () => document.visibilityState === "hidden" && saveSnapshot();
+    window.addEventListener("pagehide", saveSnapshot);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("pagehide", saveSnapshot);
+      document.removeEventListener("visibilitychange", onHidden);
+      saveSnapshot();
+    };
+  }, [saveSnapshot]);
   useEffect(() => {
     if (me) saveCachedMe(userId, me);
   }, [me, userId]);

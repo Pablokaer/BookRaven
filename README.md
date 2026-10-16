@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/web/src/assets/logo.png" alt="BookRaven logo" width="160">
+  <img src="apps/web/src/assets/logo.webp" alt="BookRaven logo" width="160">
 </p>
 
 # BookRaven
@@ -35,7 +35,7 @@ The app and the repository are called **BookRaven** (formerly Mico-livrão). Som
 - **Other apps:** an **OPDS** catalog and a **KOReader** progress-sync server, with per-device app passwords.
 - **Android app** without the Play Store: *Download* in the sidebar explains how to install the APK straight from your server. Installed apps update themselves: interface changes arrive as silent live updates, and when the native part changes the app offers the new APK. In the app, *Download* shows the installed (APK) version and, after silent updates, the version actually running ("Installed version 1.70 · updated to 1.82").
 - **What's new:** after an update, a window lists what changed, once (on the web after a deploy, in the Android app after its live update). The notes are in `apps/web/src/lib/whatsNew.ts`: every user-visible change adds one at the top, with a new id; someone who never saw any gets the last two weeks'.
-- **Offline:** the web app opens without a connection and shows your saved library; books saved for offline (or read to the end) can be read, and so can the pages you already read of other books. The reader opens a book from the library's copy straight away, without waiting for the server.
+- **Offline:** the web app opens without a connection and shows your saved library; books saved for offline (or read to the end) can be read, and so can the pages you already read of other books. The reader opens a book from the library's copy straight away, without waiting for the server. **Signing out** first gives unsent changes (positions, bookmarks, handwriting) up to 3 seconds to reach the server, then removes from the device the downloaded books, the handwriting copies, the offline bookmark lists and any change still waiting, so the next account on a shared device never sees or sends them.
 - **Administration:** accounts (storage limits, blocking, temporary passwords, deletion), content reports on public books (dismiss, unpublish, block the file or delete it everywhere), and the number of open book requests (linking to *Public Library → Requests*). Administrators also get an email for each new book request.
 
 ## Stack

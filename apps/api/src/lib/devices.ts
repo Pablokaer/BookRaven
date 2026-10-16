@@ -42,6 +42,10 @@ export async function verifyAppPassword(email: string, secret: { password?: stri
   );
   const match = rows.find((r) => timingSafeEqual(Buffer.from(r.hash, "hex"), want));
   if (!match || (await isAccountBlocked(match.user_id))) return null;
-  await query("UPDATE app_password SET last_used_at = now() WHERE id = $1", [match.id]);
+  // Every OPDS/KOReader request signs in: refresh "last used" at most once a minute.
+  await query(
+    "UPDATE app_password SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')",
+    [match.id],
+  );
   return { id: match.user_id, email: match.email, name: match.name };
 }
