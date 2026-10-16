@@ -195,3 +195,15 @@ export type ServerConfig = {
   dictionaryEnabled: boolean;
   translateEnabled: boolean;
 };
+
+let config: Promise<ServerConfig> | null = null;
+
+/** The server's settings, fetched once per app session (they only change when the server restarts); a failure is tried again next time. */
+export function serverConfig(): Promise<ServerConfig> {
+  if (!config) {
+    const p = apiJson<ServerConfig>("/api/config");
+    p.catch(() => config === p && (config = null));
+    config = p;
+  }
+  return config;
+}

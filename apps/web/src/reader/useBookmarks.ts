@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Book, Bookmark } from "../lib/api";
-import { bookmarkLocator, isOnPage, type BookKind } from "../lib/bookmarkPages";
+import { bookmarkLocator, pageMatcher, type BookKind } from "../lib/bookmarkPages";
 import { deleteBookmark, loadBookmarks, putBookmark, rememberBookmarks, sortBookmarks } from "../lib/bookmarks";
 import { isComicFormat } from "../lib/comicFormats";
 import { onServerEvent } from "../lib/events";
@@ -56,7 +56,12 @@ export function useBookmarks(book: Book | null, position: Position | null) {
   }, [book, bookmarks, loadedFor]);
 
   const kind: BookKind = book?.format === "pdf" ? "pdf" : book && isComicFormat(book.format) ? "comic" : "text";
-  const pageBookmark = position ? bookmarks.find((b) => isOnPage(b.locator, position.locator, kind)) : undefined;
+  const locator = position?.locator;
+  const pageBookmark = useMemo(() => {
+    if (locator === undefined) return undefined;
+    const onPage = pageMatcher(locator, kind);
+    return bookmarks.find((b) => onPage(b.locator));
+  }, [bookmarks, locator, kind]);
 
   const removeBookmark = (b: Bookmark) => {
     if (!book) return;

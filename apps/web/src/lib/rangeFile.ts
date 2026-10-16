@@ -41,25 +41,32 @@ async function openCache() {
   return "caches" in window ? caches.open(BOOK_CACHE).catch(() => null) : null;
 }
 
-/** Saves a whole file under `key`, replacing the pieces saved so far. */
-export async function saveWholeFile(key: string, blob: Blob) {
+/**
+ * Saves a whole file under `key`, replacing the pieces saved so far: those its manifest lists,
+ * those the open file saved since, and `parts` (deleted by key, without listing the whole cache).
+ */
+export async function saveWholeFile(key: string, blob: Blob, parts: Iterable<number> = []) {
   const cache = await openCache();
   if (!cache) return;
   await cache.put(key, new Response(blob, { headers: { "Content-Type": blob.type } }));
-  await deleteKeys(cache, `${key}/`);
+  const pieces = new Set(parts);
+  const manifest = await cache
+    .match(manifestKey(key))
+    .then((r) => (r ? (r.json() as Promise<Manifest>) : null))
+    .catch(() => null);
+  for (const n of manifest?.parts ?? []) pieces.add(n);
+  const open = lastOpened?.key === key ? await lastOpened.file.catch(() => null) : null;
+  if (open instanceof RemoteFile) for (const n of open.savedParts()) pieces.add(n);
+  await Promise.all([manifestKey(key), ...[...pieces].map((n) => partKey(key, n))].map((k) => cache.delete(k)));
 }
 
-async function deleteKeys(cache: Cache, prefix: string) {
-  for (const req of await cache.keys()) {
-    if (new URL(req.url).pathname.startsWith(prefix)) await cache.delete(req);
-  }
-}
-
-/** Deletes a saved file and its pieces (every key starting with `prefix`). */
+/** Deletes a saved file and its pieces (every key starting with `prefix`: the pieces may be unknown here). */
 export async function forgetSaved(prefix: string) {
   if (lastOpened?.key.startsWith(prefix)) lastOpened = null;
   const cache = await openCache();
-  if (cache) await deleteKeys(cache, prefix);
+  if (!cache) return;
+  const keys = (await cache.keys()).filter((req) => new URL(req.url).pathname.startsWith(prefix));
+  await Promise.all(keys.map((req) => cache.delete(req)));
 }
 
 /** The whole file saved under `key`, if any. */
@@ -108,6 +115,11 @@ class RemoteFile implements RangeFile {
     private saved: Set<number>,
   ) {
     this.chunks = Math.ceil(size / CHUNK);
+  }
+
+  /** The pieces saved on the device so far. */
+  savedParts(): Iterable<number> {
+    return this.saved;
   }
 
   static async open(path: string, key: string): Promise<RangeFile> {
@@ -311,7 +323,7 @@ class RemoteFile implements RangeFile {
       const whole = new Blob(parts);
       if (whole.size !== this.size) return;
       this.whole = whole;
-      await saveWholeFile(this.key, whole);
+      await saveWholeFile(this.key, whole, this.saved);
     } catch {
       /* the pieces stay; joining is tried again on the next open */
     }

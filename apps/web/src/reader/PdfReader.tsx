@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import type { Highlight } from "../lib/api";
 import { openBookFile } from "../lib/books";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
+import { afterIdle } from "../lib/idle";
 import { MAX_STROKE_POINTS, type InkTool, type Stroke } from "../lib/ink";
 import { drawStrokes, strokePoint, touchesStroke } from "../lib/inkDraw";
 import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
@@ -51,26 +52,44 @@ function parseRange(locator: string) {
   return m ? { page: Number(m[1]), start: Number(m[2]), end: Number(m[3]) } : null;
 }
 
-/** Text nodes of a text layer, in reading order, with their starting offsets. */
+type TextNodes = { node: Text; start: number }[];
+
+/** Text nodes of a text layer, in reading order, with their starting offsets (read once, used for every lookup). */
 function textNodes(layer: HTMLElement) {
-  const nodes: { node: Text; start: number }[] = [];
+  const nodes: TextNodes = [];
   const walker = document.createTreeWalker(layer, NodeFilter.SHOW_TEXT);
   let offset = 0;
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
     nodes.push({ node: n, start: offset });
     offset += n.data.length;
   }
-  return { nodes, text: nodes.map((n) => n.node.data).join("") };
+  let text: string | null = null;
+  return {
+    nodes,
+    /** The layer's whole text (joined when first asked for). */
+    get text() {
+      return (text ??= nodes.map((n) => n.node.data).join(""));
+    },
+  };
 }
 
 /** A DOM range for [start, end) in the text layer. */
-function rangeFor(layer: HTMLElement, start: number, end: number) {
-  const { nodes } = textNodes(layer);
+function rangeFor(nodes: TextNodes, start: number, end: number) {
+  // The last node starting at or before `offset` (binary search: the starts only grow).
   const at = (offset: number) => {
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      if (nodes[i]!.start <= offset) return { node: nodes[i]!.node, offset: Math.min(offset - nodes[i]!.start, nodes[i]!.node.data.length) };
+    let lo = 0;
+    let hi = nodes.length - 1;
+    let found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (nodes[mid]!.start <= offset) {
+        found = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
     }
-    return null;
+    if (found < 0) return null;
+    const n = nodes[found]!;
+    return { node: n.node, offset: Math.min(offset - n.start, n.node.data.length) };
   };
   const a = at(start);
   const b = at(end);
@@ -81,8 +100,7 @@ function rangeFor(layer: HTMLElement, start: number, end: number) {
   return range;
 }
 
-function offsetOf(layer: HTMLElement, container: Node, offset: number) {
-  const { nodes } = textNodes(layer);
+function offsetOf(nodes: TextNodes, container: Node, offset: number) {
   const hit = nodes.find((n) => n.node === container);
   if (hit) return hit.start + offset;
   // Selection boundaries can land on elements: use the next text node inside/after them.
@@ -102,6 +120,18 @@ function excerpt(text: string, at: number, len: number) {
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
+/** Gives a canvas's pixels back now, rather than whenever it is garbage collected. */
+function freeCanvas(c: HTMLCanvasElement) {
+  c.width = 0;
+  c.height = 0;
+}
+
+/** Takes a canvas off the page and frees it. */
+function discardCanvas(c: HTMLCanvasElement | null) {
+  c?.remove();
+  if (c) freeCanvas(c);
+}
+
 /** A page drawn on a new canvas `width` pixels wide. */
 async function renderAtWidth(pdfPage: PDFPageProxy, width: number) {
   const viewport = pdfPage.getViewport({ scale: width / pdfPage.getViewport({ scale: 1 }).width });
@@ -120,8 +150,9 @@ const placeFraction = (el: HTMLElement, x: number, y: number, w: number, h: numb
 async function detectContent(pdfPage: PDFPageProxy): Promise<PageBox> {
   const canvas = await renderAtWidth(pdfPage, 240);
   const ctx = canvas.getContext("2d");
-  if (!ctx) return FULL_PAGE;
-  return contentBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
+  const box = ctx ? contentBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height) : FULL_PAGE;
+  freeCanvas(canvas);
+  return box;
 }
 
 /** A page ready to show: built off-screen (canvas at the fitted size, text layer, handwriting canvases). */
@@ -137,9 +168,25 @@ type BuiltPage = {
   /** Page size in PDF units. */
   width: number;
   height: number;
+  pdfPage: PDFPageProxy;
 };
 
-type Build = { promise: Promise<BuiltPage | null>; cancel: () => void };
+type Build = {
+  page: number;
+  promise: Promise<BuiltPage | null>;
+  /** Set once built. */
+  built: BuiltPage | null;
+  /** pdf.js's page, once loaded: it keeps the page's drawing instructions and images until cleaned up. */
+  pdfPage: PDFPageProxy | null;
+  /** Stops building it (a page not built yet gives its canvases back). */
+  cancel: () => void;
+};
+
+/** A built page's canvases (the page, its handwriting, the sharp part drawn while zoomed) give their pixels back. */
+function freeBuiltPage(b: BuiltPage) {
+  discardCanvas(b.sheet.querySelector<HTMLCanvasElement>(".pdf-detail"));
+  for (const c of b.sheet.querySelectorAll("canvas")) freeCanvas(c);
+}
 
 /**
  * Builds a page off-screen. The canvas is drawn at the fitted size only: zooming in draws the
@@ -149,8 +196,15 @@ type Build = { promise: Promise<BuiltPage | null>; cancel: () => void };
 function buildPage(doc: PDFDocumentProxy, pageNo: number, area: { w: number; h: number }, settings: ReaderSettings, crops: Map<number, PageBox>): Build {
   let cancelled = false;
   let task: ReturnType<PDFPageProxy["render"]> | null = null;
-  const promise = (async () => {
+  let textLayer: InstanceType<typeof pdfjs.TextLayer> | null = null;
+  let sheetEl: HTMLDivElement | null = null;
+  const build: Build = { page: pageNo, promise: Promise.resolve(null), built: null, pdfPage: null, cancel: () => {} };
+  /** Cancelled before it was built: nobody will show it. */
+  const discard = () => sheetEl?.querySelectorAll("canvas").forEach(freeCanvas);
+  build.promise = (async () => {
     const pdfPage = await doc.getPage(pageNo);
+    build.pdfPage = pdfPage;
+    if (cancelled) return null;
     const base = pdfPage.getViewport({ scale: 1 });
     let box = FULL_PAGE;
     if (settings.pdfCrop) {
@@ -206,25 +260,30 @@ function buildPage(doc: PDFDocumentProxy, pageNo: number, area: { w: number; h: 
     });
     sheet.append(canvas, hl, text, ink!, wet!);
     wrap.append(sheet);
+    sheetEl = sheet;
 
     task = pdfPage.render({ canvas, viewport });
-    const textLayer = new pdfjs.TextLayer({ textContentSource: pdfPage.streamTextContent(), container: text, viewport: cssViewport });
+    textLayer = new pdfjs.TextLayer({ textContentSource: pdfPage.streamTextContent(), container: text, viewport: cssViewport });
     await Promise.all([task.promise, textLayer.render()]);
     if (cancelled) return null;
-    return { page: pageNo, wrap, sheet, canvas, ink: ink!, wet: wet!, fit, width: base.width, height: base.height };
+    build.built = { page: pageNo, wrap, sheet, canvas, ink: ink!, wet: wet!, fit, width: base.width, height: base.height, pdfPage };
+    return build.built;
   })().catch((err) => {
-    if (err?.name !== "RenderingCancelledException") console.error(err);
+    if (!cancelled && err?.name !== "RenderingCancelledException") console.error(err);
     return null;
   });
-  return {
-    promise,
-    cancel: () => {
-      cancelled = true;
-      task?.cancel();
-    },
+  build.cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    task?.cancel();
+    textLayer?.cancel();
+    if (!build.built) discard();
   };
+  return build;
 }
 
+/** Pages whose text a search reads at the same time. */
+const SEARCH_PARALLEL = 3;
 /** Zoom factor of one step of the + and − buttons and keys. */
 const ZOOM_STEP = 1.25;
 /** How far the eraser reaches, as a fraction of the page width. */
@@ -372,17 +431,23 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     zoom: zoomStep,
     thumbnail: async (p, width, strokes) => {
       if (!doc) return null;
-      const canvas = await renderAtWidth(await doc.getPage(p), width);
+      const pdfPage = await doc.getPage(p);
+      const canvas = await renderAtWidth(pdfPage, width);
       const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      drawStrokes(ctx, strokes ?? propsRef.current.ink?.[p] ?? [], canvas.width, canvas.height);
-      return canvas.toDataURL("image/jpeg", 0.75);
+      let url: string | null = null;
+      if (ctx) {
+        drawStrokes(ctx, strokes ?? propsRef.current.ink?.[p] ?? [], canvas.width, canvas.height);
+        url = canvas.toDataURL("image/jpeg", 0.75);
+      }
+      freeCanvas(canvas);
+      if (!pageInUse(p)) pdfPage.cleanup(); // the notebook can draw many pages
+      return url;
     },
     search: async (query, onResult, signal) => {
       if (!doc) return;
       const q = fold(query.trim());
       if (!q) return;
-      for (let p = 1; p <= doc.numPages && !signal.aborted; p++) {
+      const textOf = async (p: number) => {
         let page = pageTexts.current.get(p);
         if (!page) {
           const content = await (await doc.getPage(p)).getTextContent();
@@ -391,7 +456,19 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
           page = { text, folded: fold(text) };
           pageTexts.current.set(p, page);
         }
-        const { text, folded } = page;
+        return page;
+      };
+      // A few pages are read at a time; their matches are still reported in page order.
+      const reading: Promise<{ text: string; folded: string }>[] = [];
+      let next = 1;
+      for (let p = 1; p <= doc.numPages && !signal.aborted; p++) {
+        for (; next <= doc.numPages && next < p + SEARCH_PARALLEL; next++) {
+          const text = textOf(next);
+          text.catch(() => {}); // read ahead, maybe never awaited (the search stopped)
+          reading.push(text);
+        }
+        const { text, folded } = await reading.shift()!;
+        if (signal.aborted) break;
         let nth = 0;
         for (let at = folded.indexOf(q); at !== -1; at = folded.indexOf(q, at + q.length)) {
           const r: SearchResult = { locator: `pdfsearch:${p}:${nth++}:${query.trim()}`, label: `Page ${p}`, excerpt: excerpt(text, at, q.length) };
@@ -431,8 +508,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         loaded = true;
         crops.current.clear();
         pageTexts.current.clear();
-        for (const b of prepared.current.values()) b.cancel();
-        prepared.current.clear();
+        for (const key of [...prepared.current.keys()]) drop(key);
         setDoc(d);
         setPage((p) => Math.min(Math.max(1, p), d.numPages));
         const meta = await d.getMetadata().catch(() => null);
@@ -492,20 +568,39 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     }
   };
 
+  /** Whether page `p` is on screen or prepared (pdf.js's copy of it is still needed). */
+  const pageInUse = (p: number) => builtRef.current?.page === p || [...prepared.current.values()].some((b) => b.page === p);
+
+  /**
+   * Frees a page that is neither prepared nor on screen: its canvases, and pdf.js's drawing
+   * instructions and images for it, unless that page is still used. pdf.js waits for renders
+   * in flight (a thumbnail) before cleaning up, and a new render of the page calls it off.
+   */
+  const release = (b: BuiltPage | null, pdfPage: PDFPageProxy | null, p: number) => {
+    if (b) freeBuiltPage(b);
+    if (pdfPage && !pageInUse(p)) pdfPage.cleanup();
+  };
+
+  /** Stops preparing a page, or drops it built. The page on screen stays until another replaces it. */
+  const drop = (key: string) => {
+    const b = prepared.current.get(key);
+    if (!b) return;
+    prepared.current.delete(key);
+    b.cancel();
+    if (!b.built || b.built !== builtRef.current) release(b.built, b.pdfPage, b.page);
+  };
+
   // Show the current page: built off-screen (or prepared ahead, then it is instant), then
   // swapped in without flicker. The neighbours are prepared while this one is read.
   const layout = `${size.w}x${size.h}|${props.settings.pdfFit}|${props.settings.pdfMargin}|${props.settings.pdfCrop ? 1 : 0}`;
   useEffect(() => {
     if (!doc || !size.w || !size.h) return;
     let cancelled = false;
-    let prefetch: ReturnType<typeof setTimeout> | undefined;
+    let cancelPrefetch: (() => void) | undefined;
     const builds = prepared.current;
-    // Pages built for another size or setting are no use now.
+    // Pages built for another size or setting are no use now, nor those far from this one.
     for (const [key, b] of builds) {
-      if (key.slice(key.indexOf("|") + 1) !== layout) {
-        b.cancel();
-        builds.delete(key);
-      }
+      if (key.slice(key.indexOf("|") + 1) !== layout || Math.abs(b.page - page) > 1) drop(key);
     }
     const take = (p: number) => {
       const key = `${p}|${layout}`;
@@ -522,7 +617,9 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         fitRef.current = b.fit;
         // The fingers may have kept zooming while this was built: show it at the live zoom.
         b.wrap.style.setProperty("--total-scale-factor", String(b.fit * zoomRef.current));
-        b.sheet.querySelector(".pdf-detail")?.remove(); // from an earlier visit, zoomed
+        // The sharp part drawn while zoomed is drawn again for the page shown.
+        discardCanvas(detailEl.current);
+        discardCanvas(b.sheet.querySelector<HTMLCanvasElement>(".pdf-detail"));
         detailEl.current = null;
         // The handwriting is drawn before the page shows, so it never blinks.
         sizeInk(b, zoomRef.current);
@@ -532,8 +629,11 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
           drawStrokes(ctx, propsRef.current.ink?.[page] ?? [], b.ink.width, b.ink.height);
         }
         b.wet.getContext("2d")?.clearRect(0, 0, b.wet.width, b.wet.height);
+        const prev = builtRef.current;
         holderRef.current.replaceChildren(b.wrap);
         builtRef.current = b;
+        // The page this replaces goes unless it is still prepared (a neighbour).
+        if (prev && prev !== b && ![...builds.values()].some((o) => o.built === prev)) release(prev, prev.pdfPage, prev.page);
         pageEl.current = b.wrap;
         sheetEl.current = b.sheet;
         inkEl.current = b.ink;
@@ -542,20 +642,18 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         if (shownPage.current !== page) stageRef.current?.scrollTo({ top: 0, left: 0 });
         shownPage.current = page;
         setRendered((n) => n + 1);
-        prefetch = setTimeout(() => {
-          for (const p of [page + 1, page - 1]) if (p >= 1 && p <= doc.numPages) take(p);
-          for (const [key, other] of builds) {
-            if (Math.abs(Number(key.slice(0, key.indexOf("|"))) - page) > 1) {
-              other.cancel();
-              builds.delete(key);
-            }
-          }
-        }, 300);
+        cancelPrefetch = afterIdle(
+          () => {
+            for (const p of [page + 1, page - 1]) if (p >= 1 && p <= doc.numPages) take(p);
+            for (const [key, other] of builds) if (Math.abs(other.page - page) > 1) drop(key);
+          },
+          { delay: 300, timeout: 1000 },
+        );
       })
       .catch((err) => console.error(err));
     return () => {
       cancelled = true;
-      clearTimeout(prefetch);
+      cancelPrefetch?.();
     };
     // `layout` stands for the size and the page-layout settings.
   }, [doc, page, layout]);
@@ -585,12 +683,13 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     const stage = stageRef.current;
     if (!doc || !b || !stage) return;
     if (zoom <= 1.01) {
-      detailEl.current?.remove();
+      discardCanvas(detailEl.current);
       detailEl.current = null;
       return;
     }
     let cancelled = false;
     let task: ReturnType<PDFPageProxy["render"]> | null = null;
+    let canvas: HTMLCanvasElement | null = null;
     (async () => {
       const pdfPage = await doc.getPage(b.page);
       if (cancelled) return;
@@ -606,15 +705,15 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       if (x1 - x0 < 1 || y1 - y0 < 1) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 3, Math.sqrt(MAX_DETAIL_PIXELS / ((x1 - x0) * (y1 - y0))));
       const scale = s.width / b.width; // CSS px per PDF unit, right now
-      const canvas = document.createElement("canvas");
+      canvas = document.createElement("canvas");
       canvas.width = Math.ceil((x1 - x0) * dpr);
       canvas.height = Math.ceil((y1 - y0) * dpr);
       canvas.className = "pdf-detail";
       placeFraction(canvas, x0 / s.width, y0 / s.height, (x1 - x0) / s.width, (y1 - y0) / s.height);
       task = pdfPage.render({ canvas, viewport: pdfPage.getViewport({ scale: scale * dpr, offsetX: -x0 * dpr, offsetY: -y0 * dpr }) });
       await task.promise;
-      if (cancelled || builtRef.current !== b) return;
-      detailEl.current?.remove();
+      if (cancelled || builtRef.current !== b) return void freeCanvas(canvas);
+      discardCanvas(detailEl.current);
       b.canvas.after(canvas);
       detailEl.current = canvas;
     })().catch((err) => {
@@ -623,6 +722,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     return () => {
       cancelled = true;
       task?.cancel();
+      if (canvas && canvas !== detailEl.current) freeCanvas(canvas); // never shown
     };
   }, [doc, zoom, rendered, scrolled]);
 
@@ -651,20 +751,20 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       return rects;
     };
 
+    const texts = textNodes(layer);
     for (const h of props.highlights ?? []) {
       const pos = parseRange(h.cfi);
       if (!pos || pos.page !== page) continue;
-      const range = rangeFor(layer, pos.start, pos.end);
+      const range = rangeFor(texts.nodes, pos.start, pos.end);
       if (range) hlRects.current.push({ h, rects: draw(range, "pdf-hl", HIGHLIGHT_COLORS[h.color].fill) });
     }
 
     if (searchHit && searchHit.page === page) {
-      const { text } = textNodes(layer);
-      const folded = fold(text);
+      const folded = fold(texts.text);
       const q = fold(searchHit.query);
       let at = -1;
       for (let i = 0; i <= searchHit.nth; i++) at = folded.indexOf(q, at + (i ? q.length : 0));
-      const range = at >= 0 ? rangeFor(layer, at, at + q.length) : null;
+      const range = at >= 0 ? rangeFor(texts.nodes, at, at + q.length) : null;
       if (range) {
         draw(range, "pdf-search-hit");
         range.startContainer.parentElement?.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -706,6 +806,8 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     if (!inking || !wet || !stage) return;
     if (builtRef.current) sizeInk(builtRef.current, zoomRef.current); // give the stroke canvas its size
     let frame = 0;
+    /** The eraser redraws the page's strokes once per frame too. */
+    let inkFrame = 0;
     /** Fingers on the page that don't draw; one of them scrolls it. */
     const fingers = new Set<number>();
     let pan: { id: number; x: number; y: number } | null = null;
@@ -746,7 +848,11 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         }
       }
       if (d.stroke) frame ||= requestAnimationFrame(paintWet);
-      else if (erased) drawInk();
+      else if (erased)
+        inkFrame ||= requestAnimationFrame(() => {
+          inkFrame = 0;
+          drawInk();
+        });
     };
 
     const onDown = (ev: PointerEvent) => {
@@ -794,6 +900,12 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       ev.stopPropagation();
       cancelAnimationFrame(frame);
       paintWet();
+      if (inkFrame) {
+        // The last strokes erased show gone before the change is applied.
+        cancelAnimationFrame(inkFrame);
+        inkFrame = 0;
+        drawInk();
+      }
       drawing.current = null;
       const change = d.stroke ? (d.stroke.points.length >= 3 ? { add: [d.stroke], remove: [] } : null) : d.removed.size ? { add: [], remove: [...d.removed] } : null;
       if (change) propsRef.current.onInkChange?.(pageRef.current, change);
@@ -819,6 +931,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     return () => {
       listening.abort();
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(inkFrame);
       drawing.current = null;
       clearWet();
       if (builtRef.current) sizeInk(builtRef.current, zoomRef.current); // done annotating: free the stroke canvas
@@ -834,8 +947,9 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
       const text = sel?.toString().trim() ?? "";
       if (!layer || !range || sel!.isCollapsed || !text || !layer.contains(range.commonAncestorContainer)) return null;
-      const start = offsetOf(layer, range.startContainer, range.startOffset);
-      const end = offsetOf(layer, range.endContainer, range.endOffset);
+      const { nodes } = textNodes(layer);
+      const start = offsetOf(nodes, range.startContainer, range.startOffset);
+      const end = offsetOf(nodes, range.endContainer, range.endOffset);
       if (end <= start) return undefined; // leave the menu as it is
       return { cfi: `pdf:${pageRef.current}:${start}-${end}`, text, rect: range.getBoundingClientRect() };
     });

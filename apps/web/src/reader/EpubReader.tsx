@@ -1,6 +1,7 @@
 import type { FoliateView, RelocateDetail } from "foliate-js/view.js";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Overlayer } from "foliate-js/overlayer.js";
+import type { Highlight } from "../lib/api";
 import { cachedWidePages, getComicArchive, isComicFormat, makeComicBook, scanWidePages, type ComicArchive } from "../lib/comics";
 import { openEbook } from "../lib/ebooks";
 import { fontFaceCss, fontFamily } from "../lib/fonts";
@@ -133,6 +134,14 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   // Keep latest props without re-running the open effect.
   const propsRef = useLatest(props);
   const [selections] = useState(() => selectionReporter(propsRef));
+  /** The highlights by position (the first one, if two share it), for foliate's per-annotation events. */
+  const byCfi = useLatest(
+    useMemo(() => {
+      const map = new Map<string, Highlight>();
+      for (const h of props.highlights ?? []) if (!map.has(h.cfi)) map.set(h.cfi, h);
+      return map;
+    }, [props.highlights]),
+  );
 
   const mark = () => (lastInteraction.current = Date.now());
   /** User navigation: it counts as an interaction, so the new position is saved. */
@@ -243,7 +252,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
         );
       });
 
-      const findHighlight = (cfi: string) => propsRef.current.highlights?.find((h) => h.cfi === cfi);
+      const findHighlight = (cfi: string) => byCfi.current.get(cfi);
 
       view.addEventListener("draw-annotation", (e) => {
         const { draw, annotation } = (e as CustomEvent).detail;
@@ -252,7 +261,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       });
       // A section was (re)rendered: foliate forgets annotations, so draw them again.
       view.addEventListener("create-overlay", () => {
-        for (const h of propsRef.current.highlights ?? []) view!.addAnnotation({ value: h.cfi }).catch(() => {});
+        for (const cfi of byCfi.current.keys()) view!.addAnnotation({ value: cfi }).catch(() => {});
       });
       view.addEventListener("show-annotation", (e) => {
         const { value, range } = (e as CustomEvent<{ value: string; range: Range }>).detail;

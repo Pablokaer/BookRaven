@@ -22,19 +22,37 @@ export function bookmarkLocator(current: string, kind: BookKind) {
 
 /** Whether a bookmark falls on the page the reader shows at `current`. */
 export function isOnPage(bookmark: string, current: string, kind: BookKind) {
-  if (bookmark === current) return true;
+  return pageMatcher(current, kind)(bookmark);
+}
+
+/** isOnPage for many bookmarks: the page at `current` is worked out once, not for each bookmark. */
+export function pageMatcher(current: string, kind: BookKind): (bookmark: string) => boolean {
   if (kind === "pdf") {
     const page = (l: string) => /^(?:page|pdf):(\d+)/.exec(l)?.[1];
-    return page(bookmark) !== undefined && page(bookmark) === page(current);
+    const here = page(current);
+    return (b) => b === current || (here !== undefined && page(b) === here);
   }
-  if (kind === "comic") return isCfi(bookmark) && isCfi(current) && comicIndexFromLocator(bookmark) === comicIndexFromLocator(current);
-  if (!isCfi(bookmark) || !isCfi(current)) return false;
+  if (kind === "comic") {
+    const here = isCfi(current) ? comicIndexFromLocator(current) : null;
+    return (b) => b === current || (here !== null && isCfi(b) && comicIndexFromLocator(b) === here);
+  }
+  if (!isCfi(current)) return (b) => b === current;
   // Ebook pages move with the font size: a bookmark is on the page when it lies inside it.
+  let start: string;
+  let end: string;
   try {
-    const start = collapse(current);
-    const end = collapse(current, true);
-    return compare(bookmark, start) === 0 || (compare(bookmark, start) > 0 && compare(bookmark, end) < 0);
+    start = collapse(current);
+    end = collapse(current, true);
   } catch {
-    return false;
+    return (b) => b === current;
   }
+  return (b) => {
+    if (b === current) return true;
+    if (!isCfi(b)) return false;
+    try {
+      return compare(b, start) === 0 || (compare(b, start) > 0 && compare(b, end) < 0);
+    } catch {
+      return false;
+    }
+  };
 }

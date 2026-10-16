@@ -1,5 +1,6 @@
 import { apiFetch, apiJson } from "./api";
 import { deviceId } from "./device";
+import { afterIdle } from "./idle";
 import { cacheStore, createOutbox, type Queued } from "./outbox";
 
 /**
@@ -85,11 +86,21 @@ export function liveChangeAction(known: number, version: number): "ignore" | "ap
   return version === known + 1 ? "apply" : "refetch"; // a gap: a change was missed
 }
 
-/** A short signature of a page's strokes (changes whenever any stroke is added or erased). */
+const signatures = new WeakMap<Stroke[], string>();
+
+/**
+ * A short signature of a page's strokes (changes whenever any stroke is added or erased). Kept
+ * per list: a page's list is replaced, never changed in place, whenever its strokes change.
+ */
 export function inkSignature(strokes: Stroke[]) {
-  let h = 5381;
-  for (const s of strokes) for (let i = 0; i < s.id.length; i++) h = ((h << 5) + h + s.id.charCodeAt(i)) | 0;
-  return `${strokes.length}:${(h >>> 0).toString(36)}`;
+  let sig = signatures.get(strokes);
+  if (sig === undefined) {
+    let h = 5381;
+    for (const s of strokes) for (let i = 0; i < s.id.length; i++) h = ((h << 5) + h + s.id.charCodeAt(i)) | 0;
+    sig = `${strokes.length}:${(h >>> 0).toString(36)}`;
+    signatures.set(strokes, sig);
+  }
+  return sig;
 }
 
 // ---------- Outbox ----------
@@ -183,20 +194,28 @@ async function readCachedPages(bookId: string, only?: number[]): Promise<Record<
   const cache = await openStore();
   if (!cache) return {};
   const out: Record<number, CachedPage> = {};
+  const wanted = only && new Set(only);
+  const reads: Promise<void>[] = [];
   for await (const { req, page } of cachedPageKeys(cache, bookId)) {
-    if (only && !only.includes(page)) continue;
-    const res = await cache.match(req);
-    if (res) out[page] = await res.json();
+    if (wanted && !wanted.has(page)) continue;
+    reads.push(
+      cache.match(req).then(async (res) => {
+        if (res) out[page] = await res.json();
+      }),
+    );
   }
+  await Promise.all(reads);
   // The first version kept a whole book in one entry.
   const legacy = await cache.match(`/ink-store/book-${bookId}`);
   if (legacy && !Object.keys(out).length) {
-    for (const [p, strokes] of Object.entries((await legacy.json()) as InkPages)) if (!only || only.includes(Number(p))) out[Number(p)] = { strokes, version: 0 };
+    for (const [p, strokes] of Object.entries((await legacy.json()) as InkPages)) if (!wanted || wanted.has(Number(p))) out[Number(p)] = { strokes, version: 0 };
   }
   return out;
 }
 
 const writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** When each page's copy was last changed here (the tidying after a book opens keeps those changed since). */
+const rememberedAt = new Map<string, number>();
 
 /**
  * Keeps the offline copy of one page in step with what the reader shows. Writes wait a moment,
@@ -204,6 +223,7 @@ const writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
  */
 export function rememberInkPage(bookId: string, page: number, strokes: Stroke[], version: number) {
   const url = pageUrl(bookId, page);
+  rememberedAt.set(url, Date.now());
   clearTimeout(writeTimers.get(url));
   writeTimers.set(
     url,
@@ -236,9 +256,10 @@ export function pendingInkPages(bookId: string) {
  */
 export async function loadInkSummary(bookId: string): Promise<InkSummary> {
   try {
+    const asked = Date.now();
     const list = await apiJson<{ page: number; version: number; count: number }[]>(`/api/books/${bookId}/ink?summary=1`);
     const summary: InkSummary = Object.fromEntries(list.map((p) => [p.page, { count: p.count, version: p.version }]));
-    void pruneCachedPages(bookId, summary);
+    afterIdle(() => void pruneCachedPages(bookId, summary, asked)); // tidying can wait for the book to be open
     return summary;
   } catch {
     const cached = await readCachedPages(bookId);
@@ -279,12 +300,17 @@ export async function fetchInkPage(bookId: string, page: number): Promise<{ stro
   }
 }
 
-/** Drops pages from the device's copy that the server no longer has (and the first version's single entry). */
-async function pruneCachedPages(bookId: string, summary: InkSummary) {
+/**
+ * Drops pages from the device's copy that the server no longer had at `asked` (and the first
+ * version's single entry). Pages written here since then (just annotated) stay.
+ */
+async function pruneCachedPages(bookId: string, summary: InkSummary, asked: number) {
   const cache = await openStore();
   if (!cache) return;
   try {
-    for await (const { req, page } of cachedPageKeys(cache, bookId)) if (!(page in summary)) await cache.delete(req);
+    for await (const { req, page } of cachedPageKeys(cache, bookId)) {
+      if (!(page in summary) && (rememberedAt.get(pageUrl(bookId, page)) ?? 0) < asked) await cache.delete(req);
+    }
     await cache.delete(`/ink-store/book-${bookId}`);
   } catch {
     /* storage unavailable: nothing to tidy */
