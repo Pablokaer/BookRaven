@@ -20,6 +20,16 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-faster-sync",
+    date: "2026-10-16",
+    title: "Quicker on bad connections",
+    items: [
+      "On a very slow connection the app opens from its saved copy after a few seconds instead of waiting for the network.",
+      "Live sync comes back as soon as your device is online again, and catches up on anything that changed while you were offline.",
+      "The library and the Public Library download less: book descriptions load on the book's page, and the public catalog is shared by the pages that show it.",
+    ],
+  },
+  {
     id: "2026-10-16-landing-phones",
     date: "2026-10-16",
     title: "The front page on phones",

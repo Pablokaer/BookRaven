@@ -1,4 +1,5 @@
 import { apiDelete, apiFetch, apiJson, ApiError, isNative, type Book, type Folder } from "./api";
+import { forgetPublicBooks } from "./publicLibrary";
 
 export function listFolders() {
   return apiJson<Folder[]>("/api/folders");
@@ -16,7 +17,9 @@ export function renameFolder(id: string, name: string) {
 export const deleteFolder = (id: string) => apiDelete(`/api/folders/${id}`);
 
 export function updateBook(id: string, patch: { folderId?: string | null; tags?: string[]; favorite?: boolean; isPublic?: boolean }) {
-  return apiJson<Book>(`/api/books/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  const res = apiJson<Book>(`/api/books/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  // Publishing or unpublishing changes the public catalog (tags change its sections).
+  return patch.isPublic !== undefined || patch.tags ? res.finally(forgetPublicBooks) : res;
 }
 
 /** Android app: WebViews ignore download links, so write the file to Documents/BookRaven. */

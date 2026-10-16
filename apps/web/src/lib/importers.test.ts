@@ -50,6 +50,7 @@ describe("Goodreads", () => {
   it("finds each book in the library or the public library", () => {
     const library = [{ id: "b1", title: "Dom Casmurro", author: "Machado de Assis" }] as Book[];
     const pub = [
+      { id: "p0", title: "Moby Dick", author: "Someone Else", popularity: 5000 }, // same title, another work
       { id: "p1", title: "Moby Dick", author: "Herman Melville", popularity: 10 },
       { id: "p2", title: "Moby Dick; Or, The Whale", author: "Herman Melville", popularity: 900 },
       { id: "p3", title: "Dom Casmurro", author: "Machado de Assis", popularity: 5 },

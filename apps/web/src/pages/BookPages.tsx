@@ -35,9 +35,10 @@ import { THEME_INFO } from "../lib/themes";
 import { useApi } from "../lib/useApi";
 import { languageName, PublisherInfo, Shelf, usePublicBookActions } from "./PublicLibraryPage";
 
-/** The blurb, clamped to a few lines with a toggle when it is long. */
-function Description({ text }: { text: string | null }) {
+/** The blurb, clamped to a few lines with a toggle when it is long (`undefined` while it loads). */
+function Description({ text }: { text: string | null | undefined }) {
   const [open, setOpen] = useState(false);
+  if (text === undefined) return <div className="h-16 animate-pulse rounded-xl bg-card/60" />;
   if (!text) return <p className="text-sm text-muted">No description in this file.</p>;
   const long = text.length > 420;
   return (
@@ -121,11 +122,13 @@ function ThemeChips({ themes }: { themes: string[] }) {
  */
 function About({
   book,
+  description,
   subjects,
   themes = [],
   children,
 }: {
-  book: Pick<Book, "description" | "format" | "sizeBytes" | "language">;
+  book: Pick<Book, "format" | "sizeBytes" | "language">;
+  description: string | null | undefined;
   subjects: string[];
   themes?: string[];
   children: ReactNode;
@@ -136,7 +139,7 @@ function About({
         <h2 id="about-heading" className="font-display text-xl font-semibold">
           About this book
         </h2>
-        <Description text={book.description} />
+        <Description text={description} />
         <ThemeChips themes={themes} />
         {subjects.length ? <p className="text-xs text-muted">{subjects.slice(0, 6).join(" · ")}</p> : null}
       </div>
@@ -155,7 +158,8 @@ export function BookPage() {
   const { id } = useParams<{ id: string }>();
   const { books, folders, openShare, openOrganize } = useLibrary();
   const [fetched, setFetched] = useState<Book | null | "missing">(null);
-  const { data: about } = useApi(() => getBookAbout(id!), [id]);
+  // The description comes with these facts: the library list leaves it out.
+  const { data: about, error: aboutError } = useApi(() => getBookAbout(id!), [id]);
   const { data: highlights } = useApi(() => listHighlights(id!), [id], { fallback: [] });
   const bookmarks = useApi(() => loadBookmarks(id!), [id]).data ?? [];
   const clubs = useApi(() => listClubs(id), [id]).data ?? [];
@@ -209,7 +213,7 @@ export function BookPage() {
         </div>
       </section>
 
-      <About book={book} subjects={about?.subjects ?? []}>
+      <About book={book} description={about ? about.description : aboutError ? (book.description ?? null) : undefined} subjects={about?.subjects ?? []}>
         <Fact label="Added">{shortDate(book.createdAt)}</Fact>
         {book.sharedBy && <Fact label="Shared by">{book.sharedBy}</Fact>}
         <Fact label="Collection">
@@ -431,7 +435,7 @@ function PublicBookView({ book, related, viewerName }: { book: PublicBookDetails
 
       <PublisherInfo book={book} viewerName={viewerName} />
 
-      <About book={book} subjects={book.subjects} themes={book.themes}>
+      <About book={book} description={book.description} subjects={book.subjects} themes={book.themes}>
         <Fact label="Published">{shortDate(book.publishedAt)}</Fact>
         <Fact label="Readers">
           {book.readers} {book.readers === 1 ? "reader" : "readers"}
