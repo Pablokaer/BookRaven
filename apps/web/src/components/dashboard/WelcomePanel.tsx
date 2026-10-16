@@ -3,7 +3,6 @@ import { Link } from "react-router";
 import { useMemo } from "react";
 import { isInProgress } from "../../lib/bookStats";
 import { useLibrary } from "../../lib/libraryStore";
-import clouds1600 from "../../assets/landing/raven-clouds-1600.webp";
 import clouds900 from "../../assets/landing/raven-clouds-900.webp";
 import { StatCard } from "./StatCard";
 
@@ -27,13 +26,13 @@ export function WelcomePanel({ name }: { name: string }) {
 
   return (
     <section className="@container relative overflow-hidden rounded-xl border border-gold/15 shadow-card">
-      {/* Doré's raven over the clouds (1884), toned to the palette. */}
+      {/* Doré's raven over the clouds (1884), toned to the palette. Only the 900w file: the art is
+          mostly under the gradients below, so the 1600w one (5x the bytes) would not show. */}
       <img
         src={clouds900}
-        srcSet={`${clouds900} 900w, ${clouds1600} 1600w`}
-        sizes="(min-width: 1024px) 70vw, 100vw"
         alt=""
         decoding="async"
+        fetchPriority="high"
         className="absolute inset-0 h-full w-full object-cover object-[70%_20%]"
       />
       <div className="absolute inset-0 bg-gradient-to-r from-app/95 via-app/70 to-app/20" />

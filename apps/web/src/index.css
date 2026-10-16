@@ -15,7 +15,7 @@
   --color-ink: #151b23;
   --color-sepia: #5a5348;
 
-  --font-literary: "Cormorant Garamond", "EB Garamond", Garamond, Georgia, serif;
+  --font-literary: "Cormorant Garamond", "Cormorant Fallback", "EB Garamond", Garamond, Georgia, serif;
 }
 
 /* ---- Design tokens: the app's surfaces in the literary palette above ---- */
@@ -64,7 +64,7 @@
   --radius-3xl: 0.875rem;
 
   --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Cormorant Garamond", "EB Garamond", Garamond, Georgia, serif;
+  --font-display: "Cormorant Garamond", "Cormorant Fallback", "EB Garamond", Garamond, Georgia, serif;
 
   --shadow-card: 0 1px 0 0 rgb(245 238 223 / 0.03) inset, 0 10px 30px -18px rgb(0 0 0 / 0.85);
   --shadow-pop: 0 18px 50px -12px rgb(0 0 0 / 0.75), 0 0 0 1px rgb(201 164 116 / 0.18);
@@ -118,23 +118,27 @@ body,
 
 body {
   @apply bg-app font-sans text-fg antialiased;
-  /* Moonlight from the upper right, as on the front page. */
-  background-image: radial-gradient(70rem 40rem at 100% -10%, rgb(36 63 90 / 0.45), transparent 65%);
-  background-attachment: fixed;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
-/* Paper grain under everything, above the night sky. */
-body::before {
+/* The library's night sky: moonlight from the upper right, as on the front page, under a paper
+   grain. Fixed layers behind the page rather than a fixed body background, which would make the
+   browser repaint it on every scroll frame. Only on the screens that show it (AppShell, the loading
+   screen): the reader, the front page and the sign-in page cover it with their own backgrounds. */
+.app-backdrop::before,
+.app-backdrop::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image: var(--lit-grain);
+}
+.app-backdrop::before {
+  background-image: radial-gradient(70rem 40rem at 100% -10%, rgb(36 63 90 / 0.45), transparent 65%);
+}
+.app-backdrop::after {
+  background-image: var(--lit-grain-light);
   opacity: 0.08;
-  filter: invert(1);
-  mix-blend-mode: screen;
 }
 ::selection {
   background: rgb(201 164 116 / 0.35);

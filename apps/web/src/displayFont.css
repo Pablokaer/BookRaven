@@ -1,8 +1,22 @@
 /*
  * Cormorant Garamond (headings, book titles and literary accents), weights 500, 600 and 700 and
  * italic 500: the same faces and unicode ranges as @fontsource/cormorant-garamond, Latin and Latin
- * Extended, in WOFF2 only. Each file is downloaded only when text on the page needs it.
+ * Extended, in WOFF2 only. Each file is downloaded only when text on the page needs it; the Latin
+ * 500 and 600 faces are also preloaded by index.html, as the front page's title and the app's
+ * headings need them on the first screen.
  */
+
+/* Georgia resized to Cormorant's width and line metrics, shown while the web font loads: the swap
+   then barely moves the text (less layout shift on the front page's large title). Measured from the
+   two fonts (average width of English text, hhea ascent and descent). */
+@font-face {
+  font-family: "Cormorant Fallback";
+  src: local("Georgia");
+  size-adjust: 88.84%;
+  ascent-override: 104.01%;
+  descent-override: 32.31%;
+  line-gap-override: 0%;
+}
 
 @font-face {
   font-family: "Cormorant Garamond";

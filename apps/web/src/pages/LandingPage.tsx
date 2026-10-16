@@ -93,17 +93,28 @@ const delay = (ms: number) => ({ "--lit-delay": `${ms}ms` }) as CSSProperties;
 
 function Header({ signupOpen }: { signupOpen: boolean }) {
   // Clear over the hero; once the page scrolls, a midnight band keeps the links readable.
+  // The scroll handler only sets state when the answer changes (React bails out on equal values).
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setScrolled(window.scrollY > 24);
+      });
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
   }, []);
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-40 pt-[env(safe-area-inset-top)] transition-[background-color,box-shadow,backdrop-filter] duration-500 ${
+      className={`fixed inset-x-0 top-0 z-40 pt-[env(safe-area-inset-top)] transition-[background-color,box-shadow] duration-500 ${
         scrolled ? "bg-midnight/85 shadow-[0_1px_0_rgb(201_164_116/0.16)] backdrop-blur-md" : "bg-transparent"
       }`}
     >
@@ -169,6 +180,8 @@ function Actions({ signupOpen, className = "" }: { signupOpen: boolean; classNam
 
 /* ------------------------------------------------------------------------------------------------ */
 
+// The hero is above the fold: it fades in with CSS as soon as it is drawn (.lit-intro), not after
+// the scripts run like the .lit-reveal sections below, so it is never blank while the page loads.
 function Hero({ signupOpen }: { signupOpen: boolean }) {
   return (
     <section aria-labelledby="hero-title" className="lit-grain lit-grain-night relative">
@@ -183,7 +196,7 @@ function Hero({ signupOpen }: { signupOpen: boolean }) {
       />
       <div className="mx-auto grid max-w-[1240px] px-5 pb-28 pt-24 sm:px-8 sm:pt-28 lg:min-h-[min(100svh,1000px)] lg:grid-cols-12 lg:items-center lg:gap-8 lg:pb-32 lg:pt-28">
         <div className="relative lg:order-2 lg:col-span-5 lg:col-start-8">
-          <figure className="lit-reveal relative mx-auto w-[min(76vw,340px)] sm:w-[380px] lg:mr-0 lg:w-full lg:max-w-[460px]">
+          <figure className="lit-intro relative mx-auto w-[min(76vw,340px)] sm:w-[380px] lg:mr-0 lg:w-full lg:max-w-[460px]">
             <ArchedPlate sizes="(min-width: 1024px) 460px, (min-width: 640px) 380px, 76vw" priority />
             <figcaption className="-mt-6 hidden text-center font-literary text-[15px] italic leading-snug text-silver lg:block">
               &ldquo;Perched upon a bust of Pallas just above my chamber door.&rdquo;
@@ -196,31 +209,30 @@ function Hero({ signupOpen }: { signupOpen: boolean }) {
         </div>
 
         <div className="relative z-10 -mt-20 text-center sm:-mt-24 lg:order-1 lg:col-span-7 lg:mt-0 lg:text-left">
-          <p className="lit-eyebrow lit-reveal text-gold" style={delay(100)}>
+          <p className="lit-eyebrow lit-intro text-gold" style={delay(60)}>
             A library of your own<span className="hidden sm:inline"> · ebooks, PDFs &amp; comics</span>
           </p>
           <h1
             id="hero-title"
-            className="lit-title lit-reveal mt-6 text-[3.5rem] text-ivory sm:text-[5rem] lg:text-[5.9rem] xl:text-[6.6rem]"
-            style={delay(180)}
+            className="lit-title lit-intro mt-6 text-[3.5rem] text-ivory sm:text-[5rem] lg:text-[5.9rem] xl:text-[6.6rem]"
           >
             Every book <br className="hidden sm:block" />holds <em className="italic text-gold">a world.</em>
           </h1>
           <p
-            className="lit-reveal mx-auto mt-7 max-w-[33rem] text-[16.5px] leading-[1.75] text-silver text-pretty sm:text-[17.5px] lg:mx-0"
-            style={delay(260)}
+            className="lit-intro mx-auto mt-7 max-w-[33rem] text-[16.5px] leading-[1.75] text-silver text-pretty sm:text-[17.5px] lg:mx-0"
+            style={delay(120)}
           >
             Your stories, your collection, kept on a server of your own. Read in the browser, the Android app or on an e-reader, and every device opens on the
             very sentence where you stopped.
           </p>
-          <div className="lit-reveal" style={delay(340)}>
+          <div className="lit-intro" style={delay(180)}>
             <Actions signupOpen={signupOpen} className="mt-10 justify-center lg:justify-start" />
           </div>
-          <div className="lit-reveal mt-12 flex items-center justify-center gap-4 lg:justify-start" style={delay(420)}>
+          <div className="lit-intro mt-12 flex items-center justify-center gap-4 lg:justify-start" style={delay(240)}>
             <Fleuron className="hidden w-16 text-gold/60 sm:block" />
             <p className="text-[11.5px] uppercase tracking-[0.2em] text-silver/80">EPUB · MOBI · AZW3 · FB2 · PDF · CBZ · CBR · CB7 · CBT</p>
           </div>
-          <ReaderCard className="lit-reveal mx-auto mt-14 w-fit lg:hidden" style={delay(200)} />
+          <ReaderCard className="lit-intro mx-auto mt-14 w-fit lg:hidden" style={delay(240)} />
         </div>
       </div>
     </section>

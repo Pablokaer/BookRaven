@@ -20,6 +20,16 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-17-lighter-look",
+    date: "2026-10-17",
+    title: "The new look, lighter",
+    items: [
+      "Scrolling the library and opening the menu are smoother on phones: the paper texture is drawn more simply, and no longer behind the reader.",
+      "The front page shows its title and picture right away instead of waiting to fade in, and the titles no longer jump when their font arrives.",
+      "The welcome panel downloads a much smaller picture, and the app no longer downloads the front page when you are signed in.",
+    ],
+  },
+  {
     id: "2026-10-16-illustrated-look",
     date: "2026-10-16",
     title: "A new look",
