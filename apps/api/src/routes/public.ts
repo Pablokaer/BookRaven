@@ -3,20 +3,16 @@ import { requireUser } from "../auth.js";
 import { isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { aboutFile } from "../lib/bookAbout.js";
-import { copyBookToUser } from "../lib/copies.js";
+import { addCopyAndReply } from "../lib/copies.js";
 import { broadcast, publish } from "../lib/events.js";
-import { BlockedFileError } from "../lib/moderation.js";
-import { QuotaExceededError } from "../lib/quota.js";
+import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { SOURCE_NAMES } from "../lib/otherSources.js";
 import { themesFor } from "../lib/themes.js";
 import { bookKey } from "../lib/storage.js";
 import { adminUserIds } from "./admin.js";
-import { SELECT_BOOK, sendCover, sendFile, toBookDto, type BookRow } from "./books.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { bookDto, sendCover, sendFile, type BookRow } from "./books.js";
 
 type PublicRow = BookRow & {
-  user_id: string;
   owner_name: string | null;
   language?: string | null;
   source_url?: string | null;
@@ -52,22 +48,14 @@ const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id
 });
 
 /** A published book by id, or a 404 (unpublished books are invisible here). */
-async function loadPublic(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-  if (!UUID_RE.test(request.params.id)) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  const { rows } = await query<PublicRow>(
+const loadPublic = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+  findOr404<PublicRow>(
+    reply,
+    UUID_RE.test(request.params.id),
     `SELECT b.*, u.name AS owner_name FROM book b JOIN "user" u ON u.id = b.user_id
      WHERE b.id = $1 AND b.is_public`,
     [request.params.id],
   );
-  if (!rows[0]) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  return rows[0];
-}
 
 /**
  * Public library: books their owners published for every signed-in account.
@@ -104,8 +92,9 @@ export async function publicRoutes(app: FastifyInstance) {
 
   /** One public book, for its page: also how many people have it and its catalog subjects. */
   app.get<{ Params: { id: string } }>("/api/public/:id", async (request, reply) => {
-    if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
-    const { rows } = await query<PublicRow & { own_book_id: string | null }>(
+    const r = await findOr404<PublicRow & { own_book_id: string | null }>(
+      reply,
+      UUID_RE.test(request.params.id),
       `SELECT b.*, u.name AS owner_name, cb.source, cb.source_url, cb.download_count,
               (SELECT m.id FROM book m WHERE m.user_id = $2 AND m.sha256 = b.sha256) AS own_book_id
        FROM book b JOIN "user" u ON u.id = b.user_id
@@ -113,8 +102,7 @@ export async function publicRoutes(app: FastifyInstance) {
        WHERE b.id = $1 AND b.is_public`,
       [request.params.id, request.user.id],
     );
-    const r = rows[0];
-    if (!r) return reply.code(404).send({ error: "not_found" });
+    if (!r) return;
     const about = await aboutFile(r.sha256, null); // everyone who has it, the viewer included
     return { ...toPublicDto(r, request.user), readers: about.readers, subjects: about.subjects };
   });
@@ -142,21 +130,7 @@ export async function publicRoutes(app: FastifyInstance) {
     { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const src = await loadPublic(request, reply);
-      if (!src) return;
-      let result;
-      try {
-        result = await copyBookToUser(src, request.user, src.user_id === request.user.id ? null : src.owner_name);
-      } catch (err) {
-        if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
-        if (err instanceof QuotaExceededError) {
-          return reply.code(413).send({ error: "quota_exceeded", usedBytes: err.usedBytes, quotaBytes: err.quotaBytes });
-        }
-        throw err;
-      }
-      const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [result.id]);
-      const dto = toBookDto(rows[0]!);
-      if (result.created) publish(request.user.id, "book.created", dto);
-      return reply.code(result.created ? 201 : 200).send(dto);
+      if (src) return addCopyAndReply(reply, src, request.user, src.user_id === request.user.id ? null : src.owner_name);
     },
   );
 
@@ -166,15 +140,13 @@ export async function publicRoutes(app: FastifyInstance) {
     {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          required: ["reason"],
-          additionalProperties: false,
-          properties: {
+        body: obj(
+          {
             reason: { type: "string", enum: ["copyright", "illegal", "offensive", "spam", "other"] },
             details: { type: "string", maxLength: 2000 },
           },
-        },
+          ["reason"],
+        ),
       },
     },
     async (request, reply) => {
@@ -198,8 +170,7 @@ export async function publicRoutes(app: FastifyInstance) {
     if (!book) return;
     if (book.user_id !== request.user.id && !isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
     await query("UPDATE book SET is_public = false, published_at = NULL WHERE id = $1", [book.id]);
-    const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [book.id]);
-    publish(book.user_id, "book.updated", toBookDto(rows[0]!));
+    publish(book.user_id, "book.updated", await bookDto(book.id));
     broadcast("public.changed", { bookId: book.id });
     return reply.code(204).send();
   });

@@ -1,12 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
-import { pool, query } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { publish } from "../lib/events.js";
+import { obj } from "../lib/http.js";
 import { loadOwnedBook } from "./books.js";
 
 /** Limits per page: plenty for handwriting, small enough to sync quickly. */
-export const MAX_STROKES_PER_PAGE = 5000;
-export const MAX_PAGE_INK_BYTES = 2 * 1024 * 1024;
+const MAX_STROKES_PER_PAGE = 5000;
+const MAX_PAGE_INK_BYTES = 2 * 1024 * 1024;
+/** Thrown inside the transaction to roll back a change that makes the page too large. */
+const TOO_LARGE = new Error("page_ink_too_large");
 
 export type Stroke = {
   id: string;
@@ -19,18 +22,16 @@ export type Stroke = {
   points: number[];
 };
 
-const strokeSchema = {
-  type: "object",
-  required: ["id", "tool", "color", "width", "points"],
-  additionalProperties: false,
-  properties: {
+const strokeSchema = obj(
+  {
     id: { type: "string", minLength: 1, maxLength: 64 },
     tool: { type: "string", enum: ["pen", "highlighter"] },
     color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
     width: { type: "number", minimum: 0.0005, maximum: 0.2 },
     points: { type: "array", minItems: 3, maxItems: 30000, items: { type: "number", minimum: -0.5, maximum: 1.5 } },
   },
-};
+  ["id", "tool", "color", "width", "points"],
+);
 
 const pageParams = {
   type: "object",
@@ -115,15 +116,11 @@ export async function inkRoutes(app: FastifyInstance) {
       bodyLimit: 4 * 1024 * 1024,
       schema: {
         params: pageParams,
-        body: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            add: { type: "array", maxItems: 500, items: strokeSchema },
-            remove: { type: "array", maxItems: 5000, items: { type: "string", minLength: 1, maxLength: 64 } },
-            deviceId: { type: "string", maxLength: 100 },
-          },
-        },
+        body: obj({
+          add: { type: "array", maxItems: 500, items: strokeSchema },
+          remove: { type: "array", maxItems: 5000, items: { type: "string", minLength: 1, maxLength: 64 } },
+          deviceId: { type: "string", maxLength: 100 },
+        }),
       },
     },
     async (request, reply) => {
@@ -136,44 +133,40 @@ export async function inkRoutes(app: FastifyInstance) {
       const remove = [...new Set(request.body.remove ?? [])];
       const key = [request.user.id, book.id, page];
 
-      const client = await pool.connect();
+      let saved: { version: number; updated_at: Date };
       try {
-        await client.query("BEGIN");
-        // Raising the version also locks the page: changes to one page run one at a time.
-        const { rows } = await client.query<{ version: number; updated_at: Date }>(
-          `INSERT INTO pdf_ink_page (user_id, book_id, page, version) VALUES ($1, $2, $3, 1)
-           ON CONFLICT (user_id, book_id, page) DO UPDATE SET version = pdf_ink_page.version + 1, updated_at = now()
-           RETURNING version, updated_at`,
-          key,
-        );
-        // Erased strokes go, and re-added ones are replaced (they move on top, like on the devices).
-        const gone = [...new Set([...remove, ...add.map((s) => s.id)])];
-        if (gone.length) await client.query("DELETE FROM pdf_ink_stroke WHERE user_id = $1 AND book_id = $2 AND page = $3 AND id = ANY($4)", [...key, gone]);
-        if (add.length) {
-          await client.query(
-            `INSERT INTO pdf_ink_stroke (user_id, book_id, page, id, stroke)
-             SELECT $1, $2, $3, s.value ->> 'id', s.value FROM jsonb_array_elements($4::jsonb) WITH ORDINALITY AS s(value, n) ORDER BY s.n`,
-            [...key, JSON.stringify(add)],
+        saved = await withTransaction(async (client) => {
+          // Raising the version also locks the page: changes to one page run one at a time.
+          const { rows } = await client.query<{ version: number; updated_at: Date }>(
+            `INSERT INTO pdf_ink_page (user_id, book_id, page, version) VALUES ($1, $2, $3, 1)
+             ON CONFLICT (user_id, book_id, page) DO UPDATE SET version = pdf_ink_page.version + 1, updated_at = now()
+             RETURNING version, updated_at`,
+            key,
           );
-        }
-        const { rows: size } = await client.query<{ n: number; bytes: string }>(
-          "SELECT count(*)::int AS n, COALESCE(sum(octet_length(stroke::text)), 0) AS bytes FROM pdf_ink_stroke WHERE user_id = $1 AND book_id = $2 AND page = $3",
-          key,
-        );
-        if (size[0]!.n > MAX_STROKES_PER_PAGE || Number(size[0]!.bytes) > MAX_PAGE_INK_BYTES) {
-          await client.query("ROLLBACK");
-          return reply.code(413).send({ error: "page_ink_too_large" });
-        }
-        await client.query("COMMIT");
-        const done = { bookId: book.id, page, version: rows[0]!.version, updatedAt: rows[0]!.updated_at.toISOString() };
-        publish(request.user.id, "ink.updated", { ...done, add, remove, deviceId: request.body.deviceId ?? null });
-        return done;
+          // Erased strokes go, and re-added ones are replaced (they move on top, like on the devices).
+          const gone = [...new Set([...remove, ...add.map((s) => s.id)])];
+          if (gone.length) await client.query("DELETE FROM pdf_ink_stroke WHERE user_id = $1 AND book_id = $2 AND page = $3 AND id = ANY($4)", [...key, gone]);
+          if (add.length) {
+            await client.query(
+              `INSERT INTO pdf_ink_stroke (user_id, book_id, page, id, stroke)
+               SELECT $1, $2, $3, s.value ->> 'id', s.value FROM jsonb_array_elements($4::jsonb) WITH ORDINALITY AS s(value, n) ORDER BY s.n`,
+              [...key, JSON.stringify(add)],
+            );
+          }
+          const { rows: size } = await client.query<{ n: number; bytes: string }>(
+            "SELECT count(*)::int AS n, COALESCE(sum(octet_length(stroke::text)), 0) AS bytes FROM pdf_ink_stroke WHERE user_id = $1 AND book_id = $2 AND page = $3",
+            key,
+          );
+          if (size[0]!.n > MAX_STROKES_PER_PAGE || Number(size[0]!.bytes) > MAX_PAGE_INK_BYTES) throw TOO_LARGE;
+          return rows[0]!;
+        });
       } catch (err) {
-        await client.query("ROLLBACK").catch(() => {});
+        if (err === TOO_LARGE) return reply.code(413).send({ error: "page_ink_too_large" });
         throw err;
-      } finally {
-        client.release();
       }
+      const done = { bookId: book.id, page, version: saved.version, updatedAt: saved.updated_at.toISOString() };
+      publish(request.user.id, "ink.updated", { ...done, add, remove, deviceId: request.body.deviceId ?? null });
+      return done;
     },
   );
 }

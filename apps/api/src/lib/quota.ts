@@ -1,6 +1,6 @@
 import type pg from "pg";
 import { config, isAdmin } from "../config.js";
-import { pool } from "../db.js";
+import { pool, withTransaction } from "../db.js";
 
 export class QuotaExceededError extends Error {
   constructor(
@@ -10,6 +10,9 @@ export class QuotaExceededError extends Error {
     super("quota_exceeded");
   }
 }
+
+/** The 413 response body for a full account. */
+export const quotaBody = (q: { usedBytes: number; quotaBytes: number }) => ({ error: "quota_exceeded", usedBytes: q.usedBytes, quotaBytes: q.quotaBytes });
 
 /**
  * Storage limit of an account in bytes, or null when unlimited (administrators).
@@ -44,22 +47,13 @@ export async function withQuota<T>(
   addBytes: number,
   fn: (client: pg.PoolClient) => Promise<T>,
 ): Promise<T> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
+  return withTransaction(async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`quota:${user.id}`]);
     const quota = await quotaFor(user, client);
     if (quota !== null) {
       const used = await storageUsed(user.id, client);
       if (used + addBytes > quota) throw new QuotaExceededError(used, quota);
     }
-    const result = await fn(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
+    return fn(client);
+  });
 }

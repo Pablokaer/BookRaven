@@ -2,15 +2,11 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
-import { copyBookToUser } from "../lib/copies.js";
+import { copyOrReply } from "../lib/copies.js";
 import { memberIds, notifyMembers } from "../lib/clubs.js";
 import { publish } from "../lib/events.js";
-import { BlockedFileError } from "../lib/moderation.js";
-import { QuotaExceededError } from "../lib/quota.js";
+import { findOr404, obj, TOKEN_RE, UUID_RE } from "../lib/http.js";
 import { sendCover, type BookRow } from "./books.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const newToken = () => randomBytes(15).toString("base64url");
 
 type ClubRow = {
@@ -43,23 +39,15 @@ function summary(c: ClubRow & { members?: string; my_book_id?: string | null }, 
 export async function clubRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
 
-  async function loadMember(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-    if (!UUID_RE.test(request.params.id)) {
-      reply.code(404).send({ error: "not_found" });
-      return null;
-    }
-    const { rows } = await query<ClubRow & { my_book_id: string | null }>(
+  const loadMember = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+    findOr404<ClubRow & { my_book_id: string | null }>(
+      reply,
+      UUID_RE.test(request.params.id),
       `SELECT c.*, (SELECT b.id FROM book b WHERE b.user_id = $2 AND b.sha256 = c.sha256) AS my_book_id
        FROM club c JOIN club_member m ON m.club_id = c.id AND m.user_id = $2
        WHERE c.id = $1`,
       [request.params.id, request.user.id],
     );
-    if (!rows[0]) {
-      reply.code(404).send({ error: "not_found" });
-      return null;
-    }
-    return rows[0];
-  }
 
   /** My clubs; `?bookId=` limits them to clubs reading that book. */
   app.get<{ Querystring: { bookId?: string } }>("/api/clubs", async (request) => {
@@ -80,18 +68,19 @@ export async function clubRoutes(app: FastifyInstance) {
     {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          required: ["bookId", "name"],
-          additionalProperties: false,
-          properties: { bookId: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 100 }, description: { type: "string", maxLength: 1000 } },
-        },
+        body: obj(
+          { bookId: { type: "string" }, name: { type: "string", minLength: 1, maxLength: 100 }, description: { type: "string", maxLength: 1000 } },
+          ["bookId", "name"],
+        ),
       },
     },
     async (request, reply) => {
       const { bookId, name, description } = request.body;
       if (!UUID_RE.test(bookId)) return reply.code(404).send({ error: "book_not_found" });
-      const { rows: books } = await query<BookRow>("SELECT * FROM book WHERE id = $1 AND user_id = $2", [bookId, request.user.id]);
+      const { rows: books } = await query<Pick<BookRow, "id" | "sha256" | "title" | "author" | "has_cover">>(
+        "SELECT id, sha256, title, author, has_cover FROM book WHERE id = $1 AND user_id = $2",
+        [bookId, request.user.id],
+      );
       const book = books[0];
       if (!book) return reply.code(404).send({ error: "book_not_found" });
       const { rows } = await query<ClubRow>(
@@ -108,20 +97,22 @@ export async function clubRoutes(app: FastifyInstance) {
   app.get<{ Params: { id: string } }>("/api/clubs/:id", async (request, reply) => {
     const club = await loadMember(request, reply);
     if (!club) return;
-    const { rows: members } = await query<{ id: string; name: string; joined_at: Date; percentage: number | null; updated_at: Date | null; label: string | null }>(
-      `SELECT u.id, u.name, m.joined_at, p.percentage, p.updated_at, p.label
-       FROM club_member m JOIN "user" u ON u.id = m.user_id
-       LEFT JOIN book b ON b.user_id = m.user_id AND b.sha256 = $2
-       LEFT JOIN reading_progress p ON p.book_id = b.id AND p.user_id = m.user_id
-       WHERE m.club_id = $1
-       ORDER BY p.percentage DESC NULLS LAST, m.joined_at`,
-      [club.id, club.sha256],
-    );
-    const { rows: messages } = await query<{ id: string; user_id: string | null; name: string | null; text: string; quote: string | null; locator: string | null; created_at: Date }>(
-      `SELECT x.*, u.name FROM club_message x LEFT JOIN "user" u ON u.id = x.user_id
-       WHERE x.club_id = $1 ORDER BY x.created_at DESC LIMIT 300`,
-      [club.id],
-    );
+    const [{ rows: members }, { rows: messages }] = await Promise.all([
+      query<{ id: string; name: string; joined_at: Date; percentage: number | null; updated_at: Date | null; label: string | null }>(
+        `SELECT u.id, u.name, m.joined_at, p.percentage, p.updated_at, p.label
+         FROM club_member m JOIN "user" u ON u.id = m.user_id
+         LEFT JOIN book b ON b.user_id = m.user_id AND b.sha256 = $2
+         LEFT JOIN reading_progress p ON p.book_id = b.id AND p.user_id = m.user_id
+         WHERE m.club_id = $1
+         ORDER BY p.percentage DESC NULLS LAST, m.joined_at`,
+        [club.id, club.sha256],
+      ),
+      query<{ id: string; user_id: string | null; name: string | null; text: string; quote: string | null; locator: string | null; created_at: Date }>(
+        `SELECT x.*, u.name FROM club_message x LEFT JOIN "user" u ON u.id = x.user_id
+         WHERE x.club_id = $1 ORDER BY x.created_at DESC LIMIT 300`,
+        [club.id],
+      ),
+    ]);
     return {
       ...summary(club, request.user.id),
       inviteToken: club.invite_token,
@@ -152,7 +143,7 @@ export async function clubRoutes(app: FastifyInstance) {
     const club = await loadMember(request, reply);
     if (!club) return;
     if (!club.cover_book_id) return reply.code(404).send({ error: "no_cover" });
-    const { rows } = await query<BookRow>("SELECT * FROM book WHERE id = $1", [club.cover_book_id]);
+    const { rows } = await query<Pick<BookRow, "id" | "has_cover">>("SELECT id, has_cover FROM book WHERE id = $1", [club.cover_book_id]);
     return rows[0] ? sendCover(request, reply, rows[0]) : reply.code(404).send({ error: "no_cover" });
   });
 
@@ -161,12 +152,10 @@ export async function clubRoutes(app: FastifyInstance) {
     {
       config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          required: ["text"],
-          additionalProperties: false,
-          properties: { text: { type: "string", minLength: 1, maxLength: 4000 }, quote: { type: "string", maxLength: 3000 }, locator: { type: "string", maxLength: 2000 } },
-        },
+        body: obj(
+          { text: { type: "string", minLength: 1, maxLength: 4000 }, quote: { type: "string", maxLength: 3000 }, locator: { type: "string", maxLength: 2000 } },
+          ["text"],
+        ),
       },
     },
     async (request, reply) => {
@@ -203,28 +192,28 @@ export async function clubRoutes(app: FastifyInstance) {
   // ---- invites ----
 
   app.get<{ Params: { token: string } }>("/api/clubs/invite/:token", async (request, reply) => {
-    if (!TOKEN_RE.test(request.params.token)) return reply.code(404).send({ error: "not_found" });
-    const { rows } = await query<ClubRow & { members: string; owner_name: string; is_member: boolean; my_book_id: string | null }>(
+    const c = await findOr404<ClubRow & { members: string; owner_name: string; is_member: boolean; my_book_id: string | null }>(
+      reply,
+      TOKEN_RE.test(request.params.token),
       `SELECT c.*, u.name AS owner_name, (SELECT count(*) FROM club_member x WHERE x.club_id = c.id) AS members,
               EXISTS (SELECT 1 FROM club_member x WHERE x.club_id = c.id AND x.user_id = $2) AS is_member,
               (SELECT b.id FROM book b WHERE b.user_id = $2 AND b.sha256 = c.sha256) AS my_book_id
        FROM club c JOIN "user" u ON u.id = c.owner_id WHERE c.invite_token = $1`,
       [request.params.token, request.user.id],
     );
-    const c = rows[0];
-    if (!c) return reply.code(404).send({ error: "not_found" });
+    if (!c) return;
     return { ...summary(c, request.user.id), ownerName: c.owner_name, isMember: c.is_member };
   });
 
   /** Joins a club and adds the book to the new member's library if needed. */
   app.post<{ Params: { token: string } }>("/api/clubs/invite/:token/join", async (request, reply) => {
-    if (!TOKEN_RE.test(request.params.token)) return reply.code(404).send({ error: "not_found" });
-    const { rows } = await query<ClubRow & { owner_name: string }>(
+    const club = await findOr404<ClubRow & { owner_name: string }>(
+      reply,
+      TOKEN_RE.test(request.params.token),
       `SELECT c.*, u.name AS owner_name FROM club c JOIN "user" u ON u.id = c.owner_id WHERE c.invite_token = $1`,
       [request.params.token],
     );
-    const club = rows[0];
-    if (!club) return reply.code(404).send({ error: "not_found" });
+    if (!club) return;
 
     // Any existing copy of the file works as the source.
     const { rows: src } = await query<BookRow>("SELECT * FROM book WHERE sha256 = $1 ORDER BY (id = $2) DESC LIMIT 1", [
@@ -232,17 +221,11 @@ export async function clubRoutes(app: FastifyInstance) {
       club.cover_book_id,
     ]);
     if (!src[0]) return reply.code(410).send({ error: "book_gone" });
-    let bookId: string;
-    try {
-      bookId = (await copyBookToUser(src[0], request.user, club.owner_name)).id;
-    } catch (err) {
-      if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
-      if (err instanceof QuotaExceededError) return reply.code(413).send({ error: "quota_exceeded", usedBytes: err.usedBytes, quotaBytes: err.quotaBytes });
-      throw err;
-    }
+    const copy = await copyOrReply(reply, src[0], request.user, club.owner_name);
+    if (!copy) return;
     const joined = await query("INSERT INTO club_member (club_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [club.id, request.user.id]);
     if (joined.rowCount) await notifyMembers(club.id, "club.member", { clubId: club.id, name: request.user.name });
-    return { clubId: club.id, bookId };
+    return { clubId: club.id, bookId: copy.id };
   });
 
   app.post<{ Params: { id: string } }>("/api/clubs/:id/invite/reset", async (request, reply) => {

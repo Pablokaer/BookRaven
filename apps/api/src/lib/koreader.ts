@@ -33,7 +33,7 @@ export async function partialMd5OfFile(path: string, size: number) {
 }
 
 /** For a stored book (local disk or S3), reading only the samples. */
-export async function partialMd5OfStored(sha256: string, size: number) {
+async function partialMd5OfStored(sha256: string, size: number) {
   const key = bookKey(sha256);
   return partialMd5(async (offset, length) => {
     if (offset === 0) return (await readHead(key, length)) ?? Buffer.alloc(0);

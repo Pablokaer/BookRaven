@@ -2,9 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
+import { obj, UUID_RE } from "../lib/http.js";
 import { loadOwnedBook } from "./books.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLORS = ["yellow", "green", "blue", "pink"];
 
 type HighlightRow = {
@@ -45,18 +44,16 @@ export async function highlightRoutes(app: FastifyInstance) {
     "/api/books/:id/highlights",
     {
       schema: {
-        body: {
-          type: "object",
-          required: ["cfi", "text", "color"],
-          additionalProperties: false,
-          properties: {
+        body: obj(
+          {
             cfi: { type: "string", minLength: 1, maxLength: 2000 },
             text: { type: "string", minLength: 1, maxLength: 10000 },
             color: { type: "string", enum: COLORS },
             label: { type: ["string", "null"], maxLength: 500 },
             note: { type: ["string", "null"], maxLength: 5000 },
           },
-        },
+          ["cfi", "text", "color"],
+        ),
       },
     },
     async (request, reply) => {
@@ -81,12 +78,7 @@ export async function highlightRoutes(app: FastifyInstance) {
     "/api/highlights/:id",
     {
       schema: {
-        body: {
-          type: "object",
-          minProperties: 1,
-          additionalProperties: false,
-          properties: { color: { type: "string", enum: COLORS }, note: { type: ["string", "null"], maxLength: 5000 } },
-        },
+        body: obj({ color: { type: "string", enum: COLORS }, note: { type: ["string", "null"], maxLength: 5000 } }, undefined, { minProperties: 1 }),
       },
     },
     async (request, reply) => {

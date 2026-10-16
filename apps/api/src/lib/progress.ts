@@ -11,8 +11,10 @@ export type ProgressRow = {
   updated_at: Date;
 };
 
+export type Position = { locator: string; percentage: number; updated_at: Date };
+
 /** Progress at or past this point counts as finished (same mark as the app's). */
-export const FINISHED_AT = 0.98;
+const FINISHED_AT = 0.98;
 /** A longer pause between two saved positions is a break, not reading time. */
 const MAX_GAP_SECONDS = 600;
 
@@ -24,7 +26,7 @@ const MAX_GAP_SECONDS = 600;
 async function recordActivity(
   userId: string,
   bookId: string,
-  prev: { locator: string; percentage: number; updated_at: Date } | null,
+  prev: Position | null,
   locator: string,
   percentage: number,
   at: Date,
@@ -58,33 +60,43 @@ export function progressDto(bookId: string, r: ProgressRow) {
 /**
  * Stores a reading position if it is newer than the stored one (last write wins on the
  * time the position was reached, so a device syncing late cannot overwrite newer progress).
- * Returns the new row, or null when a newer position already exists.
+ * `prev` is the stored position when the caller has already read it. Returns the stored row
+ * afterwards and whether this position was applied.
  */
 export async function saveReadingProgress(
   userId: string,
   bookId: string,
   p: { locator: string; percentage: number; label: string | null; deviceId: string; deviceName: string | null; at: Date },
+  prev?: Position | null,
 ) {
   const ts = new Date(Math.min(p.at.getTime(), Date.now())); // never in the future (bad device clocks)
-  const before = await query<{ locator: string; percentage: number; updated_at: Date }>(
-    "SELECT locator, percentage, updated_at FROM reading_progress WHERE user_id = $1 AND book_id = $2",
-    [userId, bookId],
-  );
-  const { rows } = await query<ProgressRow>(
-    `INSERT INTO reading_progress (user_id, book_id, locator, percentage, label, device_id, device_name, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (user_id, book_id) DO UPDATE SET
-       locator = EXCLUDED.locator, percentage = EXCLUDED.percentage, label = EXCLUDED.label,
-       device_id = EXCLUDED.device_id, device_name = EXCLUDED.device_name, updated_at = EXCLUDED.updated_at
-     WHERE reading_progress.updated_at < EXCLUDED.updated_at
-     RETURNING *`,
+  const before =
+    prev !== undefined
+      ? prev
+      : ((await query<Position>("SELECT locator, percentage, updated_at FROM reading_progress WHERE user_id = $1 AND book_id = $2", [userId, bookId])).rows[0] ?? null);
+  // The new row when applied, else the stored one (as of the statement's snapshot).
+  const { rows } = await query<ProgressRow & { applied: boolean }>(
+    `WITH up AS (
+       INSERT INTO reading_progress (user_id, book_id, locator, percentage, label, device_id, device_name, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (user_id, book_id) DO UPDATE SET
+         locator = EXCLUDED.locator, percentage = EXCLUDED.percentage, label = EXCLUDED.label,
+         device_id = EXCLUDED.device_id, device_name = EXCLUDED.device_name, updated_at = EXCLUDED.updated_at
+       WHERE reading_progress.updated_at < EXCLUDED.updated_at
+       RETURNING *
+     )
+     SELECT *, true AS applied FROM up
+     UNION ALL
+     SELECT *, false FROM reading_progress WHERE user_id = $1 AND book_id = $2 AND NOT EXISTS (SELECT 1 FROM up)`,
     [userId, bookId, p.locator, p.percentage, p.label, p.deviceId, p.deviceName, ts],
   );
-  if (rows[0]) {
-    await recordActivity(userId, bookId, before.rows[0] ?? null, p.locator, p.percentage, ts);
-    publish(userId, "progress.updated", progressDto(bookId, rows[0]));
+  // A first position saved concurrently by another device is not in that snapshot.
+  const row = rows[0] ?? { ...(await query<ProgressRow>("SELECT * FROM reading_progress WHERE user_id = $1 AND book_id = $2", [userId, bookId])).rows[0]!, applied: false };
+  if (row.applied) {
+    await recordActivity(userId, bookId, before, p.locator, p.percentage, ts);
+    publish(userId, "progress.updated", progressDto(bookId, row));
     // Fellow book-club members see each other's progress live.
     await notifyClubProgress(userId, bookId).catch(() => {});
   }
-  return rows[0] ?? null;
+  return row;
 }

@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { detectFormat } from "../src/lib/formats.js";
-import { adminSession, api, fakePdf, getApp, signUp, upload } from "./helpers.js";
+import { bookKey, objectSize, removeCover } from "../src/lib/storage.js";
+import { adminSession, api, fakePdf, getApp, ORIGIN, signUp, upload } from "./helpers.js";
+
+const stored = (file: Buffer) => objectSize(bookKey(createHash("sha256").update(file).digest("hex")));
 
 describe("format detection", () => {
   it("uses magic bytes, not just the extension", () => {
@@ -51,12 +55,38 @@ describe("library", () => {
     expect((await upload(u, "e.pdf", fakePdf(), { folderId: "nope" })).statusCode).toBe(400);
   });
 
+  it("serves the cover, answering revalidations without reading it", async () => {
+    const u = await signUp();
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
+    const book = (await upload(u, "c.pdf", fakePdf(), {}, png)).json();
+    expect(book.hasCover).toBe(true);
+    const res = await api(u, "GET", `/api/books/${book.id}/cover`);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/png");
+    expect(res.rawPayload.equals(png)).toBe(true);
+
+    await removeCover(book.id); // gone from storage: only a revalidation still succeeds
+    const a = await getApp();
+    const headers = { origin: ORIGIN, cookie: u.cookie, "if-none-match": res.headers.etag as string };
+    expect((await a.inject({ method: "GET", url: `/api/books/${book.id}/cover`, headers })).statusCode).toBe(304);
+    const missing = await api(u, "GET", `/api/books/${book.id}/cover`);
+    expect([missing.statusCode, missing.json().error]).toEqual([404, "no_cover"]);
+  });
+
   it("enforces the storage quota, except for administrators", async () => {
     const u = await signUp();
     expect((await upload(u, "a.pdf", fakePdf(600 * 1024))).statusCode).toBe(201);
-    const over = await upload(u, "b.pdf", fakePdf(600 * 1024)); // 1.2 MB > 1 MB quota
+    const refused = fakePdf(600 * 1024);
+    const over = await upload(u, "b.pdf", refused); // 1.2 MB > 1 MB quota
     expect(over.statusCode).toBe(413);
     expect(over.json().error).toBe("quota_exceeded");
+    // The file is stored before the quota check, and taken out again when refused...
+    expect(await stored(refused)).toBeNull();
+    // ...unless someone else has it.
+    const shared = fakePdf(600 * 1024);
+    expect((await upload(await signUp(), "s.pdf", shared)).statusCode).toBe(201);
+    expect((await upload(u, "s.pdf", shared)).statusCode).toBe(413);
+    expect(await stored(shared)).toBe(shared.length);
     expect((await api(u, "GET", "/api/me")).json()).toMatchObject({ isAdmin: false, quotaBytes: 1024 * 1024 });
 
     const admin = await adminSession();

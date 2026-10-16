@@ -3,9 +3,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
-import { copyBookToUser } from "../lib/copies.js";
-import { BlockedFileError } from "../lib/moderation.js";
-import { QuotaExceededError } from "../lib/quota.js";
+import { addCopyAndReply } from "../lib/copies.js";
+import { findOr404, TOKEN_RE } from "../lib/http.js";
 import { loadOwnedBook, SELECT_BOOK, sendCover, toBookDto, type BookRow } from "./books.js";
 
 /** Tells the owner's devices that the book's `isShared` flag changed. */
@@ -14,29 +13,16 @@ async function publishBook(userId: string, bookId: string) {
   if (rows[0]) publish(userId, "book.updated", toBookDto(rows[0]));
 }
 
-const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
-
-type SharedRow = BookRow & { user_id: string; owner_name: string | null };
-
 /** The book behind a share token (the owner's copy), or a 404. */
-async function loadShared(request: FastifyRequest<{ Params: { token: string } }>, reply: FastifyReply) {
-  const { token } = request.params;
-  if (!TOKEN_RE.test(token)) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  const { rows } = await query<SharedRow>(
+const loadShared = (request: FastifyRequest<{ Params: { token: string } }>, reply: FastifyReply) =>
+  findOr404<BookRow & { owner_name: string | null }>(
+    reply,
+    TOKEN_RE.test(request.params.token),
     `SELECT b.*, u.name AS owner_name
      FROM book_share s JOIN book b ON b.id = s.book_id JOIN "user" u ON u.id = b.user_id
      WHERE s.token = $1`,
-    [token],
+    [request.params.token],
   );
-  if (!rows[0]) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  return rows[0];
-}
 
 export async function shareRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
@@ -104,24 +90,7 @@ export async function shareRoutes(app: FastifyInstance) {
     { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const src = await loadShared(request, reply);
-      if (!src) return;
-      const userId = request.user.id;
-      let result;
-      try {
-        result = await copyBookToUser(src, request.user, src.owner_name);
-      } catch (err) {
-        if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
-        if (err instanceof QuotaExceededError) {
-          return reply.code(413).send({ error: "quota_exceeded", usedBytes: err.usedBytes, quotaBytes: err.quotaBytes });
-        }
-        throw err;
-      }
-      const { id, created } = result;
-
-      const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [id]);
-      const dto = toBookDto(rows[0]!);
-      if (created) publish(userId, "book.created", dto);
-      return reply.code(created ? 201 : 200).send(dto);
+      if (src) return addCopyAndReply(reply, src, request.user, src.owner_name);
     },
   );
 }

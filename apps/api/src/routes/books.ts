@@ -1,13 +1,13 @@
-import fs from "node:fs/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
+import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { aboutFile } from "../lib/bookAbout.js";
 import { comicAsCbz, CONVERTED_FORMATS } from "../lib/comicConvert.js";
 import { broadcast, publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
 import { isFileBlocked } from "../lib/moderation.js";
-import { QuotaExceededError, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
+import { QuotaExceededError, quotaBody, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "../lib/formats.js";
 import {
   bookKey,
@@ -26,11 +26,11 @@ import {
 
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
 /** Longest blurb kept (some EPUBs carry a whole chapter in their description). */
-export const MAX_DESCRIPTION = 4000;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_DESCRIPTION = 4000;
 
 export type BookRow = {
   id: string;
+  user_id: string;
   title: string;
   author: string | null;
   format: string;
@@ -114,37 +114,22 @@ function normalizeTags(tags: string[]) {
   return out;
 }
 
-function isImage(head: Buffer) {
-  return (
-    (head[0] === 0xff && head[1] === 0xd8) || // JPEG
-    head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) || // PNG
-    (head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP") ||
-    head.toString("latin1", 0, 4) === "GIF8"
-  );
-}
-
+/** Type of a JPEG, PNG, WebP or GIF image from its first bytes; null for anything else. */
 function imageMime(head: Buffer) {
-  if (head[0] === 0xff) return "image/jpeg";
-  if (head[0] === 0x89) return "image/png";
-  if (head.toString("latin1", 0, 4) === "RIFF") return "image/webp";
-  return "image/gif";
+  if (head[0] === 0xff && head[1] === 0xd8) return "image/jpeg";
+  if (head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+  if (head.toString("latin1", 0, 4) === "GIF8") return "image/gif";
+  return null;
 }
 
-export async function loadOwnedBook(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-  const { id } = request.params;
-  if (!UUID_RE.test(id)) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1 AND b.user_id = $2`, [
-    id,
-    request.user.id,
-  ]);
-  if (!rows[0]) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  return rows[0];
+export const loadOwnedBook = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+  findOr404<BookRow>(reply, UUID_RE.test(request.params.id), `${SELECT_BOOK} WHERE b.id = $1 AND b.user_id = $2`, [request.params.id, request.user.id]);
+
+/** A book as the app sees it, read again (after a change). */
+export async function bookDto(id: string) {
+  const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [id]);
+  return toBookDto(rows[0]!);
 }
 
 /**
@@ -161,9 +146,9 @@ export async function sendFile(
   reply.header("Accept-Ranges", "bytes");
   reply.header("ETag", `"${etag}"`);
   reply.header("Cache-Control", "private, max-age=31536000, immutable");
-  reply.header("Content-Type", mime);
   // Stored objects never change under a key, so a matching ETag needs no storage lookup.
   if (request.headers["if-none-match"] === `"${etag}"`) return reply.code(304).send();
+  reply.header("Content-Type", mime);
 
   const size = await objectSize(key);
   if (size === null) return reply.code(404).send({ error: "file_missing" });
@@ -200,12 +185,15 @@ export async function sendFile(
 }
 
 /** Serves a book's stored cover image. */
-export async function sendCover(request: FastifyRequest, reply: FastifyReply, book: BookRow) {
+export async function sendCover(request: FastifyRequest, reply: FastifyReply, book: Pick<BookRow, "id" | "has_cover">) {
   if (!book.has_cover) return reply.code(404).send({ error: "no_cover" });
   const key = coverKey(book.id);
+  const etag = `cover-${book.id}`;
+  // A book's cover never changes either: sendFile answers a revalidation before the type is needed.
+  if (request.headers["if-none-match"] === `"${etag}"`) return sendFile(request, reply, key, "", etag);
   const head = await readHead(key, 16);
   if (!head) return reply.code(404).send({ error: "no_cover" });
-  return sendFile(request, reply, key, imageMime(head), `cover-${book.id}`);
+  return sendFile(request, reply, key, imageMime(head) ?? "image/gif", etag);
 }
 
 export async function bookRoutes(app: FastifyInstance) {
@@ -238,12 +226,11 @@ export async function bookRoutes(app: FastifyInstance) {
   app.post("/api/books", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     // Refuse early, before streaming the file, when the account is already full or the
     // request is clearly larger than what is left (the cover adds at most a few MB).
-    const quota = await quotaFor(request.user);
+    const [quota, used] = await Promise.all([quotaFor(request.user), storageUsed(request.user.id)]);
     if (quota !== null) {
-      const used = await storageUsed(request.user.id);
       const incoming = Number(request.headers["content-length"] ?? 0);
       if (used >= quota || incoming > quota - used + MAX_COVER_BYTES + 1024 * 1024) {
-        return reply.code(413).send({ error: "quota_exceeded", usedBytes: used, quotaBytes: quota });
+        return reply.code(413).send(quotaBody({ usedBytes: used, quotaBytes: quota }));
       }
     }
 
@@ -293,16 +280,18 @@ export async function bookRoutes(app: FastifyInstance) {
         if (!owned.rowCount) return reply.code(400).send({ error: "invalid_folder" });
       }
 
-      const coverOk = cover && !cover.truncated && cover.size <= MAX_COVER_BYTES && isImage(cover.head);
+      const coverOk = cover && !cover.truncated && cover.size <= MAX_COVER_BYTES && imageMime(cover.head);
       const fallbackTitle = book.filename.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim() || "Untitled";
 
       const upload = book;
       const koreaderMd5 = await partialMd5OfFile(upload.tmpPath, upload.size);
+      // Stored before the transaction, so no pooled connection waits on a long transfer (S3).
+      // Content-addressed: when the book can't be added, the file goes again unless another book has it.
+      const stored = await commitBookFile(upload);
       let id: string;
       try {
         // Exact check with the real size; the insert happens under the same per-user lock.
         id = await withQuota(request.user, upload.size, async (client) => {
-          await commitBookFile(upload);
           const { rows } = await client.query<{ id: string }>(
             `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5, folder_id, description)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
@@ -325,9 +314,10 @@ export async function bookRoutes(app: FastifyInstance) {
           return rows[0]!.id;
         });
       } catch (err) {
-        if (err instanceof QuotaExceededError) {
-          return reply.code(413).send({ error: "quota_exceeded", usedBytes: err.usedBytes, quotaBytes: err.quotaBytes });
+        if (stored && !(await query("SELECT 1 FROM book WHERE sha256 = $1 LIMIT 1", [upload.sha256])).rowCount) {
+          await removeBookFile(upload.sha256).catch(() => {});
         }
+        if (err instanceof QuotaExceededError) return reply.code(413).send(quotaBody(err));
         throw err;
       }
       if (coverOk) {
@@ -338,13 +328,12 @@ export async function bookRoutes(app: FastifyInstance) {
       // Make the CBZ copy readers stream from now, so the first open doesn't wait for it.
       if (CONVERTED_FORMATS.has(format)) void comicAsCbz(upload.sha256).catch((err) => request.log.warn({ err }, "comic conversion failed"));
 
-      const created = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [id]);
-      const dto = toBookDto(created.rows[0]!);
+      const dto = await bookDto(id);
       publish(request.user.id, "book.created", dto);
       return reply.code(201).send(dto);
     } finally {
       // Clean up whatever was not moved into permanent storage.
-      if (book) await fs.rm(book.tmpPath, { force: true });
+      await removeTemp(book?.tmpPath);
       await removeTemp(cover?.tmpPath);
     }
   });
@@ -353,18 +342,14 @@ export async function bookRoutes(app: FastifyInstance) {
     "/api/books/:id",
     {
       schema: {
-        body: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            title: { type: "string", minLength: 1, maxLength: 500 },
-            author: { type: ["string", "null"], maxLength: 500 },
-            folderId: { type: ["string", "null"], maxLength: 36 },
-            tags: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 40 } },
-            favorite: { type: "boolean" },
-            isPublic: { type: "boolean" },
-          },
-        },
+        body: obj({
+          title: { type: "string", minLength: 1, maxLength: 500 },
+          author: { type: ["string", "null"], maxLength: 500 },
+          folderId: { type: ["string", "null"], maxLength: 36 },
+          tags: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 40 } },
+          favorite: { type: "boolean" },
+          isPublic: { type: "boolean" },
+        }),
       },
     },
     async (request, reply) => {
@@ -401,8 +386,7 @@ export async function bookRoutes(app: FastifyInstance) {
           isPublic ?? null,
         ],
       );
-      const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [book.id]);
-      const dto = toBookDto(rows[0]!);
+      const dto = await bookDto(book.id);
       publish(request.user.id, "book.updated", dto);
       if (isPublic !== undefined && isPublic !== book.is_public) broadcast("public.changed", { bookId: book.id });
       return dto;
@@ -432,14 +416,13 @@ export async function bookRoutes(app: FastifyInstance) {
     { config: { rateLimit: { max: 3000, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const { id } = request.params;
-      const { rows } = UUID_RE.test(id)
-        ? await query<Pick<BookRow, "sha256" | "format" | "mime_type" | "original_filename">>(
-            "SELECT sha256, format, mime_type, original_filename FROM book WHERE id = $1 AND user_id = $2",
-            [id, request.user.id],
-          )
-        : { rows: [] };
-      const book = rows[0];
-      if (!book) return reply.code(404).send({ error: "not_found" });
+      const book = await findOr404<Pick<BookRow, "sha256" | "format" | "mime_type" | "original_filename">>(
+        reply,
+        UUID_RE.test(id),
+        "SELECT sha256, format, mime_type, original_filename FROM book WHERE id = $1 AND user_id = $2",
+        [id, request.user.id],
+      );
+      if (!book) return;
 
       let key = bookKey(book.sha256);
       let { mime_type: mime, original_filename: filename } = book;

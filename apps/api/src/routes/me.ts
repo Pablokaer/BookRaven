@@ -7,9 +7,8 @@ export async function meRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
 
   /** The signed-in account's role and storage use. `quotaBytes` is null when unlimited. */
-  app.get("/api/me", async (request) => ({
-    isAdmin: isAdmin(request.user),
-    usedBytes: await storageUsed(request.user.id),
-    quotaBytes: await quotaFor(request.user),
-  }));
+  app.get("/api/me", async (request) => {
+    const [usedBytes, quotaBytes] = await Promise.all([storageUsed(request.user.id), quotaFor(request.user)]);
+    return { isAdmin: isAdmin(request.user), usedBytes, quotaBytes };
+  });
 }

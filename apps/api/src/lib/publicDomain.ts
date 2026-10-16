@@ -51,7 +51,8 @@ export function cleanTitle(title: string) {
     .trim();
 }
 
-const normalize = (s: string) =>
+/** Lower case, without accents and punctuation. */
+export const normalize = (s: string) =>
   s
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -112,15 +113,13 @@ export function tagsFrom(b: Pick<GutendexBook, "bookshelves">) {
   return [...new Set(tags)].slice(0, 5);
 }
 
-export const LANGUAGE_NAMES: Record<string, string> = { en: "English", pt: "Português" };
-
 // ---- Gutenberg's own catalog (pg_catalog.csv) ----
 
 /** A row of Gutenberg's catalog file: enough to choose candidates without asking Gutendex. */
 export type CatalogEntry = Pick<GutendexBook, "id" | "title" | "languages" | "subjects" | "bookshelves" | "authors" | "translators">;
 
 /** RFC 4180 CSV: quoted fields may hold commas, doubled quotes and line breaks. */
-export function parseCsv(text: string): string[][] {
+function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -161,7 +160,7 @@ function year(part: string | undefined) {
  * People without a role are authors; other roles than translator (editor, illustrator…) are ignored,
  * as Gutendex does.
  */
-export function catalogPeople(field: string) {
+function catalogPeople(field: string) {
   const authors: Person[] = [];
   const translators: Person[] = [];
   for (const raw of field.split(";").map((s) => s.trim()).filter(Boolean)) {

@@ -37,9 +37,9 @@ export function readZipEntry(zip: Buffer, matches: (name: string) => boolean): B
   return null;
 }
 
-const decode = (s: string) =>
+/** XML/HTML text with its entities decoded, trimmed. */
+export const decodeEntities = (s: string) =>
   s
-    .replace(/<[^>]+>/g, "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -47,6 +47,8 @@ const decode = (s: string) =>
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&amp;/g, "&")
     .trim();
+
+const decode = (s: string) => decodeEntities(s.replace(/<[^>]+>/g, ""));
 
 export type EpubPeople = { authors: string[]; translators: string[]; language: string | null };
 

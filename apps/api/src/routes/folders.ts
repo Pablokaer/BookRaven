@@ -1,23 +1,23 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { obj, UUID_RE } from "../lib/http.js";
 
 type FolderRow = { id: string; name: string; created_at: Date };
 
 const toDto = (r: FolderRow) => ({ id: r.id, name: r.name, createdAt: r.created_at.toISOString() });
 
-const nameSchema = {
-  type: "object",
-  required: ["name"],
-  additionalProperties: false,
-  properties: { name: { type: "string", minLength: 1, maxLength: 80 } },
-} as const;
+const nameSchema = obj({ name: { type: "string", minLength: 1, maxLength: 80 } }, ["name"]);
 
-function isUniqueViolation(err: unknown) {
-  return (err as { code?: string })?.code === "23505";
+/** Runs `fn`, answering 409 when the user already has a folder with that name. */
+async function unlessDuplicate<T>(reply: FastifyReply, fn: () => Promise<T>) {
+  try {
+    return await fn();
+  } catch (err) {
+    if ((err as { code?: string })?.code === "23505") return reply.code(409).send({ error: "duplicate" });
+    throw err;
+  }
 }
 
 export async function folderRoutes(app: FastifyInstance) {
@@ -33,7 +33,7 @@ export async function folderRoutes(app: FastifyInstance) {
   app.post<{ Body: { name: string } }>("/api/folders", { schema: { body: nameSchema } }, async (request, reply) => {
     const name = request.body.name.trim();
     if (!name) return reply.code(400).send({ error: "invalid_name" });
-    try {
+    return unlessDuplicate(reply, async () => {
       const { rows } = await query<FolderRow>("INSERT INTO folder (user_id, name) VALUES ($1, $2) RETURNING *", [
         request.user.id,
         name,
@@ -41,10 +41,7 @@ export async function folderRoutes(app: FastifyInstance) {
       const dto = toDto(rows[0]!);
       publish(request.user.id, "folder.created", dto);
       return reply.code(201).send(dto);
-    } catch (err) {
-      if (isUniqueViolation(err)) return reply.code(409).send({ error: "duplicate" });
-      throw err;
-    }
+    });
   });
 
   app.patch<{ Params: { id: string }; Body: { name: string } }>(
@@ -54,7 +51,7 @@ export async function folderRoutes(app: FastifyInstance) {
       const name = request.body.name.trim();
       if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
       if (!name) return reply.code(400).send({ error: "invalid_name" });
-      try {
+      return unlessDuplicate(reply, async () => {
         const { rows } = await query<FolderRow>(
           "UPDATE folder SET name = $1 WHERE id = $2 AND user_id = $3 RETURNING *",
           [name, request.params.id, request.user.id],
@@ -63,10 +60,7 @@ export async function folderRoutes(app: FastifyInstance) {
         const dto = toDto(rows[0]);
         publish(request.user.id, "folder.updated", dto);
         return dto;
-      } catch (err) {
-        if (isUniqueViolation(err)) return reply.code(409).send({ error: "duplicate" });
-        throw err;
-      }
+      });
     },
   );
 
