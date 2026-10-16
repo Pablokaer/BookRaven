@@ -12,7 +12,6 @@ import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
 import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage, UploadsPage } from "./pages/LibraryViews";
-import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 
 /** Loaders of the pages kept out of the first download, fetched in the background once the app is idle. */
@@ -43,6 +42,13 @@ const StatsPage = lazyPage(() => import("./pages/StatsPage"), "StatsPage");
 const SharePage = lazyPage(() => import("./pages/SharePage"), "SharePage");
 const SharedCollectionPage = lazyPage(() => import("./pages/SharePage"), "SharedCollectionPage");
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })));
+
+// The front page is only for signed-out visitors on the web: the Android app never loads it, and
+// signed-in users only fetch it in the background when they open the site at "/", where it starts
+// downloading alongside the session check so a visitor doesn't wait for it afterwards.
+const loadLandingPage = () => import("./pages/LandingPage");
+if (!isNative && window.location.pathname === "/") void loadLandingPage().catch(() => {});
+const LandingPage = lazy(() => loadLandingPage().then((m) => ({ default: m.LandingPage })));
 
 // The reader (pdf.js, foliate-js) is loaded only when a book is opened.
 const ReaderPage = lazy(() => import("./pages/ReaderPage").then((m) => ({ default: m.ReaderPage })));
@@ -119,7 +125,18 @@ function SignedOutApp({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <BrowserRouter>
       <Routes>
-        <Route index element={isNative ? <LoginPage onSignedIn={onSignedIn} /> : <LandingPage />} />
+        <Route
+          index
+          element={
+            isNative ? (
+              <LoginPage onSignedIn={onSignedIn} />
+            ) : (
+              <Suspense fallback={<AppLoading />}>
+                <LandingPage />
+              </Suspense>
+            )
+          }
+        />
         <Route path="login" element={<AuthRoute mode="signin" onSignedIn={onSignedIn} />} />
         <Route path="signup" element={<AuthRoute mode="signup" onSignedIn={onSignedIn} />} />
         <Route path="*" element={<LoginPage onSignedIn={onSignedIn} homeLink={!isNative} />} />

@@ -170,7 +170,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
 
   return (
     <div
-      className="flex min-h-dvh"
+      className="app-backdrop flex min-h-dvh"
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();

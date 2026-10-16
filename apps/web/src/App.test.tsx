@@ -74,6 +74,8 @@ vi.mock("./lib/events", async (importOriginal) => ({
 }));
 
 const { App } = await import("./App");
+// The landing page is lazy: loaded up front here, so it renders within the same act() as the rest.
+await import("./pages/LandingPage");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
