@@ -6,7 +6,7 @@ import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { broadcast, publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
-import { log } from "../lib/log.js";
+import { audit, log } from "../lib/log.js";
 import { quotaOf } from "../lib/quota.js";
 import { removeBookFile, removeCover } from "../lib/storage.js";
 import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
@@ -145,6 +145,7 @@ export async function adminRoutes(app: FastifyInstance) {
         // Signing them out everywhere makes the block immediate.
         if (blocked) await query(`DELETE FROM session WHERE "userId" = $1`, [target.id]);
       }
+      audit("admin.user_updated", { adminId: request.user.id, userId: target.id, quotaMb, blocked, ip: request.ip });
       return reply.code(204).send();
     },
   );
@@ -160,6 +161,7 @@ export async function adminRoutes(app: FastifyInstance) {
     ]);
     if (!res.rowCount) return reply.code(400).send({ error: "no_password_account" });
     await query(`DELETE FROM session WHERE "userId" = $1`, [target.id]);
+    audit("admin.password_reset", { adminId: request.user.id, userId: target.id, ip: request.ip });
     return { password };
   });
 
@@ -175,6 +177,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await deleteBooks(books);
     await query(`DELETE FROM "user" WHERE id = $1`, [target.id]);
     if (books.some((b) => b.is_public)) broadcast("public.changed", {});
+    audit("admin.user_deleted", { adminId: request.user.id, userId: target.id, books: books.length, ip: request.ip });
     return reply.code(204).send();
   });
 
@@ -268,6 +271,14 @@ export async function adminRoutes(app: FastifyInstance) {
        WHERE sha256 = $1 AND status = 'open'`,
       [report.sha256, action === "dismiss" ? "dismissed" : "actioned", note?.trim() || action, request.user.id],
       );
+      audit("admin.report_resolved", {
+        adminId: request.user.id,
+        reportId: request.params.id,
+        sha256: report.sha256,
+        action,
+        removedCopies: removed,
+        ip: request.ip,
+      });
       return { action, removedCopies: removed };
     },
   );
@@ -280,7 +291,8 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { sha: string } }>("/api/admin/blocked-files/:sha", async (request, reply) => {
-    await query("DELETE FROM blocked_file WHERE sha256 = $1", [request.params.sha]);
+    const { rowCount } = await query("DELETE FROM blocked_file WHERE sha256 = $1", [request.params.sha]);
+    if (rowCount) audit("admin.file_unblocked", { adminId: request.user.id, sha256: request.params.sha, ip: request.ip });
     return reply.code(204).send();
   });
 }
