@@ -151,6 +151,23 @@ body {
   }
 }
 
+/* Book cards and rows in long lists: the browser skips laying out and drawing the ones off
+   screen (and remembers each one's real size once seen, so scrolling doesn't jump). Skipping
+   clips what a card paints outside its box (the hover glow, the raised cover, focus rings), so
+   it is only used where the clip can be widened to let those show. */
+@supports (overflow-clip-margin: 1px) {
+  .card-offscreen {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 440px;
+    overflow-clip-margin: 32px;
+  }
+  .row-offscreen {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 88px;
+    overflow-clip-margin: 8px;
+  }
+}
+
 /* EPUB reader: the page (or two-page spread) is centered; the host paints the area around it. */
 .epub-host {
   container-type: size;

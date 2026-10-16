@@ -1,4 +1,5 @@
 import { BookOpen, Globe } from "lucide-react";
+import { memo } from "react";
 import { Link } from "react-router";
 import type { Book } from "../../lib/api";
 import { isFinished, readingStatus } from "../../lib/bookStats";
@@ -7,11 +8,14 @@ import { BookMenu, FavoriteButton, ShareButton } from "./BookActions";
 import { BookCover, FormatBadge } from "./BookCover";
 import { ProgressBar } from "./ProgressBar";
 
-/** Grid card: cover, title, author, progress and actions. */
-export function BookCard({ book }: { book: Book }) {
+/**
+ * Grid card: cover, title, author, progress and actions. Memoized: a library change (a reading
+ * position from another device…) re-renders only the cards of the books that changed.
+ */
+export const BookCard = memo(function BookCard({ book }: { book: Book }) {
   const p = book.progress;
   return (
-    <article className="group flex animate-rise flex-col">
+    <article className="card-offscreen group flex animate-rise flex-col">
       {/* The cover opens the book's page; "Read" below opens the reader. */}
       <Link
         to={`/books/${book.id}`}
@@ -68,13 +72,13 @@ export function BookCard({ book }: { book: Book }) {
       </div>
     </article>
   );
-}
+});
 
 /** List row: same information, laid out horizontally. */
-export function BookRow({ book }: { book: Book }) {
+export const BookRow = memo(function BookRow({ book }: { book: Book }) {
   const p = book.progress;
   return (
-    <article className="group flex animate-rise items-center gap-4 rounded-xl border border-transparent px-3 py-2.5 transition hover:border-line hover:bg-card/70">
+    <article className="row-offscreen group flex animate-rise items-center gap-4 rounded-xl border border-transparent px-3 py-2.5 transition hover:border-line hover:bg-card/70">
       <Link to={`/books/${book.id}`} aria-label={`About ${book.title}`} className="shrink-0">
         <BookCover book={book} size="sm" className="w-11" />
       </Link>
@@ -103,4 +107,4 @@ export function BookRow({ book }: { book: Book }) {
       </div>
     </article>
   );
-}
+});

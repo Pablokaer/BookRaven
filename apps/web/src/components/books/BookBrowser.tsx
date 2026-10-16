@@ -2,7 +2,7 @@ import { LayoutGrid, List, Tag, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import type { Book } from "../../lib/api";
 import { byAdded } from "../../lib/bookStats";
-import { isComicFormat } from "../../lib/comics";
+import { isComicFormat } from "../../lib/comicFormats";
 import { matchesQuery, useLibrary } from "../../lib/libraryStore";
 import { Menu } from "../ui/Menu";
 import { BookCard, BookRow } from "./BookCard";

@@ -50,12 +50,12 @@ function sortBooks(books: Book[]) {
   return [...books].sort((a, b) => t(b) - t(a));
 }
 
-type LibraryCtx = {
+/** What the library knows: changes whenever the books, collections, activity… change. */
+type LibraryData = {
   books: Book[] | null;
   folders: Folder[];
   /** Role and storage use of the signed-in account (null until loaded). */
   me: Me | null;
-  refreshMe: () => void;
   /** Bumped whenever the public library changes anywhere, so its page can reload. */
   publicVersion: number;
   /** Same for book requests. */
@@ -64,37 +64,58 @@ type LibraryCtx = {
   clubsVersion: number;
   /** False until the collections list has loaded once. */
   foldersReady: boolean;
-  uploads: UploadItem[];
   activity: Activity[];
   unreadActivity: number;
-  markActivityRead: () => void;
   /** Global search from the top bar. */
   query: string;
+  /** Dialogs hosted by the app shell. */
+  sharing: Book | null;
+  organizing: Book | null;
+};
+
+/**
+ * What can be done with the library. These never change, so components that only act on books
+ * (the buttons on every book card) don't re-render when the library does.
+ */
+export type LibraryActions = {
+  refreshMe: () => void;
+  markActivityRead: () => void;
   setQuery: (q: string) => void;
 
   /** Opens the file picker; the files go into `folderId` when given. */
   pickFiles: (folderId?: string | null) => void;
   /** Queues files for upload (into a collection when `folderId` is given), optionally with known metadata and tags. */
   upload: (files: FileList | (File | UploadEntry)[], folderId?: string | null) => void;
-  /** Removes finished uploads from the list. */
-  clearUploads: () => void;
   removeBook: (book: Book) => Promise<void>;
   toggleFavorite: (book: Book) => Promise<void>;
   replaceBook: (book: Book) => void;
+  /** The library's current copy of a book, read without subscribing to library changes. */
+  getBook: (id: string) => Book | undefined;
 
   /** Creates a collection: asks for its name unless one is given (an existing one with that name is reused). */
   addFolder: (name?: string) => Promise<Folder | null>;
   renameFolderPrompt: (folder: Folder) => Promise<void>;
   removeFolder: (folder: Folder) => Promise<boolean>;
 
-  /** Dialogs hosted by the app shell. */
-  sharing: Book | null;
-  organizing: Book | null;
   openShare: (book: Book | null) => void;
   openOrganize: (book: Book | null) => void;
 };
 
+type LibraryCtx = LibraryData & LibraryActions;
+
+/** The upload list, apart from the rest: it changes many times a second while files are sent. */
+type UploadsCtx = {
+  uploads: UploadItem[];
+  /** Removes finished uploads from the list. */
+  clearUploads: () => void;
+};
+
 const Ctx = createContext<LibraryCtx | null>(null);
+const ActionsCtx = createContext<LibraryActions | null>(null);
+const UploadsContext = createContext<UploadsCtx | null>(null);
+
+/** Upload progress is shown at most this often (the browser reports it many times a second). */
+const PROGRESS_INTERVAL = 100;
 
 export function LibraryProvider({ children, userId }: { children: ReactNode; userId: string }) {
   // Hydrate instantly from the last snapshot kept in localStorage (keyed by user), so a cold
@@ -245,9 +266,42 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     };
   }, [refresh, refreshMe, log]);
 
-  const patchUpload = useCallback((key: string, patch: Partial<UploadItem>) => {
-    setUploads((u) => u.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  // Progress updates wait and are applied together, once every PROGRESS_INTERVAL; any other
+  // change (a new state: processing, done, failed…) applies at once, after the waiting ones.
+  const pendingPatches = useRef(new Map<string, Partial<UploadItem>>());
+  const patchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const flushPatches = useCallback(() => {
+    clearTimeout(patchTimer.current);
+    patchTimer.current = undefined;
+    const pending = pendingPatches.current;
+    if (!pending.size) return;
+    const patches = new Map(pending);
+    pending.clear();
+    setUploads((u) => u.map((x) => (patches.has(x.key) ? { ...x, ...patches.get(x.key) } : x)));
   }, []);
+  useEffect(
+    () => () => {
+      clearTimeout(patchTimer.current);
+      patchTimer.current = undefined;
+    },
+    [],
+  );
+
+  const patchUpload = useCallback(
+    (key: string, patch: Partial<UploadItem>) => {
+      pendingPatches.current.set(key, { ...pendingPatches.current.get(key), ...patch });
+      flushPatches();
+    },
+    [flushPatches],
+  );
+
+  const patchUploadProgress = useCallback(
+    (key: string, patch: Partial<UploadItem>) => {
+      pendingPatches.current.set(key, { ...pendingPatches.current.get(key), ...patch });
+      patchTimer.current ??= setTimeout(flushPatches, PROGRESS_INTERVAL);
+    },
+    [flushPatches],
+  );
 
   /** Sends queued files one at a time; files dropped meanwhile join the same queue. */
   const runUploads = useCallback(async () => {
@@ -261,7 +315,8 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
           meta,
           onPreparing: () => patchUpload(key, { status: "preparing" }),
           // At 100% the server still stores the file and reads its metadata.
-          onProgress: (progress) => patchUpload(key, { status: progress >= 1 ? "processing" : "uploading", progress }),
+          onProgress: (progress) =>
+            progress >= 1 ? patchUpload(key, { status: "processing", progress }) : patchUploadProgress(key, { status: "uploading", progress }),
         });
         if (result.ok) {
           let book = result.book;
@@ -294,7 +349,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
       uploading.current = false;
       refreshMe();
     }
-  }, [log, patchUpload, refreshMe]);
+  }, [log, patchUpload, patchUploadProgress, refreshMe]);
 
   const upload = useCallback(
     (files: FileList | (File | UploadEntry)[], folderId: string | null = null) => {
@@ -389,45 +444,60 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     return true;
   }, []);
 
+  const markActivityRead = useCallback(() => setReadAt(Date.now()), []);
+  const pickFiles = useCallback((folderId?: string | null) => {
+    pickFolderRef.current = folderId ?? null;
+    inputRef.current?.click();
+  }, []);
+  const getBook = useCallback((id: string) => booksRef.current?.find((b) => b.id === id), []);
+
+  const actions = useMemo<LibraryActions>(
+    () => ({
+      refreshMe,
+      markActivityRead,
+      setQuery,
+      pickFiles,
+      upload,
+      removeBook,
+      toggleFavorite,
+      replaceBook,
+      getBook,
+      addFolder,
+      renameFolderPrompt,
+      removeFolder,
+      openShare: setSharing,
+      openOrganize: setOrganizing,
+    }),
+    [refreshMe, markActivityRead, pickFiles, upload, removeBook, toggleFavorite, replaceBook, getBook, addFolder, renameFolderPrompt, removeFolder],
+  );
+
+  const unreadActivity = useMemo(() => activity.filter((a) => a.at > readAt).length, [activity, readAt]);
   const value = useMemo<LibraryCtx>(
     () => ({
+      ...actions,
       books,
       folders,
       me,
-      refreshMe,
       publicVersion,
       requestsVersion,
       clubsVersion,
       foldersReady,
-      uploads,
       activity,
-      unreadActivity: activity.filter((a) => a.at > readAt).length,
-      markActivityRead: () => setReadAt(Date.now()),
+      unreadActivity,
       query,
-      setQuery,
-      pickFiles: (folderId?: string | null) => {
-        pickFolderRef.current = folderId ?? null;
-        inputRef.current?.click();
-      },
-      upload,
-      clearUploads,
-      removeBook,
-      toggleFavorite,
-      replaceBook,
-      addFolder,
-      renameFolderPrompt,
-      removeFolder,
       sharing,
       organizing,
-      openShare: setSharing,
-      openOrganize: setOrganizing,
     }),
-    [books, folders, me, refreshMe, publicVersion, requestsVersion, clubsVersion, foldersReady, uploads, activity, readAt, query, upload, clearUploads, removeBook, toggleFavorite, replaceBook, addFolder, renameFolderPrompt, removeFolder, sharing, organizing],
+    [actions, books, folders, me, publicVersion, requestsVersion, clubsVersion, foldersReady, activity, unreadActivity, query, sharing, organizing],
   );
 
+  const uploadsValue = useMemo<UploadsCtx>(() => ({ uploads, clearUploads }), [uploads, clearUploads]);
+
   return (
-    <Ctx.Provider value={value}>
-      {children}
+    <ActionsCtx.Provider value={actions}>
+      <Ctx.Provider value={value}>
+        <UploadsContext.Provider value={uploadsValue}>{children}</UploadsContext.Provider>
+      </Ctx.Provider>
       <input
         ref={inputRef}
         type="file"
@@ -439,13 +509,28 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
           e.target.value = "";
         }}
       />
-    </Ctx.Provider>
+    </ActionsCtx.Provider>
   );
 }
 
+/** The library's data and actions; re-renders whenever the library changes. */
 export function useLibrary() {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("useLibrary outside LibraryProvider");
+  return ctx;
+}
+
+/** The library's actions only: never re-renders on library changes. */
+export function useLibraryActions() {
+  const ctx = useContext(ActionsCtx);
+  if (!ctx) throw new Error("useLibraryActions outside LibraryProvider");
+  return ctx;
+}
+
+/** Files being uploaded (for the upload panel). */
+export function useUploads() {
+  const ctx = useContext(UploadsContext);
+  if (!ctx) throw new Error("useUploads outside LibraryProvider");
   return ctx;
 }
 

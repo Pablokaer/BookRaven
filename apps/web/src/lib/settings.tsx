@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiJson } from "./api";
 import { deviceId } from "./device";
 import { onServerEvent } from "./events";
@@ -142,7 +142,8 @@ export function SettingsProvider({ children, enabled }: { children: ReactNode; e
     [],
   );
 
-  return <SettingsContext.Provider value={{ settings, update }}>{children}</SettingsContext.Provider>;
+  const value = useMemo(() => ({ settings, update }), [settings, update]);
+  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 
 export function useSettings() {

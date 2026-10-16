@@ -25,18 +25,16 @@ import {
   type Stroke,
 } from "../lib/ink";
 import { getBook } from "../lib/books";
-import { useLibrary } from "../lib/libraryStore";
+import { useLibraryActions } from "../lib/libraryStore";
 import { listClubs, type ClubSummary } from "../lib/clubs";
-import { isComicFormat } from "../lib/comics";
+import { isComicFormat } from "../lib/comicFormats";
 import { deviceId } from "../lib/device";
 import { onServerEvent } from "../lib/events";
 import { percent, timeAgo } from "../lib/format";
 import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, listHighlights, updateHighlight } from "../lib/highlights";
 import { fetchProgress, flushProgress, getLocalPending, lastLocalUpdate, saveProgress, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
-import { ComicScroller } from "../reader/ComicScroller";
 import { DiscussDialog } from "../reader/DiscussDialog";
-import { EpubReader } from "../reader/EpubReader";
 import { HighlightMenu } from "../reader/HighlightMenu";
 import { LookupCard } from "../reader/LookupCard";
 import { NoteDialog } from "../reader/NoteDialog";
@@ -47,8 +45,10 @@ import { SettingsPanel } from "../reader/SettingsPanel";
 import { TocPanel } from "../reader/TocPanel";
 import type { ReaderHandle, TapZone, TextSelection } from "../reader/types";
 
-// pdf.js is big: only PDFs load it.
+// Each reader loads with the first book that needs it (pdf.js, for one, is big: only PDFs load it).
 const PdfReader = lazy(() => import("../reader/PdfReader").then((m) => ({ default: m.PdfReader })));
+const EpubReader = lazy(() => import("../reader/EpubReader").then((m) => ({ default: m.EpubReader })));
+const ComicScroller = lazy(() => import("../reader/ComicScroller").then((m) => ({ default: m.ComicScroller })));
 
 type Remote = Pick<Progress, "locator" | "percentage" | "label" | "deviceName" | "updatedAt">;
 
@@ -149,16 +149,16 @@ export function ReaderPage() {
   const reader = useRef<ReaderHandle>(null);
   const positionRef = useRef<Position | null>(null);
 
-  const { books: library } = useLibrary();
-  const libraryRef = useRef(library);
-  libraryRef.current = library;
+  // Read once when the book opens: subscribing to the library would re-render the whole reader
+  // on every change to it (reading positions from other devices…).
+  const { getBook: libraryBook } = useLibraryActions();
   /** The server's progress, when the book opened from the library's copy (it may be newer). */
   const [serverProgress, setServerProgress] = useState<Progress | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     // The library already has the book: open it right away (also offline) and check the server meanwhile.
-    const known = libraryRef.current?.find((b) => b.id === id) ?? null;
+    const known = libraryBook(id) ?? null;
     if (known) {
       setStartLocator(initialLocator(known));
       setBook(known);
@@ -178,7 +178,7 @@ export function ReaderPage() {
       cancelled = true;
       flushProgress();
     };
-  }, [id]);
+  }, [id, libraryBook]);
 
   useEffect(() => {
     listClubs(id)

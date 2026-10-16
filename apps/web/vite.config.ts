@@ -28,6 +28,23 @@ export default defineConfig(({ mode }) => {
     },
     // foliate-js is plain ES modules with relative dynamic imports; let Vite bundle it as-is.
     optimizeDeps: { exclude: ["foliate-js"] },
-    build: { target: "es2022", chunkSizeWarningLimit: 2000 },
+    build: {
+      target: "es2022",
+      chunkSizeWarningLimit: 2000,
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              // React and the router change far less often than the app: in a chunk of their own,
+              // browsers keep them cached across deploys that only change the app's code.
+              { name: "react", test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/, priority: 2 },
+              // Everything the first screen needs in one file, instead of a dozen small ones shared
+              // with the pages and the reader that load later.
+              { name: "app", tags: ["$initial"], priority: 1 },
+            ],
+          },
+        },
+      },
+    },
   };
 });

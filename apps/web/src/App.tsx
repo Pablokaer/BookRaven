@@ -1,11 +1,10 @@
 import { App as CapApp } from "@capacitor/app";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { isNative } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
 import { authClient } from "./lib/auth";
 import { installBookmarkFlushers } from "./lib/bookmarks";
-import { installInkFlushers } from "./lib/ink";
 import { startEvents, stopEvents } from "./lib/events";
 import { installProgressFlushers } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
@@ -13,24 +12,59 @@ import { WhatsNew } from "./components/WhatsNew";
 import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
-import { AdminPage } from "./pages/AdminPage";
-import { ClubInvitePage, ClubPage, ClubsPage } from "./pages/ClubPages";
-import { CollectionPage, CollectionsPage } from "./pages/CollectionPages";
-import { DownloadPage } from "./pages/DownloadPage";
 import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage, UploadsPage } from "./pages/LibraryViews";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { PublicLibraryPage } from "./pages/PublicLibraryPage";
-import { SearchPage } from "./pages/SearchPage";
-import { ImportPage } from "./pages/ImportPage";
-import { BookPage, PublicBookPage } from "./pages/BookPages";
-import { StatsPage } from "./pages/StatsPage";
-import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { SharedCollectionPage, SharePage } from "./pages/SharePage";
+
+/** Loaders of the pages kept out of the first download, fetched in the background once the app is idle. */
+const pageLoaders: (() => Promise<unknown>)[] = [];
+
+/** A page loaded on demand: `name` is its component's export in the module. */
+function lazyPage<M extends Record<K, ComponentType<any>>, K extends keyof M>(load: () => Promise<M>, name: K) {
+  pageLoaders.push(load);
+  return lazy(() => load().then((m) => ({ default: m[name] })));
+}
+
+// The library views open the app and load with it; the other pages come when first visited
+// (or when the browser is idle, see prefetchPages), so the first screen downloads less.
+const AdminPage = lazyPage(() => import("./pages/AdminPage"), "AdminPage");
+const ClubsPage = lazyPage(() => import("./pages/ClubPages"), "ClubsPage");
+const ClubPage = lazyPage(() => import("./pages/ClubPages"), "ClubPage");
+const ClubInvitePage = lazyPage(() => import("./pages/ClubPages"), "ClubInvitePage");
+const CollectionsPage = lazyPage(() => import("./pages/CollectionPages"), "CollectionsPage");
+const CollectionPage = lazyPage(() => import("./pages/CollectionPages"), "CollectionPage");
+const DownloadPage = lazyPage(() => import("./pages/DownloadPage"), "DownloadPage");
+const ProfilePage = lazyPage(() => import("./pages/ProfilePage"), "ProfilePage");
+const PublicLibraryPage = lazyPage(() => import("./pages/PublicLibraryPage"), "PublicLibraryPage");
+const SearchPage = lazyPage(() => import("./pages/SearchPage"), "SearchPage");
+const ImportPage = lazyPage(() => import("./pages/ImportPage"), "ImportPage");
+const BookPage = lazyPage(() => import("./pages/BookPages"), "BookPage");
+const PublicBookPage = lazyPage(() => import("./pages/BookPages"), "PublicBookPage");
+const StatsPage = lazyPage(() => import("./pages/StatsPage"), "StatsPage");
+const SharePage = lazyPage(() => import("./pages/SharePage"), "SharePage");
+const SharedCollectionPage = lazyPage(() => import("./pages/SharePage"), "SharedCollectionPage");
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage })));
 
 // The reader (pdf.js, foliate-js) is loaded only when a book is opened.
 const ReaderPage = lazy(() => import("./pages/ReaderPage").then((m) => ({ default: m.ReaderPage })));
+
+/**
+ * Fetches the on-demand pages once the browser has nothing else to do, so visiting them stays
+ * instant (and works offline: the service worker keeps what was fetched). It waits a moment
+ * first, so the library and its covers don't share the connection with them.
+ */
+function prefetchPages() {
+  const run = () => pageLoaders.forEach((load) => void load().catch(() => {}));
+  let handle: number | undefined;
+  const timer = setTimeout(() => {
+    if ("requestIdleCallback" in window) handle = requestIdleCallback(run, { timeout: 5000 });
+    else run();
+  }, 2000);
+  return () => {
+    clearTimeout(timer);
+    if (handle !== undefined) cancelIdleCallback(handle);
+  };
+}
 
 /** Android hardware back button: go back inside the app, exit from the library. */
 function NativeBackButton() {
@@ -110,13 +144,19 @@ export function App() {
     startEvents();
     installProgressFlushers();
     installBookmarkFlushers();
-    installInkFlushers();
+    // Handwriting waiting to be sent (from an earlier session too) goes as soon as possible;
+    // the module itself is the reader's, so it loads apart from the first screen.
+    void import("./lib/ink").then((m) => m.installInkFlushers());
     return () => stopEvents();
   }, [signedIn]);
 
   // The password-reset link works whether or not someone is signed in on this browser.
   if (window.location.pathname === "/reset-password") {
-    return <ResetPasswordPage onDone={() => void refetch()} />;
+    return (
+      <Suspense fallback={<AppLoading />}>
+        <ResetPasswordPage onDone={() => void refetch()} />
+      </Suspense>
+    );
   }
 
   // Better Auth refetches the session whenever the tab regains focus, and while signed out each
@@ -131,11 +171,21 @@ export function App() {
     return <SignedOutApp onSignedIn={() => void refetch()} />;
   }
 
-  const user = { name: session!.user.name, email: session!.user.email };
+  const { id, name, email } = session!.user;
+  return <SignedInApp userId={id} name={name} email={email} />;
+}
+
+/**
+ * The app once signed in. It takes the user's fields one by one, so a session refetch (on every
+ * return to the tab) that changes none of them doesn't re-render the app.
+ */
+const SignedInApp = memo(function SignedInApp({ userId, name, email }: { userId: string; name: string; email: string }) {
+  const user = useMemo(() => ({ name, email }), [name, email]);
+  useEffect(prefetchPages, []);
 
   return (
-    <SettingsProvider enabled={signedIn}>
-      <LibraryProvider userId={session!.user.id}>
+    <SettingsProvider enabled>
+      <LibraryProvider userId={userId}>
         <BrowserRouter>
           <NativeBackButton />
           {/* After an update: what changed, once. */}
@@ -180,4 +230,4 @@ export function App() {
       </LibraryProvider>
     </SettingsProvider>
   );
-}
+});

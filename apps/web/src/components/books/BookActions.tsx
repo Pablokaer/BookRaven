@@ -3,11 +3,11 @@ import { useNavigate } from "react-router";
 import type { Book } from "../../lib/api";
 import { saveForOffline } from "../../lib/books";
 import { downloadOwnBook, updateBook } from "../../lib/library";
-import { useLibrary } from "../../lib/libraryStore";
+import { useLibraryActions } from "../../lib/libraryStore";
 import { Menu } from "../ui/Menu";
 
 export function FavoriteButton({ book, className = "icon-btn" }: { book: Book; className?: string }) {
-  const { toggleFavorite } = useLibrary();
+  const { toggleFavorite } = useLibraryActions();
   return (
     <button
       type="button"
@@ -27,7 +27,7 @@ export function FavoriteButton({ book, className = "icon-btn" }: { book: Book; c
 }
 
 export function ShareButton({ book, className = "icon-btn" }: { book: Book; className?: string }) {
-  const { openShare } = useLibrary();
+  const { openShare } = useLibraryActions();
   return (
     <button
       type="button"
@@ -48,7 +48,7 @@ export function ShareButton({ book, className = "icon-btn" }: { book: Book; clas
 /** "More" menu with the book's remaining actions. */
 export function BookMenu({ book, className }: { book: Book; className?: string }) {
   const navigate = useNavigate();
-  const { openShare, openOrganize, removeBook, toggleFavorite, replaceBook } = useLibrary();
+  const { openShare, openOrganize, removeBook, toggleFavorite, replaceBook } = useLibraryActions();
   const setPublic = async (isPublic: boolean) => {
     if (
       isPublic &&

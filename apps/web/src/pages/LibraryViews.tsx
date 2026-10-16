@@ -6,10 +6,10 @@ import { FeaturedBookCard } from "../components/books/FeaturedBookCard";
 import { StorageMeter } from "../components/shell/StorageMeter";
 import { WelcomePanel } from "../components/dashboard/WelcomePanel";
 import { byLastRead, isInProgress } from "../lib/bookStats";
-import { useLibrary } from "../lib/libraryStore";
+import { useLibrary, useLibraryActions } from "../lib/libraryStore";
 
 function UploadEmpty() {
-  const { pickFiles } = useLibrary();
+  const { pickFiles } = useLibraryActions();
   return (
     <EmptyState icon={<UploadCloud />} title="Your library is empty">
       Drop PDF, EPUB, MOBI, AZW3, FB2 and comics (CBZ, CBR, CB7, CBT) files anywhere on this page, or{" "}
