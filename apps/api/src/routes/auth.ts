@@ -1,6 +1,15 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { auth } from "../auth.js";
 import { config } from "../config.js";
+import { audit } from "../lib/log.js";
+
+/** Auth answers that go to the audit trail: the event on success and on failure ("" for none). */
+const AUDITED: Record<string, [success: string, failure: string]> = {
+  // A successful sign-in is logged when its session is created (also for Google).
+  "/api/auth/sign-in/email": ["", "auth.sign_in_failed"],
+  "/api/auth/reset-password": ["auth.password_reset", "auth.password_reset_failed"],
+  "/api/auth/change-password": ["auth.password_changed", "auth.password_change_failed"],
+};
 
 /**
  * Mounts Better Auth at /api/auth/*.
@@ -28,6 +37,11 @@ export async function authRoutes(app: FastifyInstance) {
       });
 
       const response = await auth.handler(req);
+      const audited = request.method === "POST" ? AUDITED[url.pathname] : undefined;
+      if (audited) {
+        const event = audited[response.ok ? 0 : 1];
+        if (event) audit(event, { ip: request.ip, status: response.status }, response.ok ? "info" : "warn");
+      }
 
       reply.status(response.status);
       response.headers.forEach((value, key) => {

@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { config } from "../config.js";
+import { log } from "./log.js";
 
 /** `html` is optional; `text` is always sent too, for clients that show plain text. */
 export type Mail = { to: string; subject: string; text: string; html?: string };
@@ -15,8 +16,8 @@ export const mailEnabled = Boolean(transport);
 // A wrong SMTP_URL shows up in the log at startup instead of on the first forgotten password.
 if (transport && !config.isTest) {
   transport.verify().then(
-    () => console.info("SMTP ready"),
-    (err: Error) => console.error(`SMTP_URL does not work: ${err.message}`),
+    () => log.info("SMTP ready"),
+    (err: Error) => log.error({ err }, "SMTP_URL does not work"),
   );
 }
 
@@ -27,7 +28,7 @@ if (transport && !config.isTest) {
 async function sendMail(mail: Mail) {
   if (!transport || config.isTest) {
     outbox.push(mail);
-    if (!config.isTest) console.info(`[mail to ${mail.to}] ${mail.subject}\n${mail.text}`);
+    if (!config.isTest) log.info(`[mail to ${mail.to}] ${mail.subject}\n${mail.text}`);
     return;
   }
   await transport.sendMail({ from: config.mailFrom, ...mail });
@@ -39,5 +40,5 @@ async function sendMail(mail: Mail) {
  * an account. Failures are logged.
  */
 export function sendMailInBackground(mail: Mail) {
-  sendMail(mail).catch((err: Error) => console.error(`email "${mail.subject}" to ${mail.to} failed: ${err.message}`));
+  sendMail(mail).catch((err: Error) => log.error({ err, subject: mail.subject }, "email could not be sent"));
 }

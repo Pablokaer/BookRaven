@@ -154,7 +154,23 @@ SMTP_URL=smtps://resend:<api key>@smtp.resend.com:465
 MAIL_FROM=BookRaven <no-reply@books.example.com>
 ```
 
-The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work: …`. Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
+The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work` (with the reason). Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
+
+### Logs
+
+The API writes JSON lines to standard output (`docker compose logs -f api`). `LOG_LEVEL` in `.env` sets how much: `info` by default in production, `debug` in development; `warn` or `error` keep only problems. At `info` you get one line when a request arrives and one when it is answered (status and time), plus failures that don't break the request: emails that could not be sent, dictionary or translation services that answer with an error, files that could not be removed after a book was deleted. Health checks and the readers' range requests for a book are frequent, so they are logged at `debug` only (their errors still show). Keys in URLs (share and invite links, password-reset and verification links) are written as `[redacted]`. Better Auth's own messages go to the same log.
+
+Security-relevant events form an audit trail: each line has `"audit": true`, an `event` name and, for requests, the client `ip` (passwords and the email typed at sign-in are never logged). `docker compose logs api | grep '"audit":true'` shows them.
+
+| Event | When |
+|---|---|
+| `auth.account_created`, `auth.signed_in` | a new account (email or Google), any sign-in |
+| `auth.sign_in_failed`, `auth.blocked_sign_in` (warn) | wrong email or password, a blocked account trying to sign in |
+| `auth.password_changed`, `auth.password_reset` (and `…_failed`, warn) | password changed from the profile, or reset with an email link |
+| `admin.user_updated`, `admin.password_reset`, `admin.user_deleted` | an administrator changes a quota or blocks, sets a temporary password, deletes an account (`adminId`, `userId`) |
+| `admin.report_resolved`, `admin.file_unblocked` | a report is settled (`action`, `removedCopies`), a blocked file is allowed again |
+| `app_password.created`, `app_password.revoked` | app passwords for OPDS / KOReader |
+| `app_password.auth_failed` (warn) | an OPDS reader or KOReader sent a wrong app password (`via`) |
 
 ### Automatic deploys (GitHub Actions → VPS)
 

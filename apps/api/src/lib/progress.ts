@@ -1,6 +1,7 @@
 import { query } from "../db.js";
 import { notifyClubProgress } from "./clubs.js";
 import { publish } from "./events.js";
+import { log } from "./log.js";
 
 export type ProgressRow = {
   locator: string;
@@ -96,7 +97,7 @@ export async function saveReadingProgress(
     await recordActivity(userId, bookId, before, p.locator, p.percentage, ts);
     publish(userId, "progress.updated", progressDto(bookId, row));
     // Fellow book-club members see each other's progress live.
-    await notifyClubProgress(userId, bookId).catch(() => {});
+    await notifyClubProgress(userId, bookId).catch((err) => log.warn({ err, userId, bookId }, "book club progress notification failed"));
   }
   return row;
 }

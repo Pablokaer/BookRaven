@@ -6,6 +6,7 @@ import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
 import { mailEnabled } from "./lib/mailer.js";
 import { connectionCount } from "./lib/events.js";
+import { log, RequestLogController } from "./lib/log.js";
 import { authRoutes } from "./routes/auth.js";
 import { bookmarkRoutes } from "./routes/bookmarks.js";
 import { bookRoutes } from "./routes/books.js";
@@ -31,7 +32,8 @@ import { shareRoutes } from "./routes/shares.js";
 /** The Fastify app with every route registered (no listening, no migrations): used by index.ts and the tests. */
 export async function buildServer() {
   const app = Fastify({
-    logger: { level: process.env.LOG_LEVEL ?? (config.isProd ? "info" : "debug") },
+    loggerInstance: log,
+    logController: new RequestLogController(),
     trustProxy: true,
   });
 

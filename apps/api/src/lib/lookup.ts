@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { log } from "./log.js";
 import { detectWordLanguage, isWordLanguage, type WordLanguage } from "./wordLanguage.js";
 
 /**
@@ -69,7 +70,7 @@ async function wiktionary(word: string): Promise<{ word: string; data: Wiktionar
       signal: AbortSignal.timeout(TIMEOUT),
     });
     if (res.status === 404) continue;
-    if (!res.ok) throw new LookupUnavailableError();
+    if (!res.ok) throw new LookupUnavailableError(`Wiktionary answered ${res.status}`);
     return remember(key, { word: w, data: (await res.json()) as WiktionaryResponse });
   }
   return remember(key, null);
@@ -98,7 +99,7 @@ export async function translate(text: string, from: string | null, to: string): 
       body: JSON.stringify({ q: text, source: src ?? "auto", target: to.split("-")[0], format: "text", api_key: config.libreTranslate.apiKey || undefined }),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!res.ok) throw new LookupUnavailableError();
+    if (!res.ok) throw new LookupUnavailableError(`LibreTranslate answered ${res.status}`);
     const body = (await res.json()) as { translatedText: string; detectedLanguage?: { language: string } };
     return remember(key, detected({ text: body.translatedText, from: src ?? body.detectedLanguage?.language ?? null, to, source: "LibreTranslate" }, text));
   }
@@ -107,14 +108,14 @@ export async function translate(text: string, from: string | null, to: string): 
   const params = new URLSearchParams({ q: text, langpair: `${src ?? "autodetect"}|${to}` });
   if (config.myMemoryEmail) params.set("de", config.myMemoryEmail);
   const res = await fetch(`https://api.mymemory.translated.net/get?${params}`, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(TIMEOUT) });
-  if (!res.ok) throw new LookupUnavailableError();
+  if (!res.ok) throw new LookupUnavailableError(`MyMemory answered ${res.status}`);
   const body = (await res.json()) as {
     responseStatus: number | string;
     responseDetails?: string;
     responseData: { translatedText: string; detectedLanguage?: string };
   };
   if (/DISTINCT LANGUAGES/i.test(body.responseDetails ?? "")) return { text, from: src, to, source: "MyMemory", sameLanguage: true };
-  if (Number(body.responseStatus) !== 200) throw new LookupUnavailableError();
+  if (Number(body.responseStatus) !== 200) throw new LookupUnavailableError(`MyMemory answered ${body.responseStatus}: ${body.responseDetails ?? ""}`);
   return remember(key, detected({ text: body.responseData.translatedText, from: src ?? body.responseData.detectedLanguage ?? null, to, source: "MyMemory" }, text));
 }
 
@@ -146,7 +147,12 @@ export async function lookupWord(word: string, { to, book, from: chosen }: { to:
   const canTranslate = config.translateProvider !== "none";
   if (!canDefine && !canTranslate) throw new LookupUnavailableError();
 
-  const page = canDefine ? await wiktionary(word).catch(() => null) : null;
+  const page = canDefine
+    ? await wiktionary(word).catch((err) => {
+        log.warn({ err }, "dictionary lookup failed");
+        return null;
+      })
+    : null;
   const detected = detectWordLanguage(word, { dictionary: page ? Object.keys(page.data) : [], book });
   let from = chosen ?? detected.language;
   const alternatives = chosen ? [detected.language, ...detected.alternatives].filter((l): l is WordLanguage => !!l && l !== chosen) : detected.alternatives;
@@ -167,8 +173,9 @@ export async function lookupWord(word: string, { to, book, from: chosen }: { to:
         if (!from && isWordLanguage(tr.from)) from = tr.from;
         sources.push(tr.source);
       }
-    } catch {
-      /* the definitions are still worth showing */
+    } catch (err) {
+      // The definitions are still worth showing.
+      log.warn({ err }, "translation failed");
     }
   }
   return {
