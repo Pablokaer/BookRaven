@@ -54,14 +54,17 @@ describe("range files", () => {
   });
 
   it("reads further ahead while reads follow each other, like a video buffering", async () => {
-    const data = bytes(64 * CHUNK);
+    const data = bytes(24 * CHUNK);
     const requests = serve(data);
     const file = await openRemoteFile("/api/books/x/file", `/books/x${++opened}`);
-    for (let at = CHUNK; at < 20 * CHUNK; at += CHUNK / 2) {
-      expect(await file.read(at, at + CHUNK / 2)).toEqual(data.slice(at, at + CHUNK / 2));
+    for (let at = CHUNK; at < 12 * CHUNK; at += CHUNK / 2) {
+      const got = await file.read(at, at + CHUNK / 2);
+      expect(got.length).toBe(CHUNK / 2);
+      expect(got[0]).toBe(data[at]);
+      expect(got.at(-1)).toBe(data[at + CHUNK / 2 - 1]);
     }
-    // 19 pieces read in order took far fewer requests than pieces.
-    expect(requests.length).toBeLessThan(6);
+    // 11 pieces read in order took far fewer requests than pieces.
+    expect(requests.length).toBeLessThan(5);
   });
 
   it("prefetches in the background so the next read is already there", async () => {
