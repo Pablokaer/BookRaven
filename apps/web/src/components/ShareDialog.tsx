@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Book, Folder } from "../lib/api";
-import { Check, Copy, Globe, Link2, Send } from "lucide-react";
+import { Globe, Link2, Send } from "lucide-react";
 import { updateBook } from "../lib/library";
 import { useLibraryActions } from "../lib/libraryStore";
 import {
@@ -13,22 +13,25 @@ import {
   revokeShare,
   shareUrl,
 } from "../lib/shares";
+import { CopyField } from "./ui/CopyField";
 import { Modal } from "./ui/Modal";
 
-/** Creates/shows a book's share link. Anyone signed in with the link can add the book to their library. */
-export function ShareDialog({ book, onClose }: { book: Book; onClose: () => void }) {
+/**
+ * A share link's token (undefined while loading, null when there is no link) loaded with `get`,
+ * and `run` for changes to it: `busy` meanwhile, `error` when something fails.
+ */
+function useShareToken(id: string, get: (id: string) => Promise<string | null>) {
   const [token, setToken] = useState<string | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { replaceBook } = useLibraryActions();
 
   useEffect(() => {
-    getShareToken(book.id)
+    get(id)
       .then(setToken)
       .catch(() => setError("Could not load the share link"));
-  }, [book.id]);
+  }, [id, get]);
 
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
@@ -39,6 +42,13 @@ export function ShareDialog({ book, onClose }: { book: Book; onClose: () => void
       setBusy(false);
     }
   };
+  return { token, setToken, busy, error, run, loading: token === undefined && !error };
+}
+
+/** Creates/shows a book's share link. Anyone signed in with the link can add the book to their library. */
+export function ShareDialog({ book, onClose }: { book: Book; onClose: () => void }) {
+  const { token, setToken, busy, error, run, loading } = useShareToken(book.id, getShareToken);
+  const { replaceBook } = useLibraryActions();
 
   return (
     <Modal title={<>Share “{book.title}”</>} onClose={onClose} footer={<button className="btn-ghost" onClick={onClose}>Close</button>}>
@@ -51,7 +61,7 @@ export function ShareDialog({ book, onClose }: { book: Book; onClose: () => void
         url={token ? shareUrl(token) : null}
         title={book.title}
         busy={busy}
-        loading={token === undefined && !error}
+        loading={loading}
         onCreate={() =>
           run(async () => {
             setToken(await createShareToken(book.id));
@@ -94,27 +104,7 @@ export function ShareDialog({ book, onClose }: { book: Book; onClose: () => void
 
 /** Creates/shows a collection's share link. The link always shows the collection's current books. */
 export function CollectionShareDialog({ folder, onClose }: { folder: Folder; onClose: () => void }) {
-  const [token, setToken] = useState<string | null | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getCollectionShareToken(folder.id)
-      .then(setToken)
-      .catch(() => setError("Could not load the share link"));
-  }, [folder.id]);
-
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await fn();
-    } catch {
-      setError("Something went wrong, try again");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { token, setToken, busy, error, run, loading } = useShareToken(folder.id, getCollectionShareToken);
 
   return (
     <Modal title={<>Share “{folder.name}”</>} onClose={onClose} footer={<button className="btn-ghost" onClick={onClose}>Close</button>}>
@@ -127,7 +117,7 @@ export function CollectionShareDialog({ folder, onClose }: { folder: Folder; onC
         url={token ? collectionShareUrl(token) : null}
         title={folder.name}
         busy={busy}
-        loading={token === undefined && !error}
+        loading={loading}
         onCreate={() => run(async () => setToken(await createCollectionShareToken(folder.id)))}
         onRevoke={() =>
           run(async () => {
@@ -159,15 +149,6 @@ export function ShareLink({
   onCreate: () => void;
   onRevoke: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    if (!url) return;
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   if (loading) return <div className="h-11 animate-pulse rounded-xl bg-elevated" />;
   if (token === null) {
     return (
@@ -179,12 +160,7 @@ export function ShareLink({
   if (!url) return null;
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <input readOnly value={url} aria-label="Share link" className="input min-w-0 flex-1" onFocus={(e) => e.target.select()} />
-        <button className="btn" onClick={() => void copy()}>
-          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />} {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
+      <CopyField label="Share link" value={url} withText />
       <div className="flex justify-between gap-2">
         {"share" in navigator ? (
           <button className="btn-outline" onClick={() => void navigator.share({ title, url }).catch(() => {})}>

@@ -22,15 +22,15 @@ export const authClient = createAuthClient({
   },
 });
 
-/** Handwriting is a reader module; it is already loaded by then (App installs its flushers). */
+/** Handwriting is a reader module: it loads apart from the first screen. */
 const ink = () => import("./ink");
+
+/** Sends the changes made on this device that wait for the server (positions, bookmarks, handwriting). */
+export const flushChanges = () => Promise.allSettled([flushProgress(), flushBookmarks(), ink().then((m) => m.flushInk())]);
 
 export async function signOut() {
   // Changes made on this device still get a moment to reach the server while the session works.
-  await Promise.race([
-    Promise.allSettled([flushProgress(), flushBookmarks(), ink().then((m) => m.flushInk())]),
-    new Promise((r) => setTimeout(r, 3000)),
-  ]);
+  await Promise.race([flushChanges(), new Promise((r) => setTimeout(r, 3000))]);
   try {
     await authClient.signOut();
   } finally {

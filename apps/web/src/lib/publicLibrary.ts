@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError, type Book, type Me, type PublicBook, type PublicBookDetails } from "./api";
+import { apiDelete, apiJson, type Book, type Me, type PublicBook, type PublicBookDetails } from "./api";
 import { saveFile } from "./library";
 
 export function getMe() {
@@ -23,7 +23,4 @@ export function downloadPublicBook(book: PublicBook) {
 }
 
 /** Takes a book out of the public library (publisher or administrator). */
-export async function removePublicBook(id: string) {
-  const res = await apiFetch(`/api/public/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) throw new ApiError(res.status, null);
-}
+export const removePublicBook = (id: string) => apiDelete(`/api/public/${id}`);

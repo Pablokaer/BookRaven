@@ -1,5 +1,6 @@
 import { apiFetch, apiJson, type Bookmark } from "./api";
 import { createOutbox, localStorageStore, type Queued } from "./outbox";
+import { readJson, writeJson } from "./storage";
 
 /**
  * Bookmarked pages ("save this page", like a Kindle bookmark).
@@ -15,22 +16,6 @@ type Change =
   | { op: "delete"; bookId: string; locator: string; at: number };
 
 const cacheKey = (bookId: string) => `readsync.bookmarks.${bookId}`;
-
-function read<T>(key: string, fallback: T): T {
-  try {
-    return JSON.parse(localStorage.getItem(key) ?? "null") ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function write(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage full or blocked: the server still has the bookmarks */
-  }
-}
 
 const outbox = createOutbox<Change>({
   // The first version kept one change per page in an object; it is brought over once.
@@ -91,9 +76,9 @@ export async function loadBookmarks(bookId: string) {
   let list: Bookmark[];
   try {
     list = await apiJson<Bookmark[]>(`/api/books/${bookId}/bookmarks`);
-    write(cacheKey(bookId), list);
+    writeJson(cacheKey(bookId), list);
   } catch {
-    list = read<Bookmark[]>(cacheKey(bookId), []);
+    list = readJson<Bookmark[]>(cacheKey(bookId), []);
   }
   await outbox.ready;
   return withPending(bookId, list);
@@ -104,7 +89,7 @@ export async function loadBookmarks(bookId: string) {
  * Call it only once the book's list is loaded: before that, the reader's list is just empty.
  */
 export function rememberBookmarks(bookId: string, list: Bookmark[]) {
-  write(
+  writeJson(
     cacheKey(bookId),
     list.filter((b) => !b.id.startsWith("local:")),
   );
@@ -129,12 +114,4 @@ export async function clearBookmarks() {
   } catch {
     /* unavailable: nothing stored */
   }
-}
-
-let installed = false;
-export function installBookmarkFlushers() {
-  if (installed) return;
-  installed = true;
-  window.addEventListener("online", () => void flushBookmarks());
-  void flushBookmarks();
 }

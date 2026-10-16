@@ -1,10 +1,12 @@
-import { Ban, BookOpen, Check, Copy, Flag, HardDrive, KeyRound, MoreHorizontal, Search, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
+import { Ban, BookOpen, Flag, HardDrive, KeyRound, MoreHorizontal, Search, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { EmptyState } from "../components/books/BookBrowser";
 import { ProgressBar } from "../components/books/ProgressBar";
+import { CopyField } from "../components/ui/CopyField";
 import { Menu } from "../components/ui/Menu";
 import { Modal } from "../components/ui/Modal";
+import { PageHeader } from "../components/ui/PageHeader";
 import {
   deleteUser,
   getStats,
@@ -15,15 +17,15 @@ import {
   resolveReport,
   unblockFile,
   updateUser,
-  type AdminStats,
   type AdminUser,
-  type BlockedFile,
   type ContentReport,
   type ReportAction,
 } from "../lib/admin";
 import { shortDate } from "../lib/bookStats";
+import { confirmThen } from "../lib/confirm";
 import { fileSize, timeAgo } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
+import { useApi } from "../lib/useApi";
 
 type Tab = "users" | "reports" | "blocked";
 
@@ -55,7 +57,6 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
   const [q, setQ] = useState("");
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [password, setPassword] = useState<{ email: string; value: string } | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const load = useCallback(() => {
     listUsers(q)
@@ -97,7 +98,6 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
     if (!window.confirm(`Set a new temporary password for ${u.email}? They will be signed out everywhere.`)) return;
     try {
       const { password: value } = await resetUserPassword(u.id);
-      setCopied(false);
       setPassword({ email: u.email, value });
     } catch {
       window.alert("This account has no password (it signs in with Google).");
@@ -179,18 +179,7 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
           <p className="-mt-2 text-sm text-muted">
             Give this password to <span className="text-fg">{password.email}</span>. It is shown only once; they can change it in their profile.
           </p>
-          <div className="flex gap-2">
-            <input readOnly value={password.value} className="input min-w-0 flex-1 font-mono" aria-label="Temporary password" onFocus={(e) => e.target.select()} />
-            <button
-              className="btn"
-              onClick={() => {
-                void navigator.clipboard?.writeText(password.value);
-                setCopied(true);
-              }}
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />} {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
+          <CopyField label="Temporary password" value={password.value} inputClassName="font-mono" withText />
         </Modal>
       )}
     </>
@@ -199,13 +188,8 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
 
 function ReportsTab({ onChanged }: { onChanged: () => void }) {
   const [all, setAll] = useState(false);
-  const [reports, setReports] = useState<ContentReport[] | null>(null);
-  const load = useCallback(() => {
-    listReports(all)
-      .then(setReports)
-      .catch(() => setReports([]));
-  }, [all]);
-  useEffect(load, [load]);
+  // The list shown stays while the other one (with or without resolved reports) loads.
+  const { data: reports, reload } = useApi(() => listReports(all), [], { fallback: [], reloadOn: [all] });
 
   const resolve = async (r: ContentReport, action: ReportAction) => {
     const questions: Record<ReportAction, string> = {
@@ -222,7 +206,7 @@ function ReportsTab({ onChanged }: { onChanged: () => void }) {
     } catch {
       window.alert("That did not work, try again.");
     }
-    load();
+    reload();
     onChanged();
   };
 
@@ -281,13 +265,7 @@ function ReportsTab({ onChanged }: { onChanged: () => void }) {
 }
 
 function BlockedTab() {
-  const [files, setFiles] = useState<BlockedFile[] | null>(null);
-  const load = useCallback(() => {
-    listBlockedFiles()
-      .then(setFiles)
-      .catch(() => setFiles([]));
-  }, []);
-  useEffect(load, [load]);
+  const { data: files, reload } = useApi(listBlockedFiles, [], { fallback: [] });
   return files === null ? (
     <div className="h-40 animate-pulse rounded-2xl bg-elevated/50" />
   ) : files.length === 0 ? (
@@ -306,11 +284,7 @@ function BlockedTab() {
           </div>
           <button
             className="btn-ghost"
-            onClick={async () => {
-              if (!window.confirm(`Unblock “${f.title}”? It could be uploaded and published again.`)) return;
-              await unblockFile(f.sha256).catch(() => {});
-              load();
-            }}
+            onClick={() => void confirmThen(`Unblock “${f.title}”? It could be uploaded and published again.`, () => unblockFile(f.sha256), reload)}
           >
             Unblock
           </button>
@@ -324,15 +298,8 @@ function BlockedTab() {
 export function AdminPage() {
   const { me } = useLibrary();
   const [tab, setTab] = useState<Tab>("users");
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const loadStats = useCallback(() => {
-    getStats()
-      .then(setStats)
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (me?.isAdmin) loadStats();
-  }, [me?.isAdmin, loadStats]);
+  // Only administrators may ask; for anyone else the page says so below.
+  const { data: stats, reload: loadStats } = useApi(() => (me?.isAdmin ? getStats() : Promise.resolve(null)), [], { reloadOn: [me?.isAdmin] });
 
   if (me && !me.isAdmin) {
     return (
@@ -350,12 +317,7 @@ export function AdminPage() {
 
   return (
     <>
-      <header className="mb-8">
-        <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
-          <ShieldCheck className="h-7 w-7 text-accent" /> Admin
-        </h1>
-        <p className="mt-1.5 text-sm text-muted">Accounts, storage limits, reports, book requests and content removal.</p>
-      </header>
+      <PageHeader title="Admin" icon={ShieldCheck} subtitle="Accounts, storage limits, reports, book requests and content removal." />
 
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Accounts" value={stats?.users} />

@@ -1,3 +1,5 @@
+import { readString, writeString } from "./storage";
+
 /**
  * Release notes shown once after an update ("What's new"). They ship with the code, so the window
  * appears the first time the new code runs: on the web after a deploy, in the Android app after
@@ -17,6 +19,17 @@ export type ReleaseNote = {
 };
 
 export const RELEASE_NOTES: ReleaseNote[] = [
+  {
+    id: "2026-10-16-small-fixes",
+    date: "2026-10-16",
+    title: "Small fixes",
+    items: [
+      "Exporting your highlights as Markdown now works in the Android app too: the file is saved in Documents/BookRaven.",
+      "Copy buttons say “Copied” only once the text is really copied, and go back to “Copy” after two seconds.",
+      "Going quickly from one book or club to another never shows the previous one by mistake.",
+      "Book club actions (new invite link, delete, leave, remove a member) now tell you when they don’t work.",
+    ],
+  },
   {
     id: "2026-10-16-word-dictionary",
     date: "2026-10-16",
@@ -151,19 +164,9 @@ export function unseenNotes(notes: ReleaseNote[], lastSeen: string | null): Rele
 
 const KEY = "readsync.whatsNewSeen";
 
-export function lastSeenNote(): string | null {
-  try {
-    return localStorage.getItem(KEY);
-  } catch {
-    return null;
-  }
-}
+export const lastSeenNote = () => readString(KEY);
 
-/** Remembers that everything up to the newest note was shown. */
+/** Remembers that everything up to the newest note was shown (storage blocked: it may show again next time). */
 export function markNotesSeen(notes: ReleaseNote[] = RELEASE_NOTES) {
-  try {
-    if (notes[0]) localStorage.setItem(KEY, notes[0].id);
-  } catch {
-    /* storage blocked: the window may show again next time */
-  }
+  if (notes[0]) writeString(KEY, notes[0].id);
 }

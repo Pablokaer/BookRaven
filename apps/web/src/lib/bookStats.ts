@@ -1,4 +1,4 @@
-import type { Book, Folder } from "./api";
+import type { Book, Folder, PublicBook } from "./api";
 import { percent } from "./format";
 
 /** Progress at or past this point counts as finished (last pages are often notes/indexes). */
@@ -45,3 +45,9 @@ export function collectionColor(folder: Pick<Folder, "id">) {
 export function shortDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
+
+/** Text order ignoring case and accents, numbers by value ("2" before "10"); missing values last. */
+export const byText = (a: string | null, b: string | null) => (a ?? "\uffff").localeCompare(b ?? "\uffff", undefined, { sensitivity: "base", numeric: true });
+
+/** Most downloaded at the source first; books people published (no count) after them. */
+export const byPopularity = (a: PublicBook, b: PublicBook) => (b.popularity ?? -1) - (a.popularity ?? -1);

@@ -1,7 +1,8 @@
 import { BookOpen, Check, FileSpreadsheet, FolderOpen, Globe, HandHelping, Loader2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ApiError, type PublicBook } from "../lib/api";
+import { PageHeader } from "../components/ui/PageHeader";
+import { ApiError } from "../lib/api";
 import { getBook } from "../lib/books";
 import { fileSize } from "../lib/format";
 import { matchGoodreads, parseGoodreads, readCalibreFolder, type CalibreBook, type GoodreadsMatch } from "../lib/importers";
@@ -10,6 +11,8 @@ import { useLibrary } from "../lib/libraryStore";
 import { markFinished } from "../lib/progress";
 import { addPublicBook, listPublicBooks } from "../lib/publicLibrary";
 import { createRequest } from "../lib/requests";
+import { toggled } from "../lib/sets";
+import { useApi } from "../lib/useApi";
 
 function Option({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
   return (
@@ -43,7 +46,7 @@ function GoodreadsImport() {
   const { books, refreshMe, replaceBook, me } = useLibrary();
   const [matches, setMatches] = useState<GoodreadsMatch[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pub, setPub] = useState<PublicBook[] | null>(null);
+  const { data: pub } = useApi(listPublicBooks, [], { fallback: [] });
   const [pick, setPick] = useState<Set<string>>(new Set());
   const [finished, setFinished] = useState(true);
   const [shelfTags, setShelfTags] = useState(true);
@@ -51,10 +54,6 @@ function GoodreadsImport() {
   const [running, setRunning] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [requested, setRequested] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    listPublicBooks().then(setPub, () => setPub([]));
-  }, []);
 
   const read = async (file: File) => {
     setError(null);
@@ -184,14 +183,7 @@ function GoodreadsImport() {
               <li key={i} className="px-4 py-2.5">
                 <Option
                   checked={pick.has(m.pub!.id)}
-                  onChange={(on) =>
-                    setPick((s) => {
-                      const next = new Set(s);
-                      if (on) next.add(m.pub!.id);
-                      else next.delete(m.pub!.id);
-                      return next;
-                    })
-                  }
+                  onChange={(on) => setPick((s) => toggled(s, m.pub!.id, on))}
                 >
                   <span className="flex items-center gap-3">
                     <span className="min-w-0 flex-1 truncate">
@@ -344,14 +336,7 @@ function CalibreImport() {
               <li key={i} className="px-4 py-2.5">
                 <Option
                   checked={!skip.has(i)}
-                  onChange={(on) =>
-                    setSkip((s) => {
-                      const next = new Set(s);
-                      if (on) next.delete(i);
-                      else next.add(i);
-                      return next;
-                    })
-                  }
+                  onChange={(on) => setSkip((s) => toggled(s, i, !on))}
                 >
                   <span className="flex items-center gap-3">
                     <span className="min-w-0 flex-1 truncate">
@@ -386,10 +371,10 @@ function CalibreImport() {
 export function ImportPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      <header>
-        <h1 className="font-display text-3xl font-bold tracking-tight">Import from other apps</h1>
-        <p className="mt-1.5 text-sm text-muted">Bring your reading history from Goodreads or your books from Calibre. Everything is read on this device.</p>
-      </header>
+      <PageHeader
+        title="Import from other apps"
+        subtitle="Bring your reading history from Goodreads or your books from Calibre. Everything is read on this device."
+      />
       <GoodreadsImport />
       <CalibreImport />
     </div>

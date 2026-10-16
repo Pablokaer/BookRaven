@@ -21,17 +21,18 @@ import { EmptyState } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
 import { ProgressBar } from "../components/books/ProgressBar";
 import { ReportDialog } from "../components/ReportDialog";
-import type { Book, BookAbout, Bookmark, Highlight, PublicBook, PublicBookDetails } from "../lib/api";
+import type { Book, PublicBook, PublicBookDetails } from "../lib/api";
 import { loadBookmarks } from "../lib/bookmarks";
-import { isFinished, readingStatus, shortDate } from "../lib/bookStats";
+import { byPopularity, isFinished, readingStatus, shortDate } from "../lib/bookStats";
 import { getBook, getBookAbout } from "../lib/books";
-import { listClubs, type ClubSummary } from "../lib/clubs";
+import { listClubs } from "../lib/clubs";
 import { fileSize, timeAgo } from "../lib/format";
 import { HIGHLIGHT_COLORS, highlightsToMarkdown, downloadText, listHighlights } from "../lib/highlights";
 import { authClient } from "../lib/auth";
 import { useLibrary } from "../lib/libraryStore";
 import { getPublicBook, listPublicBooks } from "../lib/publicLibrary";
 import { THEME_INFO } from "../lib/themes";
+import { useApi } from "../lib/useApi";
 import { languageName, PublisherInfo, Shelf, usePublicBookActions } from "./PublicLibraryPage";
 
 /** The blurb, clamped to a few lines with a toggle when it is long. */
@@ -114,15 +115,50 @@ function ThemeChips({ themes }: { themes: string[] }) {
   );
 }
 
+/**
+ * "About this book": the description, sections and catalog subjects beside the facts list,
+ * which starts with the format, size and language (`children` adds the rest).
+ */
+function About({
+  book,
+  subjects,
+  themes = [],
+  children,
+}: {
+  book: Pick<Book, "description" | "format" | "sizeBytes" | "language">;
+  subjects: string[];
+  themes?: string[];
+  children: ReactNode;
+}) {
+  return (
+    <section aria-labelledby="about-heading" className="grid gap-8 lg:grid-cols-[1fr_16rem]">
+      <div className="space-y-4">
+        <h2 id="about-heading" className="font-display text-xl font-semibold">
+          About this book
+        </h2>
+        <Description text={book.description} />
+        <ThemeChips themes={themes} />
+        {subjects.length ? <p className="text-xs text-muted">{subjects.slice(0, 6).join(" · ")}</p> : null}
+      </div>
+      <dl className="surface self-start px-4 py-1">
+        <Fact label="Format">{book.format.toUpperCase()}</Fact>
+        <Fact label="Size">{fileSize(book.sizeBytes)}</Fact>
+        {book.language && <Fact label="Language">{languageName(book.language)}</Fact>}
+        {children}
+      </dl>
+    </section>
+  );
+}
+
 /** "/books/:id" — one of the user's own books: progress, description, details, highlights, clubs. */
 export function BookPage() {
   const { id } = useParams<{ id: string }>();
   const { books, folders, openShare, openOrganize } = useLibrary();
   const [fetched, setFetched] = useState<Book | null | "missing">(null);
-  const [about, setAbout] = useState<BookAbout | null>(null);
-  const [highlights, setHighlights] = useState<Highlight[] | null>(null);
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  const [clubs, setClubs] = useState<ClubSummary[]>([]);
+  const { data: about } = useApi(() => getBookAbout(id!), [id]);
+  const { data: highlights } = useApi(() => listHighlights(id!), [id], { fallback: [] });
+  const bookmarks = useApi(() => loadBookmarks(id!), [id]).data ?? [];
+  const clubs = useApi(() => listClubs(id), [id]).data ?? [];
 
   // The library list is the live copy (favorites, tags… update it); fetch only if it isn't loaded.
   const book = books?.find((b) => b.id === id) ?? (fetched !== "missing" ? fetched : null);
@@ -131,16 +167,6 @@ export function BookPage() {
     if (books) return setFetched("missing"); // loaded and not there: deleted or not ours
     getBook(id).then(setFetched, () => setFetched("missing"));
   }, [id, books]);
-  useEffect(() => {
-    if (!id) return;
-    setAbout(null);
-    setHighlights(null);
-    getBookAbout(id).then(setAbout, () => {});
-    listHighlights(id).then(setHighlights, () => setHighlights([]));
-    setBookmarks([]);
-    loadBookmarks(id).then(setBookmarks, () => {});
-    listClubs(id).then(setClubs, () => {});
-  }, [id]);
 
   if (fetched === "missing" && !book) {
     return (
@@ -183,51 +209,39 @@ export function BookPage() {
         </div>
       </section>
 
-      <section aria-labelledby="about-heading" className="grid gap-8 lg:grid-cols-[1fr_16rem]">
-        <div>
-          <h2 id="about-heading" className="mb-3 font-display text-xl font-semibold">
-            About this book
-          </h2>
-          <Description text={book.description} />
-          {about?.subjects.length ? <p className="mt-4 text-xs text-muted">{about.subjects.slice(0, 6).join(" · ")}</p> : null}
-        </div>
-        <dl className="surface self-start px-4 py-1">
-          <Fact label="Format">{book.format.toUpperCase()}</Fact>
-          <Fact label="Size">{fileSize(book.sizeBytes)}</Fact>
-          {book.language && <Fact label="Language">{languageName(book.language)}</Fact>}
-          <Fact label="Added">{shortDate(book.createdAt)}</Fact>
-          {book.sharedBy && <Fact label="Shared by">{book.sharedBy}</Fact>}
-          <Fact label="Collection">
-            {folder ? (
-              <Link to={`/collections/${folder.id}`} className="text-accent hover:underline">
-                {folder.name}
-              </Link>
-            ) : (
-              <span className="text-muted">None</span>
-            )}
+      <About book={book} subjects={about?.subjects ?? []}>
+        <Fact label="Added">{shortDate(book.createdAt)}</Fact>
+        {book.sharedBy && <Fact label="Shared by">{book.sharedBy}</Fact>}
+        <Fact label="Collection">
+          {folder ? (
+            <Link to={`/collections/${folder.id}`} className="text-accent hover:underline">
+              {folder.name}
+            </Link>
+          ) : (
+            <span className="text-muted">None</span>
+          )}
+        </Fact>
+        {book.tags.length > 0 && <Fact label="Tags">{book.tags.join(", ")}</Fact>}
+        {about && about.readers > 0 && (
+          <Fact label="Readers">
+            {about.readers} other {about.readers === 1 ? "reader" : "readers"}
           </Fact>
-          {book.tags.length > 0 && <Fact label="Tags">{book.tags.join(", ")}</Fact>}
-          {about && about.readers > 0 && (
-            <Fact label="Readers">
-              {about.readers} other {about.readers === 1 ? "reader" : "readers"}
-            </Fact>
-          )}
-          {about?.publicBookId && (
-            <Fact label="Public Library">
-              <Link to={`/public/books/${about.publicBookId}`} className="inline-flex items-center gap-1 text-accent hover:underline">
-                <Globe className="h-3.5 w-3.5" /> {book.isPublic ? "Published" : "Available"}
-              </Link>
-            </Fact>
-          )}
-          {about?.source && (
-            <Fact label="Source">
-              <a href={about.source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-                {about.source.name} <ExternalLink className="h-3 w-3" />
-              </a>
-            </Fact>
-          )}
-        </dl>
-      </section>
+        )}
+        {about?.publicBookId && (
+          <Fact label="Public Library">
+            <Link to={`/public/books/${about.publicBookId}`} className="inline-flex items-center gap-1 text-accent hover:underline">
+              <Globe className="h-3.5 w-3.5" /> {book.isPublic ? "Published" : "Available"}
+            </Link>
+          </Fact>
+        )}
+        {about?.source && (
+          <Fact label="Source">
+            <a href={about.source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+              {about.source.name} <ExternalLink className="h-3 w-3" />
+            </a>
+          </Fact>
+        )}
+      </About>
 
       <section aria-labelledby="highlights-heading">
         <div className="mb-3 flex items-center gap-3">
@@ -323,31 +337,23 @@ export function PublicBookPage() {
   const { id } = useParams<{ id: string }>();
   const { publicVersion } = useLibrary();
   const me = authClient.useSession().data?.user;
-  const [book, setBook] = useState<PublicBookDetails | null | "missing">(null);
-  const [all, setAll] = useState<PublicBook[] | null>(null);
-
-  useEffect(() => {
-    if (id) getPublicBook(id).then(setBook, () => setBook("missing"));
-  }, [id, publicVersion]);
-  useEffect(() => {
-    listPublicBooks().then(setAll, () => {});
-  }, [publicVersion]);
+  const { data: book, error: missing } = useApi(() => getPublicBook(id!), [id], { reloadOn: [publicVersion] });
+  const { data: all } = useApi(listPublicBooks, [], { reloadOn: [publicVersion] });
 
   // More by the same author, then more from the same sections, most popular first.
   const related = useMemo(() => {
-    if (!all || !book || book === "missing") return { byAuthor: [], similar: [] };
+    if (!all || !book) return { byAuthor: [], similar: [] };
     const others = all.filter((b) => b.id !== book.id);
-    const byPop = (a: PublicBook, b: PublicBook) => (b.popularity ?? -1) - (a.popularity ?? -1);
-    const byAuthor = book.author ? others.filter((b) => b.author === book.author).sort(byPop).slice(0, 12) : [];
+    const byAuthor = book.author ? others.filter((b) => b.author === book.author).sort(byPopularity).slice(0, 12) : [];
     const seen = new Set(byAuthor.map((b) => b.id));
     const similar = others
       .filter((b) => !seen.has(b.id) && b.themes.some((t) => book.themes.includes(t)))
-      .sort((a, b) => b.themes.filter((t) => book.themes.includes(t)).length - a.themes.filter((t) => book.themes.includes(t)).length || byPop(a, b))
+      .sort((a, b) => b.themes.filter((t) => book.themes.includes(t)).length - a.themes.filter((t) => book.themes.includes(t)).length || byPopularity(a, b))
       .slice(0, 12);
     return { byAuthor, similar };
   }, [all, book]);
 
-  if (book === "missing") {
+  if (missing) {
     return (
       <EmptyState icon={<Globe />} title="Not in the Public Library">
         It was removed, or the link is wrong. <Link to="/public" className="text-accent hover:underline">Browse the Public Library</Link>
@@ -425,25 +431,12 @@ function PublicBookView({ book, related, viewerName }: { book: PublicBookDetails
 
       <PublisherInfo book={book} viewerName={viewerName} />
 
-      <section aria-labelledby="about-heading" className="grid gap-8 lg:grid-cols-[1fr_16rem]">
-        <div className="space-y-4">
-          <h2 id="about-heading" className="font-display text-xl font-semibold">
-            About this book
-          </h2>
-          <Description text={book.description} />
-          <ThemeChips themes={book.themes} />
-          {book.subjects.length ? <p className="text-xs text-muted">{book.subjects.slice(0, 6).join(" · ")}</p> : null}
-        </div>
-        <dl className="surface self-start px-4 py-1">
-          <Fact label="Format">{book.format.toUpperCase()}</Fact>
-          <Fact label="Size">{fileSize(book.sizeBytes)}</Fact>
-          {book.language && <Fact label="Language">{languageName(book.language)}</Fact>}
-          <Fact label="Published">{shortDate(book.publishedAt)}</Fact>
-          <Fact label="Readers">
-            {book.readers} {book.readers === 1 ? "reader" : "readers"}
-          </Fact>
-        </dl>
-      </section>
+      <About book={book} subjects={book.subjects} themes={book.themes}>
+        <Fact label="Published">{shortDate(book.publishedAt)}</Fact>
+        <Fact label="Readers">
+          {book.readers} {book.readers === 1 ? "reader" : "readers"}
+        </Fact>
+      </About>
 
       {related.byAuthor.length > 0 && <Shelf title={`More by ${book.author}`} icon={<BookOpen />} books={related.byAuthor} total={related.byAuthor.length} />}
       {related.similar.length > 0 && <Shelf title="You might also like" icon={<Globe />} books={related.similar} total={related.similar.length} />}

@@ -1,23 +1,41 @@
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-/** Centered dialog with a dimmed backdrop. Escape or a backdrop click closes it. */
+/**
+ * Centered dialog with a dimmed backdrop. Escape or a backdrop click closes it.
+ * `confirm` makes the footer Cancel plus that button (instead of `footer`).
+ */
 export function Modal({
   title,
   onClose,
   children,
   footer,
+  confirm,
 }: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  confirm?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const buttons = confirm ? (
+    <>
+      <button className="btn-ghost" onClick={onClose}>
+        Cancel
+      </button>
+      <button className="btn" disabled={confirm.disabled} onClick={confirm.onClick}>
+        {confirm.label}
+      </button>
+    </>
+  ) : (
+    footer
+  );
 
   return (
     <div className="fixed inset-0 z-[60] flex animate-fade items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
@@ -34,7 +52,7 @@ export function Modal({
           </button>
         </div>
         {children}
-        {footer && <div className="flex justify-end gap-2">{footer}</div>}
+        {buttons && <div className="flex justify-end gap-2">{buttons}</div>}
       </div>
     </div>
   );

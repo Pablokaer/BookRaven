@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { authClient } from "../lib/auth";
-import { AuthLayout } from "./LoginPage";
-import { Field } from "../components/ui/Field";
+import { AuthFooterLink, AuthLayout } from "./LoginPage";
+import { PasswordField } from "../components/ui/Field";
 
 /** "/reset-password?token=…" — opened from the password-reset email. */
 export function ResetPasswordPage({ onDone }: { onDone: () => void }) {
@@ -39,40 +39,15 @@ export function ResetPasswordPage({ onDone }: { onDone: () => void }) {
         <p className="text-sm text-muted">Your password was changed and other devices were signed out.</p>
       ) : (
         <form onSubmit={submit} className="space-y-4">
-          <Field label="New password">
-            <input
-              className="input h-11 w-full"
-              type="password"
-              placeholder="At least 8 characters"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </Field>
-          <Field label="Repeat the new password">
-            <input
-              className="input h-11 w-full"
-              type="password"
-              required
-              minLength={8}
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              autoComplete="new-password"
-            />
-          </Field>
+          <PasswordField label="New password" placeholder="At least 8 characters" minLength={8} value={password} onValue={setPassword} autoComplete="new-password" />
+          <PasswordField label="Repeat the new password" minLength={8} value={confirm} onValue={setConfirm} autoComplete="new-password" />
           {error && <p className="text-sm text-rose-300">{error}</p>}
           <button className="btn h-11 w-full" disabled={busy}>
             {busy ? "Please wait…" : "Save new password"}
           </button>
         </form>
       )}
-      <p className="mt-6 text-center text-sm">
-        <button className="font-medium text-accent hover:text-accent-hover" onClick={finish}>
-          {done ? "Continue" : "Back to sign in"}
-        </button>
-      </p>
+      <AuthFooterLink onClick={finish}>{done ? "Continue" : "Back to sign in"}</AuthFooterLink>
     </AuthLayout>
   );
 }

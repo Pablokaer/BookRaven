@@ -160,14 +160,6 @@ export async function clearInk() {
   if (typeof caches !== "undefined") await caches.delete(STORE).catch(() => {});
 }
 
-let installed = false;
-export function installInkFlushers() {
-  if (installed) return;
-  installed = true;
-  window.addEventListener("online", () => void flushInk());
-  void flushInk();
-}
-
 // ---------- Offline copy, one entry per page ----------
 
 type CachedPage = { strokes: Stroke[]; version: number };

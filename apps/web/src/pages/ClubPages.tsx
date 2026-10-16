@@ -1,11 +1,13 @@
-import { BookOpen, Check, Copy, LogOut, MessageSquare, MoreHorizontal, Plus, Quote, RefreshCw, Send, Trash2, UserMinus, UsersRound } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, LogOut, MessageSquare, MoreHorizontal, Plus, Quote, RefreshCw, Send, Trash2, UserMinus, UsersRound } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { AuthImage } from "../components/AuthImage";
 import { EmptyState } from "../components/books/BookBrowser";
 import { ProgressBar } from "../components/books/ProgressBar";
+import { CopyField } from "../components/ui/CopyField";
 import { Menu } from "../components/ui/Menu";
 import { Modal } from "../components/ui/Modal";
+import { PageHeader } from "../components/ui/PageHeader";
 import { ApiError } from "../lib/api";
 import {
   createClub,
@@ -19,12 +21,12 @@ import {
   postMessage,
   removeMember,
   resetInvite,
-  type ClubDetail,
-  type ClubInvite,
   type ClubSummary,
 } from "../lib/clubs";
+import { confirmThen } from "../lib/confirm";
 import { fileSize, percent, timeAgo } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
+import { useApi } from "../lib/useApi";
 
 function ClubCover({ club, className = "" }: { club: Pick<ClubSummary, "id" | "book">; className?: string }) {
   return (
@@ -56,16 +58,7 @@ function NewClubDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
     <Modal
       title="New book club"
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn" disabled={!bookId} onClick={() => void submit()}>
-            Create club
-          </button>
-        </>
-      }
+      confirm={{ label: "Create club", disabled: !bookId, onClick: () => void submit() }}
     >
       <p className="-mt-2 text-sm text-muted">Read one book together: members see each other’s progress and talk about it. Invite people with a link.</p>
       <label className="block space-y-1.5">
@@ -97,27 +90,21 @@ function NewClubDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
 export function ClubsPage() {
   const { clubsVersion } = useLibrary();
   const navigate = useNavigate();
-  const [clubs, setClubs] = useState<ClubSummary[] | null>(null);
+  const { data: clubs } = useApi(listClubs, [], { fallback: [], reloadOn: [clubsVersion] });
   const [creating, setCreating] = useState(false);
-  useEffect(() => {
-    listClubs()
-      .then(setClubs)
-      .catch(() => setClubs([]));
-  }, [clubsVersion]);
 
   return (
     <>
-      <header className="mb-8 flex flex-wrap items-end gap-4">
-        <div className="mr-auto">
-          <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
-            <UsersRound className="h-7 w-7 text-accent" /> Book Clubs
-          </h1>
-          <p className="mt-1.5 text-sm text-muted">Read a book together, follow each other’s progress and discuss it.</p>
-        </div>
-        <button className="btn" onClick={() => setCreating(true)}>
-          <Plus className="h-4 w-4" /> New club
-        </button>
-      </header>
+      <PageHeader
+        title="Book Clubs"
+        icon={UsersRound}
+        subtitle="Read a book together, follow each other’s progress and discuss it."
+        actions={
+          <button className="btn" onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" /> New club
+          </button>
+        }
+      />
       {clubs === null ? (
         <div className="h-40 animate-pulse rounded-2xl bg-elevated/50" />
       ) : clubs.length === 0 ? (
@@ -151,19 +138,10 @@ export function ClubPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const { clubsVersion } = useLibrary();
-  const [club, setClub] = useState<ClubDetail | null>(null);
-  const [missing, setMissing] = useState(false);
+  const { data: club, error: missing, reload } = useApi(() => getClub(id), [id], { reloadOn: [clubsVersion] });
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const [copied, setCopied] = useState(false);
   const feedEnd = useRef<HTMLDivElement>(null);
-
-  const load = useCallback(() => {
-    getClub(id)
-      .then(setClub)
-      .catch(() => setMissing(true));
-  }, [id]);
-  useEffect(load, [load, clubsVersion]);
   // (A block body: scrollIntoView returns a promise in newer browsers, which must not become the effect's cleanup.)
   useEffect(() => {
     feedEnd.current?.scrollIntoView({ block: "nearest" });
@@ -187,7 +165,7 @@ export function ClubPage() {
     try {
       await postMessage(club.id, { text: text.trim() });
       setText("");
-      load();
+      reload();
     } catch {
       window.alert("Could not send it, try again.");
     } finally {
@@ -212,22 +190,17 @@ export function ClubPage() {
                         {
                           label: "New invite link",
                           icon: <RefreshCw />,
-                          onSelect: async () => {
-                            if (!window.confirm("Make a new invite link? The current one stops working.")) return;
-                            await resetInvite(club.id);
-                            load();
-                          },
+                          onSelect: () => void confirmThen("Make a new invite link? The current one stops working.", () => resetInvite(club.id), reload),
                         },
                         { separator: true },
                         {
                           label: "Delete club",
                           icon: <Trash2 />,
                           danger: true,
-                          onSelect: async () => {
-                            if (!window.confirm(`Delete “${club.name}” and its discussion for everyone? Books stay in people’s libraries.`)) return;
-                            await deleteClub(club.id);
-                            navigate("/clubs");
-                          },
+                          onSelect: () =>
+                            void confirmThen(`Delete “${club.name}” and its discussion for everyone? Books stay in people’s libraries.`, () =>
+                              deleteClub(club.id).then(() => navigate("/clubs")),
+                            ),
                         },
                       ]
                     : [
@@ -235,11 +208,8 @@ export function ClubPage() {
                           label: "Leave club",
                           icon: <LogOut />,
                           danger: true,
-                          onSelect: async () => {
-                            if (!window.confirm(`Leave “${club.name}”? The book stays in your library.`)) return;
-                            await removeMember(club.id, "me");
-                            navigate("/clubs");
-                          },
+                          onSelect: () =>
+                            void confirmThen(`Leave “${club.name}”? The book stays in your library.`, () => removeMember(club.id, "me").then(() => navigate("/clubs"))),
                         },
                       ]
                 }
@@ -296,11 +266,7 @@ export function ClubPage() {
                     <button
                       className="icon-btn h-7 w-7 self-center opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100"
                       aria-label="Delete message"
-                      onClick={async () => {
-                        if (!window.confirm("Delete this message?")) return;
-                        await deleteMessage(club.id, m.id).catch(() => {});
-                        load();
-                      }}
+                      onClick={() => void confirmThen("Delete this message?", () => deleteMessage(club.id, m.id), reload)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -354,11 +320,7 @@ export function ClubPage() {
                     <button
                       className="icon-btn h-6 w-6 opacity-0 group-hover:opacity-100 focus:opacity-100"
                       aria-label={`Remove ${m.name}`}
-                      onClick={async () => {
-                        if (!window.confirm(`Remove ${m.name} from the club?`)) return;
-                        await removeMember(club.id, m.id);
-                        load();
-                      }}
+                      onClick={() => void confirmThen(`Remove ${m.name} from the club?`, () => removeMember(club.id, m.id), reload)}
                     >
                       <UserMinus className="h-3.5 w-3.5" />
                     </button>
@@ -373,20 +335,7 @@ export function ClubPage() {
         <section className="surface p-5">
           <h2 className="mb-1 text-sm font-semibold">Invite</h2>
           <p className="mb-3 text-xs text-muted">Anyone with an account on this server who opens the link can join. The book is added to their library.</p>
-          <div className="flex gap-2">
-            <input readOnly value={inviteUrl(club.inviteToken)} className="input min-w-0 flex-1 text-xs" aria-label="Invite link" onFocus={(e) => e.target.select()} />
-            <button
-              className="btn-outline px-3"
-              aria-label="Copy invite link"
-              onClick={() => {
-                void navigator.clipboard?.writeText(inviteUrl(club.inviteToken));
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }}
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </button>
-          </div>
+          <CopyField label="Invite link" value={inviteUrl(club.inviteToken)} inputClassName="text-xs" />
         </section>
       </aside>
     </div>
@@ -398,15 +347,10 @@ export function ClubInvitePage() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
   const { me } = useLibrary();
-  const [invite, setInvite] = useState<ClubInvite | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: invite, error: loadError } = useApi(() => getInvite(token), [token]);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    getInvite(token)
-      .then(setInvite)
-      .catch(() => setError("This invite link is invalid or was replaced by a new one."));
-  }, [token]);
+  const error = loadError ? "This invite link is invalid or was replaced by a new one." : joinError;
 
   const join = async () => {
     setBusy(true);
@@ -414,7 +358,7 @@ export function ClubInvitePage() {
       const { clubId } = await joinClub(token);
       navigate(`/clubs/${clubId}`, { replace: true });
     } catch (err) {
-      setError(
+      setJoinError(
         err instanceof ApiError && err.status === 413
           ? `Not enough space in your library${me?.quotaBytes ? ` (limit ${fileSize(me.quotaBytes)})` : ""} for this book.`
           : "Could not join, try again.",

@@ -1,21 +1,22 @@
 import { ArrowRight, BookOpen, Download, ExternalLink, Flag, Flame, Globe, HandHelping, Library, Loader2, MoreHorizontal, Plus, ShieldCheck, Sparkles, Trash2, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { EmptyState, BookGridSkeleton } from "../components/books/BookBrowser";
+import { EmptyState, BookGridSkeleton, GRID } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
 import { ReportDialog } from "../components/ReportDialog";
 import { RequestsTab } from "../components/RequestsTab";
 import { Avatar } from "../components/ui/Avatar";
 import { Menu } from "../components/ui/Menu";
+import { PageHeader } from "../components/ui/PageHeader";
 import { ApiError, type PublicBook } from "../lib/api";
 import { isComicFormat } from "../lib/comicFormats";
 import { recommend } from "../lib/recommend";
-import { matchesText } from "../lib/search";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { addPublicBook, downloadPublicBook, listPublicBooks, removePublicBook } from "../lib/publicLibrary";
-import { shortDate } from "../lib/bookStats";
+import { byPopularity, byText, shortDate } from "../lib/bookStats";
 import { THEME_INFO, THEME_ORDER } from "../lib/themes";
+import { useApi } from "../lib/useApi";
 
 type Sort = "popular" | "newest" | "title" | "author";
 
@@ -229,13 +230,10 @@ export function Shelf({
   );
 }
 
-const byPopularity = (a: PublicBook, b: PublicBook) => (b.popularity ?? -1) - (a.popularity ?? -1);
-
 /** "/public" — books shared with every account on this server, by theme. */
 export function PublicLibraryPage() {
-  const { query, publicVersion, me, books: library } = useLibrary();
-  const [books, setBooks] = useState<PublicBook[] | null>(null);
-  const [error, setError] = useState(false);
+  const { publicVersion, me, books: library } = useLibrary();
+  const { data: books, error, reload: load } = useApi(listPublicBooks, [], { reloadOn: [publicVersion] });
   const [format, setFormat] = useState<string>("all");
   const [language, setLanguage] = useState<string>("all");
   const [sort, setSort] = useState<Sort>("popular");
@@ -247,26 +245,7 @@ export function PublicLibraryPage() {
   // "?book=<id>" (from an answered request) scrolls to that book and outlines it.
   const focusId = params.get("book");
 
-  const setParam = (key: string, value: string | null) =>
-    setParams((p) => {
-      const next = new URLSearchParams(p);
-      if (value === null) next.delete(key);
-      else next.set(key, value);
-      next.delete("book");
-      return next;
-    });
-
-  const load = useCallback(() => {
-    listPublicBooks()
-      .then((list) => {
-        setBooks(list);
-        setError(false);
-      })
-      .catch(() => setError(true));
-  }, []);
-
-  useEffect(load, [load, publicVersion]);
-  useEffect(() => setShown(PAGE_SIZE), [theme, format, language, sort, query]);
+  useEffect(() => setShown(PAGE_SIZE), [theme, format, language, sort]);
 
   useEffect(() => {
     if (focusId && books) document.getElementById(`pub-${focusId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -292,16 +271,15 @@ export function PublicLibraryPage() {
 
   const visible = useMemo(() => {
     if (!pool) return null;
-    const list = pool.filter((b) => (theme === "all" || b.themes.includes(theme)) && matchesText(`${b.title} ${b.author ?? ""} ${b.publishedBy ?? ""}`, query));
-    const text = (a: string | null, b: string | null) => (a ?? "\uffff").localeCompare(b ?? "\uffff", undefined, { sensitivity: "base", numeric: true });
+    const list = pool.filter((b) => theme === "all" || b.themes.includes(theme));
     if (sort === "popular") list.sort(byPopularity);
-    else if (sort === "title") list.sort((a, b) => text(a.title, b.title));
-    else if (sort === "author") list.sort((a, b) => text(a.author, b.author) || text(a.title, b.title));
+    else if (sort === "title") list.sort((a, b) => byText(a.title, b.title));
+    else if (sort === "author") list.sort((a, b) => byText(a.author, b.author) || byText(a.title, b.title));
     return list;
-  }, [pool, theme, sort, query]);
+  }, [pool, theme, sort]);
 
-  // Without a theme, a search or "see everything", the library is shown as shelves.
-  const browsing = theme === "all" && !query.trim() && !showAll && !focusId;
+  // Without a theme or "see everything", the library is shown as shelves (searching has its own page).
+  const browsing = theme === "all" && !showAll && !focusId;
   const shelves = useMemo(() => {
     if (!pool) return [];
     const popular = [...pool].filter((b) => b.popularity !== null).sort(byPopularity);
@@ -325,22 +303,23 @@ export function PublicLibraryPage() {
 
   return (
     <>
-      <header className="mb-8 flex flex-wrap items-end gap-4">
-        <div className="mr-auto max-w-2xl">
-          <h1 className="flex items-center gap-3 font-display text-3xl font-bold tracking-tight">
-            <Globe className="h-7 w-7 text-accent" /> Public Library
-          </h1>
-          <p className="mt-1.5 text-sm text-muted">
+      <PageHeader
+        title="Public Library"
+        icon={Globe}
+        className="mb-8 max-w-2xl"
+        subtitle={
+          <>
             {books ? `${books.length} books` : "Books"} shared with everyone on this server, including public-domain classics in English and Portuguese.
             Add a copy to your library to read it with synced progress, or download the file. Publish your own books from a book’s ⋯ menu.
-          </p>
-          {me?.isAdmin && (
-            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
-              <ShieldCheck className="h-3.5 w-3.5" /> Administrator: you can remove any book
-            </span>
-          )}
-        </div>
-      </header>
+          </>
+        }
+      >
+        {me?.isAdmin && (
+          <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs text-accent">
+            <ShieldCheck className="h-3.5 w-3.5" /> Administrator: you can remove any book
+          </span>
+        )}
+      </PageHeader>
 
       <div className="mb-8 flex flex-wrap items-center gap-2" role="tablist">
         {(
@@ -444,11 +423,11 @@ export function PublicLibraryPage() {
                 ))}
               </div>
             ) : visible.length === 0 ? (
-              <p className="py-14 text-center text-sm text-muted">No public books match {query.trim() ? `“${query.trim()}”` : "this filter"}.</p>
+              <p className="py-14 text-center text-sm text-muted">No public books match this filter.</p>
             ) : (
               <>
                 {theme !== "all" && THEME_INFO[theme] && <p className="-mt-2 mb-6 text-sm text-muted">{THEME_INFO[theme]!.blurb}.</p>}
-                <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
+                <div className={GRID}>
                   {visible.slice(0, Math.max(shown, focusId ? visible.length : 0)).map((b) => (
                     <PublicBookCard key={b.id} book={b} onChanged={load} focused={b.id === focusId} />
                   ))}

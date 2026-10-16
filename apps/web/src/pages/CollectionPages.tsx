@@ -5,6 +5,7 @@ import { BookBrowser, EmptyState } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
 import { CollectionShareDialog } from "../components/ShareDialog";
 import { Menu } from "../components/ui/Menu";
+import { PageHeader } from "../components/ui/PageHeader";
 import { collectionColor } from "../lib/bookStats";
 import { useLibrary } from "../lib/libraryStore";
 
@@ -19,6 +20,7 @@ export function CollectionsPage() {
     return map;
   }, [books]);
   const loose = books?.filter((b) => !b.folderId).length ?? 0;
+  const looseNote = books ? `${loose} book${loose === 1 ? " is" : "s are"} not in a collection.` : "";
 
   const create = async () => {
     const f = await addFolder();
@@ -27,18 +29,15 @@ export function CollectionsPage() {
 
   return (
     <>
-      <header className="mb-8 flex flex-wrap items-end gap-4">
-        <div className="mr-auto">
-          <h1 className="font-display text-3xl font-bold tracking-tight">Collections</h1>
-          <p className="mt-1.5 text-sm text-muted">
-            Group books the way you think about them. Drop files on a collection to upload them into it.{" "}
-            {books && `${loose} book${loose === 1 ? " is" : "s are"} not in a collection.`}
-          </p>
-        </div>
-        <button className="btn" onClick={() => void create()}>
-          <FolderPlus className="h-4 w-4" /> New collection
-        </button>
-      </header>
+      <PageHeader
+        title="Collections"
+        subtitle={`Group books the way you think about them. Drop files on a collection to upload them into it. ${looseNote}`}
+        actions={
+          <button className="btn" onClick={() => void create()}>
+            <FolderPlus className="h-4 w-4" /> New collection
+          </button>
+        }
+      />
 
       {folders.length === 0 ? (
         <EmptyState icon={<Folder />} title="No collections yet">

@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError } from "./api";
+import { apiJson, apiOk } from "./api";
 
 export type ClubSummary = {
   id: string;
@@ -37,21 +37,17 @@ export type ClubMessage = {
 export type ClubDetail = Omit<ClubSummary, "members"> & { inviteToken: string; members: ClubMember[]; messages: ClubMessage[] };
 export type ClubInvite = ClubSummary & { ownerName: string; isMember: boolean };
 
-async function ok(res: Response) {
-  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
-}
-
 export const listClubs = (bookId?: string) => apiJson<ClubSummary[]>(`/api/clubs${bookId ? `?bookId=${bookId}` : ""}`);
 export const getClub = (id: string) => apiJson<ClubDetail>(`/api/clubs/${id}`);
 export const createClub = (c: { bookId: string; name: string; description?: string }) =>
   apiJson<ClubSummary & { inviteToken: string }>("/api/clubs", { method: "POST", body: JSON.stringify(c) });
 export const postMessage = (id: string, m: { text: string; quote?: string; locator?: string }) =>
-  apiFetch(`/api/clubs/${id}/messages`, { method: "POST", body: JSON.stringify(m) }).then(ok);
-export const deleteMessage = (id: string, messageId: string) => apiFetch(`/api/clubs/${id}/messages/${messageId}`, { method: "DELETE" }).then(ok);
+  apiOk(`/api/clubs/${id}/messages`, { method: "POST", body: JSON.stringify(m) });
+export const deleteMessage = (id: string, messageId: string) => apiOk(`/api/clubs/${id}/messages/${messageId}`, { method: "DELETE" });
 export const getInvite = (token: string) => apiJson<ClubInvite>(`/api/clubs/invite/${token}`);
 export const joinClub = (token: string) => apiJson<{ clubId: string; bookId: string }>(`/api/clubs/invite/${token}/join`, { method: "POST" });
 export const resetInvite = (id: string) => apiJson<{ inviteToken: string }>(`/api/clubs/${id}/invite/reset`, { method: "POST" });
-export const removeMember = (id: string, userId: "me" | string) => apiFetch(`/api/clubs/${id}/members/${userId}`, { method: "DELETE" }).then(ok);
-export const deleteClub = (id: string) => apiFetch(`/api/clubs/${id}`, { method: "DELETE" }).then(ok);
+export const removeMember = (id: string, userId: "me" | string) => apiOk(`/api/clubs/${id}/members/${userId}`, { method: "DELETE" });
+export const deleteClub = (id: string) => apiOk(`/api/clubs/${id}`, { method: "DELETE" });
 
 export const inviteUrl = (token: string) => `${window.location.origin}/clubs/join/${token}`;

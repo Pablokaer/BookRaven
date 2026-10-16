@@ -50,16 +50,7 @@ export function OrganizeDialog({
     <Modal
       title={book.title}
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn" disabled={busy} onClick={() => void save()}>
-            Save
-          </button>
-        </>
-      }
+      confirm={{ label: "Save", disabled: busy, onClick: () => void save() }}
     >
       <label className="block space-y-2">
         <span className="eyebrow">Collection</span>

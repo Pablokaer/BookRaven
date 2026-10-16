@@ -1,5 +1,6 @@
 import type { Book, PublicBook } from "./api";
-import { FINISHED_AT } from "./bookStats";
+import { byPopularity, FINISHED_AT } from "./bookStats";
+import { foldWords } from "./search";
 
 /**
  * Public-library suggestions from the reader's own library, worked out in the app (no data
@@ -8,16 +9,8 @@ import { FINISHED_AT } from "./bookStats";
  * equals. Books already in the library are never suggested.
  */
 
-const norm = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-
 /** "Machado de Assis, José de Alencar" → each author on their own. */
-const authorsOf = (author: string | null) => (author ? author.split(/\s*(?:,|;|&| and )\s*/).map(norm).filter(Boolean) : []);
+const authorsOf = (author: string | null) => (author ? author.split(/\s*(?:,|;|&| and )\s*/).map(foldWords).filter(Boolean) : []);
 
 /** How much a book of the library says about the reader's taste. */
 function weight(b: Book) {
@@ -63,7 +56,6 @@ export function recommend(library: Book[], publicBooks: PublicBook[], options: P
   };
   // Other languages only when the library gives no clue about the reader's.
   const inMyLanguage = (p: PublicBook) => !languages.size || !p.language || languages.has(p.language);
-  const byPopularity = (a: PublicBook, b: PublicBook) => (b.popularity ?? -1) - (a.popularity ?? -1);
 
   const scored = candidates
     .filter(inMyLanguage)

@@ -1,9 +1,10 @@
 import { LayoutGrid, List, Tag, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import type { Book } from "../../lib/api";
-import { byAdded } from "../../lib/bookStats";
+import { byAdded, byText } from "../../lib/bookStats";
 import { isComicFormat } from "../../lib/comicFormats";
-import { matchesQuery, useLibrary } from "../../lib/libraryStore";
+import { toggled } from "../../lib/sets";
+import { readString, writeString } from "../../lib/storage";
 import { Menu } from "../ui/Menu";
 import { BookCard, BookRow } from "./BookCard";
 
@@ -24,28 +25,21 @@ const RECENT_MS = 30 * 24 * 3600 * 1000;
 
 const VIEW_KEY = "readsync.libraryView";
 
-function loadView(): View {
-  try {
-    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
-  } catch {
-    return "grid";
-  }
-}
-
-const text = (a: string | null, b: string | null) =>
-  (a ?? "￿").localeCompare(b ?? "￿", undefined, { sensitivity: "base", numeric: true });
+const loadView = (): View => (readString(VIEW_KEY) === "list" ? "list" : "grid");
 
 const SORTERS: Record<Sort, ((a: Book, b: Book) => number) | null> = {
   activity: null, // the store already keeps this order
   added: byAdded,
-  title: (a, b) => text(a.title, b.title),
-  author: (a, b) => text(a.author, b.author) || text(a.title, b.title),
+  title: (a, b) => byText(a.title, b.title),
+  author: (a, b) => byText(a.author, b.author) || byText(a.title, b.title),
   progress: (a, b) => (b.progress?.percentage ?? -1) - (a.progress?.percentage ?? -1),
 };
 
+export const GRID = "grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6";
+
 export function BookGridSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6" aria-busy="true" aria-label="Loading books">
+    <div className={GRID} aria-busy="true" aria-label="Loading books">
       {Array.from({ length: count }, (_, i) => (
         <div key={i}>
           <div className="skeleton aspect-[2/3] rounded-lg" />
@@ -69,7 +63,7 @@ export function EmptyState({ icon, title, children }: { icon: ReactNode; title: 
 
 /**
  * Filterable, sortable grid/list of books. `books` is whatever the page shows
- * (whole library, a collection, favorites…); the top-bar search applies on top.
+ * (whole library, a collection, favorites…). The top-bar search has its own page.
  */
 export function BookBrowser({
   books,
@@ -85,7 +79,6 @@ export function BookBrowser({
   defaultSort?: Sort;
   actions?: ReactNode;
 }) {
-  const { query, setQuery, folders } = useLibrary();
   const [filter, setFilter] = useState<Filter>("all");
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<Sort>(defaultSort);
@@ -93,11 +86,7 @@ export function BookBrowser({
 
   const setView = (v: View) => {
     setViewState(v);
-    try {
-      localStorage.setItem(VIEW_KEY, v);
-    } catch {
-      /* ignore */
-    }
+    writeString(VIEW_KEY, v);
   };
 
   const formats = useMemo(() => [...new Set(books?.map((b) => b.format))].sort(), [books]);
@@ -122,18 +111,16 @@ export function BookBrowser({
               : filter !== "all" && b.format !== filter;
       if (hidden) return false;
       const bookTags = b.tags.map((t) => t.toLowerCase());
-      if (!tagKeys.every((t) => bookTags.includes(t))) return false;
-      return matchesQuery(b, query, folders);
+      return tagKeys.every((t) => bookTags.includes(t));
     });
     const sorter = SORTERS[sort];
     return sorter ? [...list].sort(sorter) : list;
-  }, [books, filter, tags, sort, query, folders]);
+  }, [books, filter, tags, sort]);
 
-  const filtered = filter !== "all" || tags.size > 0 || query.trim() !== "";
+  const filtered = filter !== "all" || tags.size > 0;
   const clear = () => {
     setFilter("all");
     setTags(new Set());
-    setQuery("");
   };
 
   const chips: { id: Filter; label: string }[] = [
@@ -206,13 +193,7 @@ export function BookBrowser({
               }
               items={allTags.map((t) => ({
                 label: `${tags.has(t) ? "✓ " : ""}${t}`,
-                onSelect: () =>
-                  setTags((cur) => {
-                    const next = new Set(cur);
-                    if (next.has(t)) next.delete(t);
-                    else next.add(t);
-                    return next;
-                  }),
+                onSelect: () => setTags((cur) => toggled(cur, t)),
               }))}
             />
           )}
@@ -235,13 +216,13 @@ export function BookBrowser({
         empty
       ) : visible.length === 0 ? (
         <div className="py-14 text-center text-sm text-muted">
-          No books match {query.trim() ? `“${query.trim()}”` : "these filters"}.{" "}
+          No books match these filters.{" "}
           <button className="text-accent underline-offset-2 hover:underline" onClick={clear}>
             Clear filters
           </button>
         </div>
       ) : view === "grid" ? (
-        <div className="grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6">
+        <div className={GRID}>
           {visible.map((b) => (
             <BookCard key={b.id} book={b} />
           ))}

@@ -4,6 +4,7 @@ import { deviceId } from "./device";
 import { onServerEvent } from "./events";
 import type { FontId } from "./fonts";
 import { dictionaryTarget, type WordLanguage } from "./lookup";
+import { readJson, writeJson } from "./storage";
 
 export type ThemeId = "light" | "sepia" | "dark" | "black";
 
@@ -87,13 +88,7 @@ export const THEMES: Record<ThemeId, { label: string; bg: string; fg: string; li
 
 const LOCAL_KEY = "readsync.settings";
 
-function loadLocal(): ReaderSettings {
-  try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(LOCAL_KEY) ?? "{}") };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
+const loadLocal = (): ReaderSettings => ({ ...DEFAULT_SETTINGS, ...readJson<Partial<ReaderSettings>>(LOCAL_KEY, {}) });
 
 type Ctx = { settings: ReaderSettings; update: (patch: Partial<ReaderSettings>) => void };
 const SettingsContext = createContext<Ctx | null>(null);
@@ -105,11 +100,7 @@ export function SettingsProvider({ children, enabled }: { children: ReactNode; e
 
   const applyLocal = useCallback((s: ReaderSettings) => {
     setSettings(s);
-    try {
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(s));
-    } catch {
-      /* ignore */
-    }
+    writeJson(LOCAL_KEY, s);
   }, []);
 
   useEffect(() => {
@@ -130,11 +121,7 @@ export function SettingsProvider({ children, enabled }: { children: ReactNode; e
     (patch: Partial<ReaderSettings>) => {
       setSettings((prev) => {
         const next = { ...prev, ...patch };
-        try {
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
+        writeJson(LOCAL_KEY, next);
         clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
           apiJson("/api/settings", {
