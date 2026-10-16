@@ -1,9 +1,9 @@
-import { compare as compareCfi } from "foliate-js/epubcfi.js";
+import { compare as compareCfi, parse as parseCfi, type ParsedCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Bookmark as BookmarkIcon, NotebookText, PenLine, Search, TableOfContents, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
-import { apiJson, type Book, type Highlight, type HighlightColor, type ServerConfig } from "../lib/api";
+import { serverConfig, type Book, type Highlight, type HighlightColor, type ServerConfig } from "../lib/api";
 import {
   applyChange,
   fetchInkPage,
@@ -29,6 +29,7 @@ import { isComicFormat } from "../lib/comicFormats";
 import { onServerEvent } from "../lib/events";
 import { percent, timeAgo } from "../lib/format";
 import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, listHighlights, updateHighlight } from "../lib/highlights";
+import { afterIdle } from "../lib/idle";
 import { flushProgress, getLocalPending, saveProgress, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
 import { useDocumentEvent, useLatest } from "../lib/useLatest";
@@ -58,17 +59,38 @@ const pdfPos = (cfi: string) => {
   return m ? [Number(m[1]), Number(m[2])] : null;
 };
 
-/** Book order (by position in the text), falling back to creation order. */
+/**
+ * Book order (by position in the text), falling back to creation order. Each CFI is parsed once
+ * per sort rather than at every comparison (compare parses strings itself, so the order is the same).
+ */
 function sortHighlights(list: Highlight[]) {
+  const parsed = new Map<string, ParsedCfi | null>();
+  const cfiOf = (cfi: string) => {
+    let p = parsed.get(cfi);
+    if (p === undefined) {
+      try {
+        p = parseCfi(cfi);
+      } catch {
+        p = null;
+      }
+      parsed.set(cfi, p);
+    }
+    return p;
+  };
   return [...list].sort((a, b) => {
     const pa = pdfPos(a.cfi);
     const pb = pdfPos(b.cfi);
     if (pa && pb) return pa[0]! - pb[0]! || pa[1]! - pb[1]!;
-    try {
-      return compareCfi(a.cfi, b.cfi);
-    } catch {
-      return a.createdAt.localeCompare(b.createdAt);
+    const ca = cfiOf(a.cfi);
+    const cb = cfiOf(b.cfi);
+    if (ca && cb) {
+      try {
+        return compareCfi(ca, cb);
+      } catch {
+        /* not comparable: creation order */
+      }
     }
+    return a.createdAt.localeCompare(b.createdAt);
   });
 }
 
@@ -143,8 +165,8 @@ export function ReaderPage() {
   const inkState = useRef(newInkState());
   /** The book whose handwriting summary is loaded (null while loading). */
   const [inkLoadedFor, setInkLoadedFor] = useState<string | null>(null);
-  /** Notebook pictures of annotated pages, by page and strokes. */
-  const inkThumbs = useRef(new Map<string, string>());
+  /** Notebook pictures of annotated pages: the latest one of each page, with the strokes it shows. */
+  const inkThumbs = useRef(new Map<number, { signature: string; url: string }>());
   const [inking, setInking] = useState(false);
   const inkTools = useInkTools();
   /** Undo and redo stacks of this session's handwriting changes (each with the change that reverts it). */
@@ -186,14 +208,19 @@ export function ReaderPage() {
     };
   }, [id, libraryBook, offerRemote]);
 
-  useEffect(() => {
-    listClubs(id)
-      .then(setClubs)
-      .catch(() => {});
-  }, [id]);
+  // Only the menu over selected text needs the clubs: they load once the book is open.
+  useEffect(
+    () =>
+      afterIdle(() =>
+        listClubs(id)
+          .then(setClubs)
+          .catch(() => {}),
+      ),
+    [id],
+  );
 
   useEffect(() => {
-    apiJson<ServerConfig>("/api/config")
+    serverConfig()
       .then(setFeatures)
       .catch(() => {});
   }, []);
@@ -291,6 +318,7 @@ export function ReaderPage() {
   // opens with a summary of its annotated pages; strokes load around the page being read. Live
   // changes carry the page's version: they apply in order, and a missed one makes the page load again.
   useEffect(() => {
+    inkThumbs.current.clear(); // another book's pictures
     if (book?.format !== "pdf") return;
     let cancelled = false;
     inkBook.current = book.id;
@@ -379,11 +407,11 @@ export function ReaderPage() {
       const after = inkPageList.filter((p) => p.page > page).slice(0, 7).map((p) => p.page);
       await ensureInkPages([page, ...after]);
       const strokes = inkRef.current[page] ?? [];
-      const key = `${page}:${inkSignature(strokes)}`;
-      const hit = inkThumbs.current.get(key);
-      if (hit) return hit;
+      const signature = inkSignature(strokes);
+      const hit = inkThumbs.current.get(page);
+      if (hit?.signature === signature) return hit.url;
       const url = (await reader.current?.thumbnail?.(page, 240, strokes)) ?? null;
-      if (url) inkThumbs.current.set(key, url);
+      if (url) inkThumbs.current.set(page, { signature, url });
       return url;
     },
     [inkPageList, ensureInkPages, inkRef],

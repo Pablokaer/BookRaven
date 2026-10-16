@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openComicArchive } from "./comics";
-import { CHUNK, lazyBlob, openRemoteFile } from "./rangeFile";
+import { CHUNK, forgetSaved, lazyBlob, openRemoteFile, saveWholeFile } from "./rangeFile";
 
 /** A server holding `data` that answers range requests (or, with `ranges: false`, sends it whole). */
 function serve(data: Uint8Array, { ranges = true } = {}) {
@@ -179,5 +179,31 @@ describe("comics read by ranges", () => {
     expect(new Uint8Array(await (await comic.loadPage("p2.png")).arrayBuffer())).toEqual(pages["p2.png"]);
     // ...so showing the next page needed no request of its own.
     expect(requests.length).toBe(after);
+  });
+});
+
+describe("saved files", () => {
+  it("replaces the saved pieces with the whole file by their keys, without listing the cache", async () => {
+    const store = new Map<string, Response>();
+    const name = (k: string | Request) => (typeof k === "string" ? k : new URL(k.url).pathname);
+    const keys = vi.fn(async () => [...store.keys()].map((k) => new Request(new URL(k, "http://localhost"))));
+    const cache = {
+      put: async (k: string, r: Response) => void store.set(k, r),
+      match: async (k: string) => store.get(k)?.clone(),
+      delete: async (k: string | Request) => store.delete(name(k)),
+      keys,
+    };
+    vi.stubGlobal("caches", { open: async () => cache });
+    store.set("/books/s/parts", new Response(JSON.stringify({ size: 3 * CHUNK, parts: [0, 2] })));
+    for (const key of ["/books/s/part/0", "/books/s/part/1", "/books/s/part/2", "/books/t/part/0"]) store.set(key, new Response("x"));
+
+    await saveWholeFile("/books/s", new Blob(["whole"]), [1]);
+    expect([...store.keys()].sort()).toEqual(["/books/s", "/books/t/part/0"]);
+    expect(keys).not.toHaveBeenCalled();
+
+    // Removing a book can't know its pieces: it looks for every key of the book.
+    store.set("/books/s/part/7", new Response("x"));
+    await forgetSaved("/books/s");
+    expect([...store.keys()]).toEqual(["/books/t/part/0"]);
   });
 });

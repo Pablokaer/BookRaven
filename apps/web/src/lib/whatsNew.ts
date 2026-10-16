@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-reader-memory",
+    date: "2026-10-16",
+    title: "Lighter on long books",
+    items: [
+      "Long comics and PDFs use less memory: pages far from the one you are reading let go of their pictures and load again when you come back, so reading stays smooth on phones.",
+      "Searching a PDF reads a few pages at a time, so results come sooner.",
+    ],
+  },
+  {
     id: "2026-10-16-faster-sync",
     date: "2026-10-16",
     title: "Quicker on bad connections",

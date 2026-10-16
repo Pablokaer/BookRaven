@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bookmark } from "./api";
-import { bookmarkLocator, isOnPage } from "./bookmarkPages";
+import { bookmarkLocator, isOnPage, pageMatcher } from "./bookmarkPages";
 import { comicLocator } from "./comics";
 
 const mark = (locator: string, percentage: number, extra: Partial<Bookmark> = {}): Bookmark => ({
@@ -32,6 +32,16 @@ describe("which page a bookmark is on", () => {
     expect(isOnPage("epubcfi(/6/4!/4/2/6/1:5)", page, "text")).toBe(true);
     expect(isOnPage("epubcfi(/6/4!/4/2/12/1:0)", page, "text")).toBe(false);
     expect(isOnPage("epubcfi(/6/6!/4/2/2/1:0)", page, "text")).toBe(false);
+  });
+
+  it("one matcher answers for every bookmark of the page, like isOnPage", () => {
+    const page = "epubcfi(/6/4!/4/2,/2/1:0,/10/1:20)";
+    const onPage = pageMatcher(page, "text");
+    for (const b of ["epubcfi(/6/4!/4/2/2/1:0)", "epubcfi(/6/4!/4/2/6/1:5)", "epubcfi(/6/4!/4/2/12/1:0)", "page:3", page]) {
+      expect(onPage(b)).toBe(isOnPage(b, page, "text"));
+    }
+    expect(pageMatcher("page:3", "pdf")("pdf:3:10-20")).toBe(true);
+    expect(pageMatcher("not a cfi", "text")("not a cfi")).toBe(true);
   });
 });
 

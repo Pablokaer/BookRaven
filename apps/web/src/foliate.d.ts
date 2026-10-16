@@ -58,7 +58,10 @@ declare module "foliate-js/overlayer.js" {
 }
 
 declare module "foliate-js/epubcfi.js" {
-  export function compare(a: string, b: string): number;
+  /** A CFI taken apart; compare takes these too, to avoid parsing the same CFI again. */
+  export type ParsedCfi = object;
+  export function parse(cfi: string): ParsedCfi;
+  export function compare(a: string | ParsedCfi, b: string | ParsedCfi): number;
   /** The start (or, with `toEnd`, the end) of a range CFI, as a plain CFI. */
   export function collapse(cfi: string, toEnd?: boolean): string;
 }

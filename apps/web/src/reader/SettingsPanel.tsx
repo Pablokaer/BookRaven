@@ -1,11 +1,18 @@
+import { useEffect } from "react";
 import { FONTS, fontFaceCss, type FontId } from "../lib/fonts";
 import { THEMES, useSettings, type ThemeId } from "../lib/settings";
 import { PanelShell } from "./PanelShell";
 
-// Load the bundled fonts in the app document too, so the font buttons preview them.
-const previewStyle = document.createElement("style");
-previewStyle.textContent = FONTS.map((f) => fontFaceCss(f.id)).join("\n");
-document.head.append(previewStyle);
+let previewFonts = false;
+
+/** Loads the bundled fonts in the app document too, so the font buttons preview them (once, when the panel first opens). */
+function addPreviewFonts() {
+  if (previewFonts) return;
+  previewFonts = true;
+  const style = document.createElement("style");
+  style.textContent = FONTS.map((f) => fontFaceCss(f.id)).join("\n");
+  document.head.append(style);
+}
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -85,6 +92,7 @@ const TEXT_STEPPERS: [string, StepKey, number, number, number, (v: number) => st
 
 export function SettingsPanel({ kind, onClose }: { kind: "text" | "pdf" | "comic"; onClose: () => void }) {
   const { settings: s, update } = useSettings();
+  useEffect(addPreviewFonts, []);
 
   return (
     <PanelShell side="right" label="Reading settings" title="Display" closeLabel="Close settings" closeIcon="✕" onClose={onClose}>

@@ -6,23 +6,113 @@ import { THEMES } from "../lib/settings";
 import { useLatest } from "../lib/useLatest";
 import { freeZone, USER_NAV_WINDOW_MS, type ReaderHandle, type ReaderProps } from "./types";
 
-/** One page: its image is only created when the page comes near the screen. */
-function Page({ archive, name, index, eager }: { archive: ComicArchive; name: string; index: number; eager: boolean }) {
+/** Pages further than this from the current one give their image back (they keep their size). */
+const KEEP_AROUND = 10;
+
+/**
+ * The strip's pages, watched by two observers shared by all of them: one says which pages are
+ * near the screen (their images load), the other which page crosses the middle of the screen
+ * (the current one). Images of pages far from the current one are released, so a long strip
+ * doesn't keep every page it went past decoded in memory; they load again when they come near.
+ */
+class StripPages {
+  private near: IntersectionObserver | null = null;
+  private middle: IntersectionObserver | null = null;
+  private pages = new Map<Element, { index: number; load: (on: boolean) => void }>();
+  private nearby = new Set<number>();
+  private atMiddle = new Set<number>();
+  private loaded = new Set<number>();
+  private current: number;
+
+  constructor(
+    private root: () => HTMLElement | null,
+    private onCurrent: (index: number) => void,
+    start: number,
+  ) {
+    this.current = start;
+    // The page opened at and its neighbours load right away.
+    for (const i of [start - 1, start, start + 1]) if (i >= 0) this.loaded.add(i);
+  }
+
+  isLoaded = (index: number) => this.loaded.has(index);
+
+  observe(el: Element, index: number, load: (on: boolean) => void) {
+    this.near ??= new IntersectionObserver((entries) => this.onNear(entries), { rootMargin: "150% 0px" });
+    // A line across the middle of the strip: the page it crosses is the current one.
+    this.middle ??= new IntersectionObserver((entries) => this.onMiddle(entries), { root: this.root(), rootMargin: "-50% 0px -50% 0px" });
+    this.pages.set(el, { index, load });
+    this.near.observe(el);
+    this.middle.observe(el);
+    return () => {
+      this.pages.delete(el);
+      this.near?.unobserve(el);
+      this.middle?.unobserve(el);
+      this.nearby.delete(index);
+      this.atMiddle.delete(index);
+    };
+  }
+
+  /** The page being read moved: release the images left far behind (or ahead). */
+  setCurrent(index: number) {
+    this.current = index;
+    for (const i of this.loaded) if (this.isFar(i) && !this.nearby.has(i)) this.setLoaded(i, false);
+  }
+
+  disconnect() {
+    this.near?.disconnect();
+    this.middle?.disconnect();
+  }
+
+  private isFar = (index: number) => Math.abs(index - this.current) > KEEP_AROUND;
+
+  private setLoaded(index: number, on: boolean) {
+    if (on) this.loaded.add(index);
+    else this.loaded.delete(index);
+    for (const page of this.pages.values()) if (page.index === index) page.load(on);
+  }
+
+  private onNear(entries: IntersectionObserverEntry[]) {
+    for (const e of entries) {
+      const index = this.pages.get(e.target)?.index;
+      if (index === undefined) continue;
+      if (e.isIntersecting) {
+        this.nearby.add(index);
+        if (!this.loaded.has(index)) this.setLoaded(index, true);
+      } else {
+        this.nearby.delete(index);
+        if (this.loaded.has(index) && this.isFar(index)) this.setLoaded(index, false);
+      }
+    }
+  }
+
+  private onMiddle(entries: IntersectionObserverEntry[]) {
+    for (const e of entries) {
+      const index = this.pages.get(e.target)?.index;
+      if (index === undefined) continue;
+      if (e.isIntersecting) this.atMiddle.add(index);
+      else this.atMiddle.delete(index);
+    }
+    // Two pages touch the line where they meet: the first one is the current one.
+    if (this.atMiddle.size) this.onCurrent(Math.min(...this.atMiddle));
+  }
+}
+
+/**
+ * One page: its image is only created when the page comes near the screen, and released when it
+ * is far from the page being read. A released page keeps the image's proportions, so the strip
+ * keeps its length and the scroll position never jumps.
+ */
+function Page({ archive, name, index, pages }: { archive: ComicArchive; name: string; index: number; pages: StripPages }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [load, setLoad] = useState(() => pages.isLoaded(index));
   const [src, setSrc] = useState<string | null>(null);
-  const [near, setNear] = useState(eager);
+  /** "width / height" of the image, once it has been shown. */
+  const [ratio, setRatio] = useState<string | null>(null);
+
+  useEffect(() => pages.observe(ref.current!, index, setLoad), [pages, index]);
 
   useEffect(() => {
-    if (near) return;
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setNear(true), { rootMargin: "150% 0px" });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [near]);
-
-  useEffect(() => {
-    if (!near && !eager) return;
+    if (!load) return;
     let url: string | null = null;
     let cancelled = false;
     void archive.loadPage(name).then((blob) => {
@@ -33,12 +123,18 @@ function Page({ archive, name, index, eager }: { archive: ComicArchive; name: st
     return () => {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
+      setSrc(null);
     };
-  }, [near, eager, archive, name]);
+  }, [load, archive, name]);
+
+  const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+    if (w > 0 && h > 0) setRatio(`${w} / ${h}`);
+  };
 
   return (
-    <div ref={ref} data-page={index} className={src ? "" : "min-h-[70vh]"}>
-      {src && <img src={src} alt={`Page ${index + 1}`} className="block h-auto w-full select-none" draggable={false} />}
+    <div ref={ref} data-page={index} className={src || ratio ? "" : "min-h-[70vh]"} style={ratio ? { aspectRatio: ratio } : undefined}>
+      {src && <img src={src} alt={`Page ${index + 1}`} className="block h-auto w-full select-none" draggable={false} onLoad={onLoad} />}
     </div>
   );
 }
@@ -58,6 +154,11 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
   const ready = useRef(false);
   const propsRef = useLatest(props);
   const count = archive?.pages.length ?? 0;
+  const reportRef = useRef<(index: number) => void>(() => {});
+  const [pages] = useState(
+    () => new StripPages(() => stageRef.current, (i) => i !== current.current && reportRef.current(i), startIndex),
+  );
+  useEffect(() => () => pages.disconnect(), [pages]);
 
   const mark = () => (lastInteraction.current = Date.now());
   /** A screen's height (a bit less, to keep some context) down or up. */
@@ -76,13 +177,14 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     (index: number) => {
       if (!count) return;
       current.current = index;
+      pages.setCurrent(index);
       const byUser = ready.current && Date.now() - lastInteraction.current < USER_NAV_WINDOW_MS;
       propsRef.current.onRelocate(
         { locator: comicLocator(index), percentage: count > 1 ? index / (count - 1) : 1, label: `Page ${index + 1} of ${count}` },
         byUser,
       );
     },
-    [count],
+    [count, pages],
   );
 
   useImperativeHandle(ref, () => ({
@@ -127,31 +229,8 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     return () => clearTimeout(t);
   }, [archive, startIndex, scrollToPage, report]);
 
-  // The page crossing the middle of the screen is the current one.
-  useEffect(() => {
-    const el = stageRef.current;
-    if (!el || !archive) return;
-    let frame = 0;
-    const onScroll = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const mid = el.getBoundingClientRect().top + el.clientHeight / 2;
-        for (const p of el.querySelectorAll<HTMLElement>("[data-page]")) {
-          const r = p.getBoundingClientRect();
-          if (r.top <= mid && r.bottom >= mid) {
-            const i = Number(p.dataset.page);
-            if (i !== current.current) report(i);
-            break;
-          }
-        }
-      });
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(frame);
-    };
-  }, [archive, report]);
+  // The page crossing the middle of the screen is the current one (StripPages watches for it).
+  reportRef.current = report;
 
   // Pinch-to-zoom: widens the strip; one finger keeps scrolling it in both directions.
   useEffect(() => {
@@ -198,7 +277,7 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     >
       <div ref={columnRef} className={`mx-auto ${props.settings.comicFit === "width" ? "w-full" : "w-full max-w-[860px]"}`}>
         {archive?.pages.map((p, i) => (
-          <Page key={p.name} archive={archive} name={p.name} index={i} eager={Math.abs(i - startIndex) <= 1} />
+          <Page key={p.name} archive={archive} name={p.name} index={i} pages={pages} />
         ))}
       </div>
     </div>
