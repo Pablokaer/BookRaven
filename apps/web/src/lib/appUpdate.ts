@@ -28,6 +28,8 @@ export type AndroidRelease = {
   apkSize: number;
   bundle: { id: string; url: string; sha256: string };
   publishedAt: string;
+  /** Fingerprint of the sources the release was built from (.github/workflows/deploy.yml). */
+  inputs?: string;
 };
 
 export const APK_URL = "/downloads/bookraven.apk";

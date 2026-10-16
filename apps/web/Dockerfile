@@ -1,12 +1,18 @@
+# syntax=docker/dockerfile:1
 FROM node:22-alpine AS build
-RUN corepack enable
 WORKDIR /repo
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+# pnpm at the version in package.json "packageManager", in a layer of its own
+COPY package.json ./
+RUN corepack enable && corepack install
+# pnpm's package store persists between builds (BuildKit cache), so a deploy only downloads new packages
+ENV npm_config_store_dir=/pnpm/store
+COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY patches patches
 COPY apps/web/package.json apps/web/
-RUN pnpm install --filter web... --frozen-lockfile=false
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter web...
 COPY apps/web apps/web
-RUN pnpm --filter web build
+# CI already typechecks (pnpm build), so only Vite runs here. Then .br/.gz copies for Caddy.
+RUN pnpm --filter web exec vite build && node apps/web/scripts/precompress.mjs apps/web/dist
 
 FROM caddy:2-alpine
 COPY infra/Caddyfile /etc/caddy/Caddyfile

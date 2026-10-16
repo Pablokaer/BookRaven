@@ -28,7 +28,7 @@ echo "deploy: at $(git log -1 --format='%h %s')"
 # Created here (not by Docker as root) so the Deploy workflow can upload the Android app into it.
 mkdir -p downloads
 
-# Builds the new images first, then replaces the running containers.
+# Builds the new images first (both at once), then replaces the running containers.
 docker compose up -d --build --remove-orphans
 
 echo "deploy: waiting for the API"

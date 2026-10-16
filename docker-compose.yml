@@ -1,7 +1,15 @@
+# Each container's log is rotated: at most 3 files of 10 MB (docker compose logs reads them).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -20,6 +28,7 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       NODE_ENV: production
@@ -35,6 +44,7 @@ services:
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     entrypoint: ["/bin/sh", "/backup.sh"]
     environment:
       PGHOST: postgres
@@ -56,6 +66,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
+    logging: *logging
     environment:
       DOMAIN: ${DOMAIN}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}

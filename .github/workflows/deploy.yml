@@ -50,7 +50,8 @@ jobs:
 
   # Android app (README → Android app): a signed APK and a live-update bundle of the web app,
   # built while the server deploys and published under /downloads once it is up. Skipped
-  # until the ANDROID_KEYSTORE_BASE64 secret exists.
+  # until the ANDROID_KEYSTORE_BASE64 secret exists, and when nothing that goes into the app
+  # changed since the published release.
   android-build:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
@@ -101,21 +102,47 @@ jobs:
           if [ -z "$PUBLIC_URL" ]; then echo "::error::PUBLIC_URL not found"; exit 1; fi
           echo "VITE_API_URL=$PUBLIC_URL" >> "$GITHUB_ENV"
 
+      # Fingerprint of everything the app is built from (the web app without its tests, the
+      # dependencies, this workflow, the server URL), stored in android.json as "inputs". When the
+      # published release has the same one, there is nothing new to build. "Run workflow" always builds.
+      - name: Changes
+        id: changes
+        if: steps.key.outputs.enabled
+        run: |
+          inputs=$(
+            { git ls-files -s -- apps/web package.json pnpm-lock.yaml pnpm-workspace.yaml patches .github/workflows/deploy.yml infra/publish-android.sh \
+                ':!*.test.ts' ':!*.test.tsx' ':!apps/web/vitest.config.ts' ':!apps/web/Dockerfile' ':!apps/web/scripts/precompress.mjs'
+              echo "$VITE_API_URL"; } | sha256sum | cut -c1-16
+          )
+          echo "ANDROID_INPUTS=$inputs" >> "$GITHUB_ENV"
+          published=$(curl -fsS --max-time 20 --retry 3 --retry-connrefused "$VITE_API_URL/downloads/android.json" | jq -r '.inputs // empty' || true)
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && [ "$published" = "$inputs" ]; then
+            echo "::notice::The Android app did not change since the published release ($inputs), so it is not built again"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: pnpm/action-setup@v4
-        if: steps.key.outputs.enabled
+        if: steps.changes.outputs.build
       - uses: actions/setup-node@v4
-        if: steps.key.outputs.enabled
+        if: steps.changes.outputs.build
         with:
           node-version: 22
           cache: pnpm
+      # Gradle's downloads (the Android Gradle plugin, aapt2, libraries) are cached between runs.
       - uses: actions/setup-java@v4
-        if: steps.key.outputs.enabled
+        if: steps.changes.outputs.build
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
+          cache-dependency-path: |
+            apps/web/android/**/*.gradle*
+            apps/web/android/gradle/wrapper/gradle-wrapper.properties
+            pnpm-lock.yaml
 
       - name: Build
-        if: steps.key.outputs.enabled
+        if: steps.changes.outputs.build
         env:
           ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -129,21 +156,27 @@ jobs:
           cd apps/web
           pnpm exec vite build --mode native
           pnpm exec cap sync android
-          (cd android && ./gradlew --no-daemon assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME")
+          # Downloads from dl.google.com sometimes time out, so a failed Gradle build is tried again.
+          for attempt in 1 2 3; do
+            (cd android && ./gradlew --no-daemon assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME") && break
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::Gradle build failed (attempt $attempt of 3), trying again"
+            sleep 20
+          done
           node scripts/android-release.mjs "$RUNNER_TEMP/android-release"
 
       - uses: actions/upload-artifact@v4
-        if: steps.key.outputs.enabled
+        if: steps.changes.outputs.build
         with:
           name: android-release
           path: ${{ runner.temp }}/android-release
           retention-days: 7
     outputs:
-      enabled: ${{ steps.key.outputs.enabled }}
+      built: ${{ steps.changes.outputs.build }}
 
   android-publish:
     needs: [deploy, android-build]
-    if: needs.android-build.outputs.enabled == 'true'
+    if: needs.android-build.outputs.built == 'true'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
