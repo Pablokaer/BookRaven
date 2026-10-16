@@ -1,8 +1,9 @@
-import { Bookmark as BookmarkIcon, Download, Pencil, PenLine, StickyNote, X } from "lucide-react";
+import { Bookmark as BookmarkIcon, Download, Pencil, PenLine, StickyNote, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Bookmark, Highlight } from "../lib/api";
 import { percent } from "../lib/format";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
+import { PanelShell } from "./PanelShell";
 
 export type NotebookTab = "highlights" | "bookmarks" | "ink";
 
@@ -39,8 +40,8 @@ export function NotebookPanel({
   onDeleteBookmark: (b: Bookmark) => void;
   /** PDFs: the pages with handwriting and their number of strokes. */
   inkPages?: InkPageSummary[];
-  thumbnail?: (page: number) => Promise<string | null>;
-  onSelectInkPage?: (page: number) => void;
+  thumbnail: (page: number) => Promise<string | null>;
+  onSelectInkPage: (page: number) => void;
   onClose: () => void;
 }) {
   const tabs: { id: NotebookTab; label: string; count: number }[] = [
@@ -51,21 +52,21 @@ export function NotebookPanel({
   const [tab, setTab] = useState<NotebookTab>(tabs.some((t) => t.id === initialTab) ? initialTab : "bookmarks");
 
   return (
-    <div className="panel left-0 w-full max-w-sm" role="dialog" aria-label="Notebook">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Notebook</h2>
-        <div className="flex items-center gap-1">
-          {tab === "highlights" && highlights && highlights.length > 0 && (
-            <button className="btn-icon text-sm" onClick={onExport} aria-label="Export highlights as Markdown" title="Export as Markdown">
-              <Download className="h-4 w-4" />
-            </button>
-          )}
-          <button className="btn-icon" onClick={onClose} aria-label="Close notebook">
-            <X className="h-4 w-4" />
+    <PanelShell
+      side="left"
+      label="Notebook"
+      title="Notebook"
+      closeLabel="Close notebook"
+      onClose={onClose}
+      actions={
+        tab === "highlights" &&
+        !!highlights?.length && (
+          <button className="btn-icon text-sm" onClick={onExport} aria-label="Export highlights as Markdown" title="Export as Markdown">
+            <Download className="h-4 w-4" />
           </button>
-        </div>
-      </div>
-
+        )
+      }
+    >
       {tabs.length > 1 && (
         <div className={`grid gap-1 rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800 ${tabs.length === 3 ? "grid-cols-3" : "grid-cols-2"}`} role="tablist">
           {tabs.map((t) => (
@@ -86,10 +87,24 @@ export function NotebookPanel({
       {tab === "highlights" && highlights ? (
         <HighlightList highlights={highlights} onSelect={onSelectHighlight} onDelete={onDeleteHighlight} onEditNote={onEditNote} />
       ) : tab === "ink" && inkPages ? (
-        <InkPageList pages={inkPages} thumbnail={thumbnail} onSelect={(p) => onSelectInkPage?.(p)} />
+        <InkPageList pages={inkPages} thumbnail={thumbnail} onSelect={onSelectInkPage} />
       ) : (
         <BookmarkList bookmarks={bookmarks} onSelect={onSelectBookmark} onRename={onRenameBookmark} onDelete={onDeleteBookmark} />
       )}
+    </PanelShell>
+  );
+}
+
+/** A row's edit and remove buttons: on hover, always on touch screens. */
+function RowActions(p: { edit: string; editTitle?: string; icon: LucideIcon; onEdit: () => void; remove: string; onRemove: () => void }) {
+  return (
+    <div className="flex flex-col py-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+      <button className="px-2 py-1.5 text-neutral-400 hover:text-teal-600" aria-label={p.edit} title={p.editTitle ?? p.edit} onClick={p.onEdit}>
+        <p.icon className="h-3.5 w-3.5" />
+      </button>
+      <button className="px-2 py-1.5 text-neutral-400 hover:text-red-600" aria-label={p.remove} title="Remove" onClick={p.onRemove}>
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -128,14 +143,7 @@ function HighlightList({
               )}
               {h.label && <span className="block truncate text-xs text-neutral-500">{h.label}</span>}
             </button>
-            <div className="flex flex-col py-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-              <button className="px-2 py-1.5 text-neutral-400 hover:text-teal-600" aria-label={h.note ? "Edit note" : "Add note"} title={h.note ? "Edit note" : "Add note"} onClick={() => onEditNote(h)}>
-                <StickyNote className="h-3.5 w-3.5" />
-              </button>
-              <button className="px-2 py-1.5 text-neutral-400 hover:text-red-600" aria-label="Remove highlight" title="Remove" onClick={() => onDelete(h)}>
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <RowActions edit={h.note ? "Edit note" : "Add note"} icon={StickyNote} onEdit={() => onEditNote(h)} remove="Remove highlight" onRemove={() => onDelete(h)} />
           </li>
         ))}
       </ul>
@@ -150,13 +158,12 @@ function InkPageList({
   onSelect,
 }: {
   pages: InkPageSummary[];
-  thumbnail?: (page: number) => Promise<string | null>;
+  thumbnail: (page: number) => Promise<string | null>;
   onSelect: (page: number) => void;
 }) {
   const [pictures, setPictures] = useState<Record<number, string>>({});
   const key = pages.map((p) => `${p.page}:${p.signature}`).join(",");
   useEffect(() => {
-    if (!thumbnail) return;
     let cancelled = false;
     void (async () => {
       for (const { page } of pages) {
@@ -255,14 +262,7 @@ function BookmarkList({
             </button>
           )}
           {editing !== b.locator && (
-            <div className="flex flex-col py-1 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-              <button className="px-2 py-1.5 text-neutral-400 hover:text-teal-600" aria-label="Rename bookmark" title="Rename" onClick={() => setEditing(b.locator)}>
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-              <button className="px-2 py-1.5 text-neutral-400 hover:text-red-600" aria-label="Remove bookmark" title="Remove" onClick={() => onDelete(b)}>
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <RowActions edit="Rename bookmark" editTitle="Rename" icon={Pencil} onEdit={() => setEditing(b.locator)} remove="Remove bookmark" onRemove={() => onDelete(b)} />
           )}
         </li>
       ))}

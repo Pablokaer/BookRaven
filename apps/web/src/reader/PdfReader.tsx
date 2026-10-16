@@ -8,22 +8,16 @@ import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
 import { canvasPixelRatio, contentBox, fitScale, FULL_PAGE, type PageBox } from "../lib/pdfLayout";
 import { MAX_ZOOM, pinchController, type PinchController } from "../lib/pinchZoom";
 import { CHUNK, type RangeFile } from "../lib/rangeFile";
-import { THEMES, type ReaderSettings } from "../lib/settings";
-import { zoneFromX, type ReaderHandle, type ReaderProps, type SearchResult } from "./types";
+import { THEMES, type ReaderSettings, type ThemeId } from "../lib/settings";
+import { useDocumentEvent, useLatest } from "../lib/useLatest";
+import { freeZone, selectionReporter, type ReaderHandle, type ReaderProps, type SearchResult } from "./types";
 
 /** PDFs can't reflow, so "themes" are applied as color filters on the rendered page. */
-function pageFilter(s: ReaderSettings) {
-  switch (s.theme) {
-    case "black":
-      return "invert(1) hue-rotate(180deg)";
-    case "dark":
-      return "invert(0.88) hue-rotate(180deg)";
-    case "sepia":
-      return "sepia(0.35) brightness(0.97)";
-    default:
-      return "none";
-  }
-}
+const PAGE_FILTERS: Partial<Record<ThemeId, string>> = {
+  black: "invert(1) hue-rotate(180deg)",
+  dark: "invert(0.88) hue-rotate(180deg)",
+  sepia: "sepia(0.35) brightness(0.97)",
+};
 
 /**
  * Bytes pdf.js asked for. pdf.js waits for every range it requests, so once the PDF is open
@@ -108,13 +102,23 @@ function excerpt(text: string, at: number, len: number) {
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Where a page's content is: rendered small and scanned for non-white pixels. */
-async function detectContent(pdfPage: PDFPageProxy): Promise<PageBox> {
-  const viewport = pdfPage.getViewport({ scale: 240 / pdfPage.getViewport({ scale: 1 }).width });
+/** A page drawn on a new canvas `width` pixels wide. */
+async function renderAtWidth(pdfPage: PDFPageProxy, width: number) {
+  const viewport = pdfPage.getViewport({ scale: width / pdfPage.getViewport({ scale: 1 }).width });
   const canvas = document.createElement("canvas");
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
   await pdfPage.render({ canvas, viewport }).promise;
+  return canvas;
+}
+
+/** Places `el` over a part of the page given in fractions of it, so it follows a pinch without being redrawn. */
+const placeFraction = (el: HTMLElement, x: number, y: number, w: number, h: number) =>
+  Object.assign(el.style, { left: `${x * 100}%`, top: `${y * 100}%`, width: `${w * 100}%`, height: `${h * 100}%` });
+
+/** Where a page's content is: rendered small and scanned for non-white pixels. */
+async function detectContent(pdfPage: PDFPageProxy): Promise<PageBox> {
+  const canvas = await renderAtWidth(pdfPage, 240);
   const ctx = canvas.getContext("2d");
   if (!ctx) return FULL_PAGE;
   return contentBox(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
@@ -271,13 +275,11 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
   const crops = useRef(new Map<number, PageBox>());
   const shownPage = useRef(0);
   const userNav = useRef(false);
-  const pageRef = useRef(page);
-  pageRef.current = page;
-  const propsRef = useRef(props);
-  propsRef.current = props;
+  const pageRef = useLatest(page);
+  const propsRef = useLatest(props);
   /** Highlight rectangles on the current page (fractions of the page), for click hit-testing. */
   const hlRects = useRef<{ h: Highlight; rects: DOMRect[] }[]>([]);
-  const selectionShown = useRef(false);
+  const [selections] = useState(() => selectionReporter(propsRef));
 
   const numPages = doc?.numPages ?? 0;
 
@@ -344,17 +346,13 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
   );
 
   // Ctrl/⌘ + plus, minus and 0 zoom the page instead of the whole app.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-      const action = e.key === "+" || e.key === "=" ? "in" : e.key === "-" ? "out" : e.key === "0" ? "reset" : null;
-      if (!action) return;
-      e.preventDefault();
-      zoomStep(action);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [zoomStep]);
+  useDocumentEvent("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const action = e.key === "+" || e.key === "=" ? "in" : e.key === "-" ? "out" : e.key === "0" ? "reset" : null;
+    if (!action) return;
+    e.preventDefault();
+    zoomStep(action);
+  });
 
   useImperativeHandle(ref, () => ({
     next: () => go(page + 1, true),
@@ -368,19 +366,13 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     restore: (locator) => go(parsePage(locator), false),
     clearSelection: () => {
       window.getSelection()?.removeAllRanges();
-      selectionShown.current = false;
-      propsRef.current.onSelection?.(null);
+      selections.cleared();
     },
     clearSearch: () => setSearchHit(null),
     zoom: zoomStep,
     thumbnail: async (p, width, strokes) => {
       if (!doc) return null;
-      const pdfPage = await doc.getPage(p);
-      const viewport = pdfPage.getViewport({ scale: width / pdfPage.getViewport({ scale: 1 }).width });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-      await pdfPage.render({ canvas, viewport }).promise;
+      const canvas = await renderAtWidth(await doc.getPage(p), width);
       const ctx = canvas.getContext("2d");
       if (!ctx) return null;
       drawStrokes(ctx, strokes ?? propsRef.current.ink?.[p] ?? [], canvas.width, canvas.height);
@@ -445,7 +437,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         setPage((p) => Math.min(Math.max(1, p), d.numPages));
         const meta = await d.getMetadata().catch(() => null);
         const lang = (meta?.info as { Language?: string } | undefined)?.Language ?? null;
-        propsRef.current.onReady({ totalPages: d.numPages, language: lang });
+        propsRef.current.onReady({ language: lang });
       })
       .catch((err) => {
         if (!cancelled) fail(err);
@@ -618,12 +610,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       canvas.width = Math.ceil((x1 - x0) * dpr);
       canvas.height = Math.ceil((y1 - y0) * dpr);
       canvas.className = "pdf-detail";
-      Object.assign(canvas.style, {
-        left: `${(x0 / s.width) * 100}%`,
-        top: `${(y0 / s.height) * 100}%`,
-        width: `${((x1 - x0) / s.width) * 100}%`,
-        height: `${((y1 - y0) / s.height) * 100}%`,
-      });
+      placeFraction(canvas, x0 / s.width, y0 / s.height, (x1 - x0) / s.width, (y1 - y0) / s.height);
       task = pdfPage.render({ canvas, viewport: pdfPage.getViewport({ scale: scale * dpr, offsetX: -x0 * dpr, offsetY: -y0 * dpr }) });
       await task.promise;
       if (cancelled || builtRef.current !== b) return;
@@ -657,13 +644,8 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       for (const r of rects) {
         const el = document.createElement("div");
         el.className = cls;
-        Object.assign(el.style, {
-          left: `${r.left * 100}%`,
-          top: `${r.top * 100}%`,
-          width: `${r.width * 100}%`,
-          height: `${r.height * 100}%`,
-          ...(color ? { background: color } : {}),
-        });
+        placeFraction(el, r.left, r.top, r.width, r.height);
+        if (color) el.style.background = color;
         hlLayer.append(el);
       }
       return rects;
@@ -827,17 +809,15 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       if (drawing.current || stylus) ev.stopPropagation();
     };
 
-    wet.addEventListener("pointerdown", onDown);
-    wet.addEventListener("pointermove", onMove);
-    wet.addEventListener("pointerup", onEnd);
-    wet.addEventListener("pointercancel", onEnd);
-    for (const t of ["touchstart", "touchmove", "touchend"] as const) wet.addEventListener(t, onTouch, { passive: true });
+    const listening = new AbortController();
+    const { signal } = listening;
+    wet.addEventListener("pointerdown", onDown, { signal });
+    wet.addEventListener("pointermove", onMove, { signal });
+    wet.addEventListener("pointerup", onEnd, { signal });
+    wet.addEventListener("pointercancel", onEnd, { signal });
+    for (const t of ["touchstart", "touchmove", "touchend"] as const) wet.addEventListener(t, onTouch, { passive: true, signal });
     return () => {
-      wet.removeEventListener("pointerdown", onDown);
-      wet.removeEventListener("pointermove", onMove);
-      wet.removeEventListener("pointerup", onEnd);
-      wet.removeEventListener("pointercancel", onEnd);
-      for (const t of ["touchstart", "touchmove", "touchend"] as const) wet.removeEventListener(t, onTouch);
+      listening.abort();
       cancelAnimationFrame(frame);
       drawing.current = null;
       clearWet();
@@ -848,34 +828,23 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
 
   // Report text selections (debounced, like the ebook reader).
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onChange = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        const layer = sheetEl.current?.querySelector<HTMLElement>(".textLayer");
-        const sel = window.getSelection();
-        const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
-        const text = sel?.toString().trim() ?? "";
-        if (!layer || !range || sel!.isCollapsed || !text || !layer.contains(range.commonAncestorContainer)) {
-          if (selectionShown.current) {
-            selectionShown.current = false;
-            propsRef.current.onSelection?.(null);
-          }
-          return;
-        }
-        const start = offsetOf(layer, range.startContainer, range.startOffset);
-        const end = offsetOf(layer, range.endContainer, range.endOffset);
-        if (end <= start) return;
-        selectionShown.current = true;
-        propsRef.current.onSelection?.({ cfi: `pdf:${pageRef.current}:${start}-${end}`, text, rect: range.getBoundingClientRect() });
-      }, 350);
-    };
+    const onChange = selections.listener(() => {
+      const layer = sheetEl.current?.querySelector<HTMLElement>(".textLayer");
+      const sel = window.getSelection();
+      const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      const text = sel?.toString().trim() ?? "";
+      if (!layer || !range || sel!.isCollapsed || !text || !layer.contains(range.commonAncestorContainer)) return null;
+      const start = offsetOf(layer, range.startContainer, range.startOffset);
+      const end = offsetOf(layer, range.endContainer, range.endOffset);
+      if (end <= start) return undefined; // leave the menu as it is
+      return { cfi: `pdf:${pageRef.current}:${start}-${end}`, text, rect: range.getBoundingClientRect() };
+    });
     document.addEventListener("selectionchange", onChange);
     return () => {
-      clearTimeout(timer);
+      onChange.cancel();
       document.removeEventListener("selectionchange", onChange);
     };
-  }, []);
+  }, [selections, pageRef]);
 
   // Swipe, tap and highlight-click handling. Two-finger gestures are pinches (pinchZoom.ts).
   const pointer = useRef<{ x: number; y: number; t: number } | null>(null);
@@ -888,10 +857,8 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
   const tapAt = (clientX: number) => {
     if (!stageRef.current) return;
     const rect = stageRef.current.getBoundingClientRect();
-    const zone = zoneFromX(clientX - rect.left, rect.width);
-    // Zoomed in: side taps would turn the page away; the middle still shows the bars.
-    if (zone !== "center" && pinch.current?.busy()) return;
-    propsRef.current.onTap(zone);
+    const zone = freeZone(clientX - rect.left, rect.width, pinch.current);
+    if (zone) propsRef.current.onTap(zone);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -962,7 +929,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       <div
         ref={holderRef}
         className={`flex min-h-full w-max min-w-full ${inking ? "pdf-inking" : ""}`}
-        style={{ padding: props.settings.pdfMargin, filter: pageFilter(props.settings) }}
+        style={{ padding: props.settings.pdfMargin, filter: PAGE_FILTERS[props.settings.theme] ?? "none" }}
       />
     </div>
   );

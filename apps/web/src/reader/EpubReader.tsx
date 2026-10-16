@@ -8,7 +8,8 @@ import { HIGHLIGHT_COLORS } from "../lib/highlights";
 import { attachLens } from "../lib/lens";
 import { pinchController, transformSurface, type PinchController } from "../lib/pinchZoom";
 import { THEMES, type ReaderSettings } from "../lib/settings";
-import { USER_NAV_WINDOW_MS, zoneFromX, type ReaderHandle, type ReaderProps } from "./types";
+import { useLatest } from "../lib/useLatest";
+import { freeZone, selectionReporter, USER_NAV_WINDOW_MS, type ReaderHandle, type ReaderProps } from "./types";
 
 /** Percentage positions ("fraction:0.42") reported by other apps such as KOReader. */
 function fractionOf(locator: string | null) {
@@ -121,41 +122,34 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
   /** cfi -> color of the highlights currently drawn. */
   const drawn = useRef(new Map<string, string>());
   const annotationClickAt = useRef(0);
-  const selectionShown = useRef(false);
   /** Last position, so the book can be reopened in place when the comic layout changes. */
   const lastLocator = useRef<{ bookId: string; cfi: string } | null>(null);
   const comic = isComicFormat(props.book.format);
   /** Comic pages that are double-page scans (null until known); they get a spread of their own. */
   const [wide, setWide] = useState<number[] | null>(() => (comic ? cachedWidePages(props.book.id) : null));
-  const wideRef = useRef(wide);
-  wideRef.current = wide;
+  const wideRef = useLatest(wide);
   // Spreads, reading direction and wide pages are fixed when foliate opens a book, so changing them reopens it.
   const comicLayout = comic ? `${props.settings.comicSpreads}-${props.settings.comicDirection}-${wide?.join(",") ?? ""}` : "";
   // Keep latest props without re-running the open effect.
-  const propsRef = useRef(props);
-  propsRef.current = props;
+  const propsRef = useLatest(props);
+  const [selections] = useState(() => selectionReporter(propsRef));
 
   const mark = () => (lastInteraction.current = Date.now());
+  /** User navigation: it counts as an interaction, so the new position is saved. */
+  const nav =
+    <A extends unknown[]>(go: (view: FoliateView, ...args: A) => Promise<unknown>) =>
+    (...args: A) => {
+      mark();
+      if (viewRef.current) void go(viewRef.current, ...args);
+    };
   /** Comics: pinch-to-zoom on the page (null for text books). */
   const zoomRef = useRef<PinchController | null>(null);
 
   useImperativeHandle(ref, () => ({
-    next: () => {
-      mark();
-      void viewRef.current?.goRight();
-    },
-    prev: () => {
-      mark();
-      void viewRef.current?.goLeft();
-    },
-    goToFraction: (f) => {
-      mark();
-      void viewRef.current?.goToFraction(f);
-    },
-    goToHref: (href) => {
-      mark();
-      void viewRef.current?.goTo(href);
-    },
+    next: nav((view) => view.goRight()),
+    prev: nav((view) => view.goLeft()),
+    goToFraction: nav((view, f: number) => view.goToFraction(f)),
+    goToHref: nav((view, href: string) => view.goTo(href)),
     restore: (locator) => {
       lastInteraction.current = 0;
       const fraction = fractionOf(locator);
@@ -178,8 +172,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
     clearSearch: () => viewRef.current?.clearSearch(),
     clearSelection: () => {
       for (const { doc } of viewRef.current?.renderer.getContents?.() ?? []) doc.getSelection()?.removeAllRanges();
-      selectionShown.current = false;
-      propsRef.current.onSelection?.(null);
+      selections.cleared();
     },
   }));
 
@@ -272,31 +265,23 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
       view.addEventListener("load", (e) => {
         const { doc, index } = (e as CustomEvent<{ doc: Document; index: number }>).detail;
 
-        // Report text selections (debounced, so dragging the handles does not flicker).
-        let selTimer: ReturnType<typeof setTimeout> | undefined;
-        doc.addEventListener("selectionchange", () => {
-          clearTimeout(selTimer);
-          selTimer = setTimeout(() => {
+        // Report text selections.
+        doc.addEventListener(
+          "selectionchange",
+          selections.listener(() => {
             const sel = doc.getSelection();
             const text = sel?.toString().trim() ?? "";
-            if (!sel || sel.isCollapsed || !sel.rangeCount || !text) {
-              if (selectionShown.current) {
-                selectionShown.current = false;
-                propsRef.current.onSelection?.(null);
-              }
-              return;
-            }
+            if (!sel || sel.isCollapsed || !sel.rangeCount || !text) return null;
             const range = sel.getRangeAt(0);
             let cfi: string;
             try {
               cfi = view!.getCFI(index, range);
             } catch {
-              return;
+              return undefined; // no position for it: leave the menu as it is
             }
-            selectionShown.current = true;
-            propsRef.current.onSelection?.({ cfi, text, rect: viewportRect(range) });
-          }, 350);
-        });
+            return { cfi, text, rect: viewportRect(range) };
+          }),
+        );
 
         doc.addEventListener("keydown", (ev) => propsRef.current.onKeyDown(ev));
         if (isComicFormat(propsRef.current.book.format)) {
@@ -331,9 +316,8 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
           const host = hostRef.current;
           if (!frame || !host) return;
           const x = frame.getBoundingClientRect().left + ev.clientX - host.getBoundingClientRect().left;
-          const zone = zoneFromX(x, host.clientWidth);
-          // Zoomed into a comic page: side taps would turn the page away; the middle still shows the bars.
-          if (zone !== "center" && zoomRef.current?.busy()) return;
+          const zone = freeZone(x, host.clientWidth, zoomRef.current);
+          if (!zone) return;
           // foliate reports clicks on a highlight from its own listener; let that win over page turning.
           setTimeout(() => {
             if (Date.now() - annotationClickAt.current < 300) return;
@@ -404,9 +388,8 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
     if (e.target !== e.currentTarget && e.target !== viewRef.current) return;
     mark();
     const rect = e.currentTarget.getBoundingClientRect();
-    const zone = zoneFromX(e.clientX - rect.left, rect.width);
-    if (zone !== "center" && zoomRef.current?.busy()) return; // zoomed in: don't turn the page
-    props.onTap(zone);
+    const zone = freeZone(e.clientX - rect.left, rect.width, zoomRef.current);
+    if (zone) props.onTap(zone);
   };
 
   // overflow-hidden: a zoomed comic page stays inside the reading area.

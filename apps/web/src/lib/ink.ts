@@ -169,16 +169,21 @@ async function openStore() {
   return typeof caches === "undefined" ? null : caches.open(STORE).catch(() => null);
 }
 
+/** The device's entries for a book's pages, with their page numbers. */
+async function* cachedPageKeys(cache: Cache, bookId: string) {
+  const prefix = `/ink-store/book-${bookId}/page-`;
+  for (const req of await cache.keys()) {
+    const path = new URL(req.url).pathname;
+    if (path.startsWith(prefix)) yield { req, page: Number(path.slice(prefix.length)) };
+  }
+}
+
 /** The device's copy of a book's pages (all, or `only` these). */
 async function readCachedPages(bookId: string, only?: number[]): Promise<Record<number, CachedPage>> {
   const cache = await openStore();
   if (!cache) return {};
   const out: Record<number, CachedPage> = {};
-  const prefix = `/ink-store/book-${bookId}/page-`;
-  for (const req of await cache.keys()) {
-    const path = new URL(req.url).pathname;
-    if (!path.startsWith(prefix)) continue;
-    const page = Number(path.slice(prefix.length));
+  for await (const { req, page } of cachedPageKeys(cache, bookId)) {
     if (only && !only.includes(page)) continue;
     const res = await cache.match(req);
     if (res) out[page] = await res.json();
@@ -279,11 +284,7 @@ async function pruneCachedPages(bookId: string, summary: InkSummary) {
   const cache = await openStore();
   if (!cache) return;
   try {
-    const prefix = `/ink-store/book-${bookId}/page-`;
-    for (const req of await cache.keys()) {
-      const path = new URL(req.url).pathname;
-      if (path.startsWith(prefix) && !(Number(path.slice(prefix.length)) in summary)) await cache.delete(req);
-    }
+    for await (const { req, page } of cachedPageKeys(cache, bookId)) if (!(page in summary)) await cache.delete(req);
     await cache.delete(`/ink-store/book-${bookId}`);
   } catch {
     /* storage unavailable: nothing to tidy */

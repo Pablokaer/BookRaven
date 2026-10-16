@@ -50,7 +50,7 @@ export type ReaderProps = {
   onRelocate(pos: Position, byUser: boolean): void;
   onTap(zone: TapZone): void;
   onKeyDown(e: KeyboardEvent): void;
-  onReady(info: { toc?: TocItem[]; totalPages?: number; language?: string | null }): void;
+  onReady(info: { toc?: TocItem[]; language?: string | null }): void;
   onError(message: string): void;
   /** Text books and PDFs (not comics). */
   highlights?: Highlight[];
@@ -73,6 +73,41 @@ export function zoneFromX(x: number, width: number): TapZone {
   if (r < 0.3) return "left";
   if (r > 0.7) return "right";
   return "center";
+}
+
+/** The zone tapped at `x`, or null for a side tap while `zoom` is zoomed in: it would turn the page away (the middle still shows the bars). */
+export function freeZone(x: number, width: number, zoom: { busy(): boolean } | null | undefined): TapZone | null {
+  const zone = zoneFromX(x, width);
+  return zone !== "center" && zoom?.busy() ? null : zone;
+}
+
+/** Reports the reader's text selections to the page, telling it "nothing selected" only once. */
+export function selectionReporter(props: { current: Pick<ReaderProps, "onSelection"> }) {
+  let shown = false;
+  return {
+    /**
+     * A selectionchange listener: once the selection rests (so dragging its handles doesn't
+     * flicker), reports what `read` finds; null is no selection, undefined changes nothing.
+     */
+    listener(read: () => TextSelection | null | undefined) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const listen = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const sel = read();
+          if (sel === undefined || (!sel && !shown)) return;
+          shown = !!sel;
+          props.current.onSelection?.(sel);
+        }, 350);
+      };
+      return Object.assign(listen, { cancel: () => clearTimeout(timer) });
+    },
+    /** The reader dropped the selection itself. */
+    cleared() {
+      shown = false;
+      props.current.onSelection?.(null);
+    },
+  };
 }
 
 /** Time window after an interaction in which a relocation counts as user navigation. */

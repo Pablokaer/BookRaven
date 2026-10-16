@@ -1,5 +1,6 @@
-import { Loader2, Search, X } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PanelShell } from "./PanelShell";
 import type { ReaderHandle, SearchResult } from "./types";
 
 /** Results listed at first, and added by each "Show more": a frequent word can match tens of thousands of times. */
@@ -59,21 +60,17 @@ export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandl
   const list = found.current.slice(0, shown);
 
   return (
-    <div className="panel left-0 w-full max-w-sm" role="dialog" aria-label="Search in book">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Search</h2>
-        <button
-          className="btn-icon"
-          onClick={() => {
-            abort.current?.abort();
-            reader?.clearSearch?.();
-            onClose();
-          }}
-          aria-label="Close search"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+    <PanelShell
+      side="left"
+      label="Search in book"
+      title="Search"
+      closeLabel="Close search"
+      onClose={() => {
+        abort.current?.abort();
+        reader?.clearSearch?.();
+        onClose();
+      }}
+    >
       <form onSubmit={run} className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
         <input
@@ -111,6 +108,6 @@ export function SearchPanel({ reader, onSelect, onClose }: { reader: ReaderHandl
           Show more ({(count - list.length).toLocaleString()} left)
         </button>
       )}
-    </div>
+    </PanelShell>
   );
 }
