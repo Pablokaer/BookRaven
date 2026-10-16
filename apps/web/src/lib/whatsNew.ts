@@ -18,6 +18,16 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-landing-page",
+    date: "2026-10-16",
+    title: "A front page for BookRaven",
+    items: [
+      "People who aren't signed in now see what BookRaven does before signing in or creating an account, so it's easier to invite friends.",
+      "Signing in and creating an account have their own addresses: /login and /signup.",
+      "When you sign out you land on the sign-in screen, as before.",
+    ],
+  },
+  {
     id: "2026-10-16-quick-wins",
     date: "2026-10-16",
     title: "Snappier app, safer sign-out",

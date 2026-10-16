@@ -10,6 +10,7 @@ The app and the repository are called **BookRaven** (formerly Mico-livrão). Som
 
 ## Features
 
+- **Landing page:** on the web, a signed-out visitor opening the server's address (`/`) sees a page about BookRaven (`apps/web/src/pages/LandingPage.tsx`) with links to `/login` and `/signup`; *Create an account* is replaced by a note when `ALLOW_SIGNUP=false`. Signed-in readers go straight to their library (also from `/login` and `/signup`), signing out or an expired session on `/` shows the sign-in form, and any other address opened while signed out (a share link, a book) shows the sign-in form and opens once signed in. The Android app skips the landing page.
 - **Accounts:** email + password (change it in the profile, or reset it by email), plus Google sign-in on the web. New accounts get a welcome email; "Forgot password?" emails a one-hour link (both need SMTP, see *Email*). Sign-ups can be closed with `ALLOW_SIGNUP=false`, or gated behind email confirmation with `REQUIRE_EMAIL_VERIFICATION=true` (needs SMTP). Sign-in, sign-up and password-reset requests are rate-limited (10/min per IP); the reader opens books in a sandbox that cannot run their scripts, and the server sends a strict Content-Security-Policy.
 - **Book pages:** clicking a cover opens the book's page: progress (where and on which device you stopped), description (read from the EPUB or PDF metadata on upload, or Gutenberg's summary for imported books), format, size, language, collection and tags, how many other readers have it, its Public Library entry and source, all its highlights (each opens the reader at that passage) and the book clubs reading it. A public book's page shows who shared it, how many readers have it, its sections, and *More by the author* and *You might also like* shelves; *Read* on any card still opens the reader directly.
 - **Reading stats** (`/stats`, linked from the dashboard, the reading-goal widget and Profile): time read in the last 7 days, current and best streak, days read this month, books finished this year against your goal, reading time per day for the last 30 days, a 26-week activity heatmap, books finished per month, and the books you read most this month. Time is estimated from position saves on every device (KOReader included): the gap between two page turns counts, pauses over 10 minutes don't. The history starts when this version is installed; books finished before that still count, dated by their last saved position.
@@ -48,7 +49,7 @@ The app and the repository are called **BookRaven** (formerly Mico-livrão). Som
 | API | Node 22, Fastify 5, Better Auth (email + Google, bearer plugin) |
 | Database | PostgreSQL 16 (`pg` + plain SQL migrations) |
 | Files | Content-addressed (`books/ab/cd/<sha256>`) on local disk or any S3-compatible bucket (Garage, MinIO, AWS, R2) |
-| Tests | Vitest (API integration tests against PostgreSQL, web unit tests), GitHub Actions CI |
+| Tests | Vitest (API integration tests against PostgreSQL, web unit tests and component tests in happy-dom, e.g. the sign-in routing in `App.test.tsx`), GitHub Actions CI |
 | Realtime | SSE (`GET /api/events`) |
 | Proxy / TLS | Caddy (automatic HTTPS) |
 

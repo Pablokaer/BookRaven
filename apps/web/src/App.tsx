@@ -1,5 +1,5 @@
 import { App as CapApp } from "@capacitor/app";
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { isNative } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
@@ -18,6 +18,7 @@ import { ClubInvitePage, ClubPage, ClubsPage } from "./pages/ClubPages";
 import { CollectionPage, CollectionsPage } from "./pages/CollectionPages";
 import { DownloadPage } from "./pages/DownloadPage";
 import { DashboardPage, DiscoverPage, FavoritesPage, ReadingNowPage, SharedPage, UploadsPage } from "./pages/LibraryViews";
+import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { PublicLibraryPage } from "./pages/PublicLibraryPage";
@@ -48,10 +49,52 @@ function NativeBackButton() {
   return null;
 }
 
+/** /login and /signup: the sign-in form, keeping the address in step when it switches modes. */
+function AuthRoute({ mode, onSignedIn }: { mode: "signin" | "signup"; onSignedIn: () => void }) {
+  const navigate = useNavigate();
+  return (
+    <LoginPage
+      initialMode={mode}
+      homeLink={!isNative}
+      onSignedIn={onSignedIn}
+      onModeChange={(next) => {
+        if (next !== "forgot") navigate(next === "signup" ? "/signup" : "/login", { replace: true });
+      }}
+    />
+  );
+}
+
+/**
+ * Signed out: the landing page at "/" on the web (the Android app goes straight to signing in),
+ * /login and /signup, and the sign-in form at any other address, which stays put so the page
+ * opens once signed in (a share link, a book). Signed in, the library's catch-all route sends
+ * /login and /signup to "/".
+ */
+function SignedOutApp({ onSignedIn }: { onSignedIn: () => void }) {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route index element={isNative ? <LoginPage onSignedIn={onSignedIn} /> : <LandingPage />} />
+        <Route path="login" element={<AuthRoute mode="signin" onSignedIn={onSignedIn} />} />
+        <Route path="signup" element={<AuthRoute mode="signup" onSignedIn={onSignedIn} />} />
+        <Route path="*" element={<LoginPage onSignedIn={onSignedIn} homeLink={!isNative} />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
 export function App() {
   const { data: session, isPending, refetch } = authClient.useSession();
   const signedIn = Boolean(session?.user);
   const sessionChecked = useRef(false);
+
+  // Signing out (or the session expiring) on the library's home page shows the sign-in form, not
+  // the landing page: "/" becomes "/login" before the signed-out router reads the address.
+  const [wasSignedIn, setWasSignedIn] = useState(signedIn);
+  if (signedIn !== wasSignedIn) {
+    setWasSignedIn(signedIn);
+    if (!signedIn && !isNative && window.location.pathname === "/") window.history.replaceState(window.history.state, "", "/login");
+  }
 
   // Android app: this bundle rendered, so the live-update plugin needn't roll it back.
   useEffect(startAppUpdates, []);
@@ -85,7 +128,7 @@ export function App() {
   }
 
   if (!signedIn) {
-    return <LoginPage onSignedIn={() => void refetch()} />;
+    return <SignedOutApp onSignedIn={() => void refetch()} />;
   }
 
   const user = { name: session!.user.name, email: session!.user.email };
