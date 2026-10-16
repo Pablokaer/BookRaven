@@ -6,6 +6,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
 import { resetPasswordEmail, verifyEmailEmail, welcomeEmail } from "./lib/emails.js";
+import { audit, log } from "./lib/log.js";
 import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
 
@@ -54,6 +55,7 @@ export const auth = betterAuth({
     user: {
       create: {
         after: async (user) => {
+          audit("auth.account_created", { userId: user.id });
           sendMailInBackground(welcomeEmail(user));
         },
       },
@@ -63,10 +65,23 @@ export const auth = betterAuth({
       create: {
         before: async (session) => {
           if (await isAccountBlocked(session.userId)) {
+            audit("auth.blocked_sign_in", { userId: session.userId, ip: session.ipAddress }, "warn");
             throw new APIError("FORBIDDEN", { message: "This account has been blocked by an administrator.", code: "ACCOUNT_BLOCKED" });
           }
         },
+        // Every way in (email, Google, sign-up) creates a session.
+        after: async (session) => {
+          audit("auth.signed_in", { userId: session.userId, ip: session.ipAddress });
+        },
       },
+    },
+  },
+  // Its own messages (e.g. "Invalid password") go to the server log; LOG_LEVEL filters them.
+  logger: {
+    level: "debug",
+    log: (level, message, ...args) => {
+      const err = args.find((a) => a instanceof Error);
+      log[level]({ ...(err ? { err } : {}), ...(args.length && !err ? { args } : {}) }, `[Better Auth] ${message}`);
     },
   },
   // Bearer tokens let the Capacitor app authenticate without third-party cookies.

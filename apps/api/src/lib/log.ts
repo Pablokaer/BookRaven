@@ -20,6 +20,17 @@ export const serializers = {
  */
 export const log = pino({ level: process.env.LOG_LEVEL ?? (config.isProd ? "info" : "debug"), serializers });
 
+/** The logger of security-relevant events; exported for the tests. */
+export const auditLog = log.child({ audit: true });
+
+/**
+ * Logs a security-relevant event: sign-ins, account changes, admin actions. Every line has
+ * `audit: true` and an `event` name, so the trail is easy to filter out of the log.
+ */
+export function audit(event: string, fields: Record<string, unknown> = {}, level: "info" | "warn" = "info") {
+  auditLog[level]({ event, ...fields }, event);
+}
+
 /** Requests too frequent to log at info: health checks and the readers' range requests for a book. */
 const isRoutine = (request: FastifyRequest) => request.routeOptions.url === "/api/health" || request.headers.range !== undefined;
 

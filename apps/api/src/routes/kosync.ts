@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { query } from "../db.js";
 import { verifyAppPassword } from "../lib/devices.js";
+import { audit } from "../lib/log.js";
 import { saveReadingProgress } from "../lib/progress.js";
 
 /**
@@ -23,8 +24,12 @@ const COMIC = new Set(["cbz", "cbr", "cb7", "cbt"]);
 async function kosyncAuth(request: FastifyRequest, reply: FastifyReply) {
   const userHeader = request.headers["x-auth-user"];
   const keyHeader = request.headers["x-auth-key"];
-  const user = typeof userHeader === "string" && typeof keyHeader === "string" ? await verifyAppPassword(userHeader, { md5: keyHeader }) : null;
-  if (!user) return reply.code(401).send({ code: 2001, message: "Unauthorized" });
+  const sent = typeof userHeader === "string" && typeof keyHeader === "string";
+  const user = sent ? await verifyAppPassword(userHeader, { md5: keyHeader }) : null;
+  if (!user) {
+    if (sent) audit("app_password.auth_failed", { via: "kosync", ip: request.ip }, "warn");
+    return reply.code(401).send({ code: 2001, message: "Unauthorized" });
+  }
   request.user = user;
 }
 

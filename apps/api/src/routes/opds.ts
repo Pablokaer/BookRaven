@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { query } from "../db.js";
 import { verifyAppPassword } from "../lib/devices.js";
 import { UUID_RE } from "../lib/http.js";
+import { audit } from "../lib/log.js";
 import { bookKey } from "../lib/storage.js";
 import { SELECT_BOOK, sendCover, sendFile, type BookRow } from "./books.js";
 
@@ -30,6 +31,8 @@ async function basicAuth(request: FastifyRequest, reply: FastifyReply) {
         return;
       }
     }
+    // Readers first ask without credentials to get the challenge: only wrong ones are worth a line.
+    audit("app_password.auth_failed", { via: "opds", ip: request.ip }, "warn");
   }
   reply.header("WWW-Authenticate", 'Basic realm="BookRaven", charset="UTF-8"'); // ASCII-only header
   return reply.code(401).type("text/plain").send("Use your account email and an app password (Profile → Other apps).");
