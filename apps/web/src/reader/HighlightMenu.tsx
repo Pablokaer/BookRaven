@@ -14,7 +14,7 @@ export function HighlightMenu({
   onCopy,
   onDelete,
   onNote,
-  onDefine,
+  onDictionary,
   onTranslate,
   onDiscuss,
 }: {
@@ -25,15 +25,15 @@ export function HighlightMenu({
   onCopy: () => void;
   onDelete?: () => void;
   onNote?: () => void;
-  /** Shown for a single word only. */
-  onDefine?: () => void;
+  /** Shown for a single word only: its language, translation and definitions. */
+  onDictionary?: () => void;
   onTranslate?: () => void;
   /** Shown when the book is read in a book club. */
   onDiscuss?: () => void;
 }) {
   const actions: { label: string; icon: ReactNode; onClick: () => void; danger?: boolean }[] = [
     ...(onNote ? [{ label: "Note", icon: <StickyNote />, onClick: onNote }] : []),
-    ...(onDefine ? [{ label: "Define", icon: <BookA />, onClick: onDefine }] : []),
+    ...(onDictionary ? [{ label: "Dictionary", icon: <BookA />, onClick: onDictionary }] : []),
     ...(onTranslate ? [{ label: "Translate", icon: <Languages />, onClick: onTranslate }] : []),
     ...(onDiscuss ? [{ label: "Discuss in club", icon: <MessageSquareQuote />, onClick: onDiscuss }] : []),
     { label: "Copy", icon: <Copy />, onClick: onCopy },

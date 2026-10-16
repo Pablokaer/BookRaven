@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { detectWordLanguage, isWordLanguage, type WordLanguage } from "./wordLanguage.js";
 
 /**
  * Dictionary and translation lookups for selected text. They go through the server
@@ -34,6 +35,8 @@ const stripHtml = (html: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const wikiUrl = (word: string) => `https://en.wiktionary.org/wiki/${encodeURIComponent(word)}`;
+
 type WiktionaryResponse = Record<string, { partOfSpeech: string; language: string; definitions: { definition: string }[] }[]>;
 
 /** Picks the entries for the book's language (falls back to English, then anything). */
@@ -52,15 +55,14 @@ export function parseWiktionary(word: string, data: WiktionaryResponse, lang: st
     language: list[0]!.language ?? null,
     entries,
     source: "Wiktionary (CC BY-SA)",
-    url: `https://en.wiktionary.org/wiki/${encodeURIComponent(word)}`,
+    url: wikiUrl(word),
   };
 }
 
-export async function define(word: string, lang: string | null): Promise<DictionaryResult | null> {
-  if (config.dictionaryProvider === "none") throw new LookupUnavailableError();
-  const key = `dict:${lang}:${word.toLowerCase()}`;
-  if (cache.has(key)) return cache.get(key) as DictionaryResult | null;
-  // Try the word as written, then lower-case (sentence-initial capitals).
+/** Wiktionary's entries for `word` as written, else lower-case (sentence-initial capitals); null when it has none. */
+async function wiktionary(word: string): Promise<{ word: string; data: WiktionaryResponse } | null> {
+  const key = `wikt:${word}`;
+  if (cache.has(key)) return cache.get(key) as { word: string; data: WiktionaryResponse } | null;
   for (const w of [...new Set([word, word.toLowerCase()])]) {
     const res = await fetch(`https://en.wiktionary.org/api/rest_v1/page/definition/${encodeURIComponent(w)}`, {
       headers: { "user-agent": UA, accept: "application/json" },
@@ -68,10 +70,15 @@ export async function define(word: string, lang: string | null): Promise<Diction
     });
     if (res.status === 404) continue;
     if (!res.ok) throw new LookupUnavailableError();
-    const parsed = parseWiktionary(w, (await res.json()) as WiktionaryResponse, lang);
-    if (parsed) return remember(key, parsed);
+    return remember(key, { word: w, data: (await res.json()) as WiktionaryResponse });
   }
   return remember(key, null);
+}
+
+export async function define(word: string, lang: string | null): Promise<DictionaryResult | null> {
+  if (config.dictionaryProvider === "none") throw new LookupUnavailableError();
+  const page = await wiktionary(word);
+  return page ? parseWiktionary(page.word, page.data, lang) : null;
 }
 
 /** `sameLanguage`: the text already is in the target language (nothing to translate). */
@@ -93,7 +100,7 @@ export async function translate(text: string, from: string | null, to: string): 
     });
     if (!res.ok) throw new LookupUnavailableError();
     const body = (await res.json()) as { translatedText: string; detectedLanguage?: { language: string } };
-    return remember(key, { text: body.translatedText, from: src ?? body.detectedLanguage?.language ?? null, to, source: "LibreTranslate" });
+    return remember(key, detected({ text: body.translatedText, from: src ?? body.detectedLanguage?.language ?? null, to, source: "LibreTranslate" }, text));
   }
 
   // MyMemory: free, no key (an email raises the daily limit); detects the source when unknown.
@@ -108,5 +115,71 @@ export async function translate(text: string, from: string | null, to: string): 
   };
   if (/DISTINCT LANGUAGES/i.test(body.responseDetails ?? "")) return { text, from: src, to, source: "MyMemory", sameLanguage: true };
   if (Number(body.responseStatus) !== 200) throw new LookupUnavailableError();
-  return remember(key, { text: body.responseData.translatedText, from: src ?? body.responseData.detectedLanguage ?? null, to, source: "MyMemory" });
+  return remember(key, detected({ text: body.responseData.translatedText, from: src ?? body.responseData.detectedLanguage ?? null, to, source: "MyMemory" }, text));
+}
+
+/** A passage detected to be in the target language already comes back as it was. */
+function detected(tr: Translation, original: string): Translation {
+  const lang = (code: string | null) => code?.split(/[-_]/)[0]?.toLowerCase();
+  return lang(tr.from) === lang(tr.to) ? { ...tr, text: original, sameLanguage: true } : tr;
+}
+
+/** A selected word: the language it is in, its translation into `to` and its definitions. */
+export type WordLookup = {
+  word: string;
+  /** null when no supported language could be told. */
+  from: WordLanguage | null;
+  /** Other languages the word exists in, for the reader to pick instead. */
+  alternatives: WordLanguage[];
+  to: WordLanguage;
+  /** null when it is already in `to`, or the translation failed. */
+  translation: string | null;
+  sameLanguage?: boolean;
+  entries: Definition[];
+  source: string;
+  url: string | null;
+};
+
+/** `book`: the book's language (a tiebreaker); `from`: the language the reader chose. */
+export async function lookupWord(word: string, { to, book, from: chosen }: { to: WordLanguage; book: string | null; from?: WordLanguage }): Promise<WordLookup> {
+  const canDefine = config.dictionaryProvider !== "none";
+  const canTranslate = config.translateProvider !== "none";
+  if (!canDefine && !canTranslate) throw new LookupUnavailableError();
+
+  const page = canDefine ? await wiktionary(word).catch(() => null) : null;
+  const detected = detectWordLanguage(word, { dictionary: page ? Object.keys(page.data) : [], book });
+  let from = chosen ?? detected.language;
+  const alternatives = chosen ? [detected.language, ...detected.alternatives].filter((l): l is WordLanguage => !!l && l !== chosen) : detected.alternatives;
+  const found = page?.word ?? word;
+  // Only the chosen language's entries: parseWiktionary would fall back to English.
+  const entries = page && from && page.data[from] ? (parseWiktionary(found, { [from]: page.data[from] }, from)?.entries ?? []) : [];
+  const sources = entries.length ? ["Wiktionary (CC BY-SA)"] : [];
+
+  let translation: string | null = null;
+  let sameLanguage = from === to;
+  if (!sameLanguage && canTranslate) {
+    try {
+      const tr = await translate(found, from, to);
+      sameLanguage = !!tr.sameLanguage;
+      if (sameLanguage) from = to;
+      else {
+        translation = tr.text;
+        if (!from && isWordLanguage(tr.from)) from = tr.from;
+        sources.push(tr.source);
+      }
+    } catch {
+      /* the definitions are still worth showing */
+    }
+  }
+  return {
+    word: found,
+    from,
+    alternatives,
+    to,
+    translation,
+    ...(sameLanguage ? { sameLanguage } : {}),
+    entries,
+    source: sources.join(" · "),
+    url: entries.length ? wikiUrl(found) : null,
+  };
 }
