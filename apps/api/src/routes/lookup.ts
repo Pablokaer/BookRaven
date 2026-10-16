@@ -1,5 +1,6 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { requireUser } from "../auth.js";
+import { obj } from "../lib/http.js";
 import { define, LookupUnavailableError, lookupWord, translate } from "../lib/lookup.js";
 import { WORD_LANGUAGES, type WordLanguage } from "../lib/wordLanguage.js";
 
@@ -8,6 +9,16 @@ const WORD_LANG = { type: "string", enum: [...WORD_LANGUAGES] } as const;
 
 /** The word without surrounding punctuation ("Chaton," → "Chaton"). */
 const cleanWord = (word: string) => word.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+
+/** Runs a lookup, answering 503 when the dictionary or translation service can't be reached. */
+async function orUnavailable<T>(reply: FastifyReply, fn: () => Promise<T>) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") return reply.code(503).send({ error: "unavailable" });
+    throw err;
+  }
+}
 
 export async function lookupRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
@@ -21,13 +32,7 @@ export async function lookupRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const word = cleanWord(request.query.word);
       if (!word) return reply.code(400).send({ error: "invalid_word" });
-      try {
-        const result = await define(word, request.query.lang ?? null);
-        return result ?? reply.code(404).send({ error: "not_found" });
-      } catch (err) {
-        if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") return reply.code(503).send({ error: "unavailable" });
-        throw err;
-      }
+      return orUnavailable(reply, async () => (await define(word, request.query.lang ?? null)) ?? reply.code(404).send({ error: "not_found" }));
     },
   );
 
@@ -47,12 +52,7 @@ export async function lookupRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const word = cleanWord(request.query.word);
       if (!word || /\s/.test(word)) return reply.code(400).send({ error: "invalid_word" });
-      try {
-        return await lookupWord(word, { to: request.query.to, from: request.query.from, book: request.query.lang ?? null });
-      } catch (err) {
-        if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") return reply.code(503).send({ error: "unavailable" });
-        throw err;
-      }
+      return orUnavailable(reply, () => lookupWord(word, { to: request.query.to, from: request.query.from, book: request.query.lang ?? null }));
     },
   );
 
@@ -61,21 +61,11 @@ export async function lookupRoutes(app: FastifyInstance) {
     {
       config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          required: ["text", "to"],
-          additionalProperties: false,
-          properties: { text: { type: "string", minLength: 1, maxLength: 1000 }, from: LANG, to: LANG },
-        },
+        body: obj({ text: { type: "string", minLength: 1, maxLength: 1000 }, from: LANG, to: LANG }, ["text", "to"]),
       },
     },
     async (request, reply) => {
-      try {
-        return await translate(request.body.text.trim(), request.body.from ?? null, request.body.to);
-      } catch (err) {
-        if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") return reply.code(503).send({ error: "unavailable" });
-        throw err;
-      }
+      return orUnavailable(reply, () => translate(request.body.text.trim(), request.body.from ?? null, request.body.to));
     },
   );
 }

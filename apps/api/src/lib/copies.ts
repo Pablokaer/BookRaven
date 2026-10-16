@@ -1,7 +1,10 @@
+import type { FastifyReply } from "fastify";
 import type { SessionUser } from "../auth.js";
 import { query } from "../db.js";
+import { bookDto } from "../routes/books.js";
+import { publish } from "./events.js";
 import { BlockedFileError, isFileBlocked } from "./moderation.js";
-import { withQuota } from "./quota.js";
+import { QuotaExceededError, quotaBody, withQuota } from "./quota.js";
 import { copyCover } from "./storage.js";
 
 type SourceBook = {
@@ -50,4 +53,25 @@ export async function copyBookToUser(src: SourceBook, user: SessionUser, sharedB
     }
   }
   return { id, created: true };
+}
+
+/** copyBookToUser for a route: a blocked file answers 451 and a full account 413 (null then). */
+export async function copyOrReply(reply: FastifyReply, src: SourceBook, user: SessionUser, sharedByName: string | null) {
+  try {
+    return await copyBookToUser(src, user, sharedByName);
+  } catch (err) {
+    if (err instanceof BlockedFileError) reply.code(451).send({ error: "blocked_content" });
+    else if (err instanceof QuotaExceededError) reply.code(413).send(quotaBody(err));
+    else throw err;
+    return null;
+  }
+}
+
+/** Adds the copy and answers with it: 201 when new (and the user's devices hear of it), 200 when they had it. */
+export async function addCopyAndReply(reply: FastifyReply, src: SourceBook, user: SessionUser, sharedByName: string | null) {
+  const result = await copyOrReply(reply, src, user, sharedByName);
+  if (!result) return;
+  const dto = await bookDto(result.id);
+  if (result.created) publish(user.id, "book.created", dto);
+  return reply.code(result.created ? 201 : 200).send(dto);
 }

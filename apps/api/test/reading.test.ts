@@ -19,6 +19,23 @@ describe("highlights with notes", () => {
   });
 });
 
+describe("reading progress", () => {
+  it("keeps the newest position: an older one is answered with the stored one", async () => {
+    const u = await signUp();
+    const book = (await upload(u, "p.pdf", fakePdf())).json();
+    const put = (locator: string, at: number) =>
+      api(u, "PUT", `/api/books/${book.id}/progress`, { locator, percentage: 0.5, deviceId: "d1", deviceName: "Phone", clientUpdatedAt: at });
+    const first = (await put("page:5", Date.now() - 1000)).json();
+    expect(first).toMatchObject({ applied: true, progress: { bookId: book.id, locator: "page:5", deviceName: "Phone" } });
+    expect((await put("page:3", Date.now() - 5000)).json()).toEqual({ applied: false, progress: first.progress });
+    expect((await put("page:6", Date.now())).json()).toMatchObject({ applied: true, progress: { locator: "page:6" } });
+    expect((await api(u, "GET", `/api/books/${book.id}/progress`)).json()).toMatchObject({ locator: "page:6" });
+
+    const other = await signUp();
+    expect((await api(other, "PUT", `/api/books/${book.id}/progress`, { locator: "page:1", percentage: 0, deviceId: "x", clientUpdatedAt: Date.now() })).statusCode).toBe(404);
+  });
+});
+
 describe("dictionary parsing", () => {
   const sample = {
     en: [{ partOfSpeech: "Noun", language: "English", definitions: [{ definition: 'A feeling of <a href="/wiki/x">melancholy</a> &amp; longing.' }] }],

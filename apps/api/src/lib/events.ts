@@ -17,10 +17,9 @@ export function subscribe(userId: string, reply: FastifyReply) {
   };
 }
 
-export function publish(userId: string, event: string, data: unknown) {
-  const set = streams.get(userId);
-  if (!set) return;
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+const frame = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+function send(set: Set<FastifyReply>, payload: string) {
   for (const reply of set) {
     try {
       reply.raw.write(payload);
@@ -30,9 +29,15 @@ export function publish(userId: string, event: string, data: unknown) {
   }
 }
 
+export function publish(userId: string, event: string, data: unknown) {
+  const set = streams.get(userId);
+  if (set) send(set, frame(event, data));
+}
+
 /** Sends an event to every connected user (e.g. the public library changed). */
 export function broadcast(event: string, data: unknown) {
-  for (const userId of streams.keys()) publish(userId, event, data);
+  const payload = frame(event, data);
+  for (const set of streams.values()) send(set, payload);
 }
 
 export function connectionCount() {

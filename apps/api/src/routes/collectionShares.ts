@@ -4,49 +4,31 @@ import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
 import { copyBookToUser } from "../lib/copies.js";
+import { findOr404, TOKEN_RE, UUID_RE } from "../lib/http.js";
 import { BlockedFileError } from "../lib/moderation.js";
-import { QuotaExceededError } from "../lib/quota.js";
+import { QuotaExceededError, quotaBody } from "../lib/quota.js";
 import { SELECT_BOOK, sendCover, toBookDto, type BookRow } from "./books.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 type SharedFolder = { id: string; name: string; user_id: string; owner_name: string | null };
 
 /** The collection behind a share token, or a 404. */
-async function loadSharedFolder(request: FastifyRequest<{ Params: { token: string } }>, reply: FastifyReply) {
-  const { token } = request.params;
-  const { rows } = TOKEN_RE.test(token)
-    ? await query<SharedFolder>(
-        `SELECT f.id, f.name, f.user_id, u.name AS owner_name
-         FROM folder_share s JOIN folder f ON f.id = s.folder_id JOIN "user" u ON u.id = f.user_id
-         WHERE s.token = $1`,
-        [token],
-      )
-    : { rows: [] };
-  if (!rows[0]) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  return rows[0];
-}
+const loadSharedFolder = (request: FastifyRequest<{ Params: { token: string } }>, reply: FastifyReply) =>
+  findOr404<SharedFolder>(
+    reply,
+    TOKEN_RE.test(request.params.token),
+    `SELECT f.id, f.name, f.user_id, u.name AS owner_name
+     FROM folder_share s JOIN folder f ON f.id = s.folder_id JOIN "user" u ON u.id = f.user_id
+     WHERE s.token = $1`,
+    [request.params.token],
+  );
 
 /** The collection's books as they are now (books added later show up for everyone with the link). */
 async function folderBooks(folder: SharedFolder) {
   return (await query<BookRow>(`${SELECT_BOOK} WHERE b.folder_id = $1 AND b.user_id = $2 ORDER BY lower(b.title)`, [folder.id, folder.user_id])).rows;
 }
 
-async function loadOwnedFolder(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-  const { id } = request.params;
-  const { rows } = UUID_RE.test(id)
-    ? await query<{ id: string }>("SELECT id FROM folder WHERE id = $1 AND user_id = $2", [id, request.user.id])
-    : { rows: [] };
-  if (!rows[0]) {
-    reply.code(404).send({ error: "not_found" });
-    return null;
-  }
-  return rows[0];
-}
+const loadOwnedFolder = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+  findOr404<{ id: string }>(reply, UUID_RE.test(request.params.id), "SELECT id FROM folder WHERE id = $1 AND user_id = $2", [request.params.id, request.user.id]);
 
 export async function collectionShareRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
@@ -114,9 +96,14 @@ export async function collectionShareRoutes(app: FastifyInstance) {
   app.get<{ Params: { token: string; bookId: string } }>("/api/collection-shares/:token/books/:bookId/cover", async (request, reply) => {
     const folder = await loadSharedFolder(request, reply);
     if (!folder) return;
-    const book = (await folderBooks(folder)).find((b) => b.id === request.params.bookId);
-    if (!book) return reply.code(404).send({ error: "not_found" });
-    return sendCover(request, reply, book);
+    const { bookId } = request.params;
+    const book = await findOr404<Pick<BookRow, "id" | "has_cover">>(
+      reply,
+      UUID_RE.test(bookId),
+      "SELECT id, has_cover FROM book WHERE id = $1 AND folder_id = $2 AND user_id = $3",
+      [bookId, folder.id, folder.user_id],
+    );
+    if (book) return sendCover(request, reply, book);
   });
 
   /**
@@ -133,20 +120,19 @@ export async function collectionShareRoutes(app: FastifyInstance) {
       const user = request.user;
       if (folder.user_id === user.id) return reply.code(409).send({ error: "own_collection" });
 
-      let target = (await query<{ id: string; name: string; created_at: Date }>("SELECT * FROM folder WHERE user_id = $1 AND name = $2", [user.id, folder.name])).rows[0];
-      if (!target) {
-        target = (
-          await query<{ id: string; name: string; created_at: Date }>(
-            "INSERT INTO folder (user_id, name) VALUES ($1, $2) ON CONFLICT (user_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING *",
-            [user.id, folder.name],
-          )
-        ).rows[0]!;
-        publish(user.id, "folder.created", { id: target.id, name: target.name, createdAt: target.created_at.toISOString() });
-      }
+      // xmax is 0 on a row this statement inserted (an existing one is only locked by the no-op update).
+      const target = (
+        await query<{ id: string; name: string; created_at: Date; inserted: boolean }>(
+          "INSERT INTO folder (user_id, name) VALUES ($1, $2) ON CONFLICT (user_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING *, (xmax = 0) AS inserted",
+          [user.id, folder.name],
+        )
+      ).rows[0]!;
+      if (target.inserted) publish(user.id, "folder.created", { id: target.id, name: target.name, createdAt: target.created_at.toISOString() });
 
       let added = 0;
       let blocked = 0;
       let quota: QuotaExceededError | null = null;
+      const copies: { id: string; created: boolean }[] = [];
       for (const src of await folderBooks(folder)) {
         let result;
         try {
@@ -164,13 +150,14 @@ export async function collectionShareRoutes(app: FastifyInstance) {
         }
         // New copies go into the collection; books the caller already had move there only if they were loose.
         await query("UPDATE book SET folder_id = $2 WHERE id = $1 AND (folder_id IS NULL OR $3)", [result.id, target.id, result.created]);
-        const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [result.id]);
-        publish(user.id, result.created ? "book.created" : "book.updated", toBookDto(rows[0]!));
+        copies.push(result);
         if (result.created) added++;
       }
+      const rows = new Map((await query<BookRow>(`${SELECT_BOOK} WHERE b.id = ANY($1)`, [copies.map((c) => c.id)])).rows.map((r) => [r.id, r]));
+      for (const c of copies) publish(user.id, c.created ? "book.created" : "book.updated", toBookDto(rows.get(c.id)!));
 
       const body = { folderId: target.id, added, blocked };
-      if (quota) return reply.code(413).send({ ...body, error: "quota_exceeded", usedBytes: quota.usedBytes, quotaBytes: quota.quotaBytes });
+      if (quota) return reply.code(413).send({ ...body, ...quotaBody(quota) });
       return reply.code(added ? 201 : 200).send(body);
     },
   );

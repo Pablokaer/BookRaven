@@ -2,10 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
+import { obj } from "../lib/http.js";
 import { loadOwnedBook } from "./books.js";
 
 /** More than enough for any book; stops a runaway client. */
-export const MAX_BOOKMARKS_PER_BOOK = 2000;
+const MAX_BOOKMARKS_PER_BOOK = 2000;
 
 type BookmarkRow = {
   id: string;
@@ -49,17 +50,15 @@ export async function bookmarkRoutes(app: FastifyInstance) {
     "/api/books/:id/bookmarks",
     {
       schema: {
-        body: {
-          type: "object",
-          required: ["locator", "percentage"],
-          additionalProperties: false,
-          properties: {
+        body: obj(
+          {
             locator: { type: "string", minLength: 1, maxLength: 2000 },
             percentage: { type: "number", minimum: 0, maximum: 1 },
             label: { type: ["string", "null"], maxLength: 500 },
             title: { type: ["string", "null"], maxLength: 200 },
           },
-        },
+          ["locator", "percentage"],
+        ),
       },
     },
     async (request, reply) => {

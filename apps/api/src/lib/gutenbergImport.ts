@@ -19,9 +19,10 @@ import {
   workKey,
   type CatalogEntry,
   type GutendexBook,
+  type Person,
 } from "./publicDomain.js";
 import { IMPORT_PLAN, themesFor, type ImportStep, type Theme } from "./themes.js";
-import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./storage.js";
+import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp, type TempFile } from "./storage.js";
 
 /**
  * Imports popular public-domain books from Project Gutenberg into the public library.
@@ -42,8 +43,120 @@ const MIRRORS = ["https://gutenberg.nabasny.com", "https://gutenberg.pglaf.org"]
 const CATALOG_CSV = "https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz";
 /** Most catalog matches looked up on Gutendex per themed search (32 per request, which can take a minute). */
 const MAX_CANDIDATES = 960;
-const UA = "BookRaven/1.0 (self-hosted reader; public-domain import)";
-const MAX_BYTES = 60 * 1024 * 1024;
+export const UA = "BookRaven/1.0 (self-hosted reader; public-domain import)";
+export const MAX_BYTES = 60 * 1024 * 1024;
+
+export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Calls `fn` up to `tries` times, waiting longer after each failure (`stepMs` × the attempt). */
+export async function retry<T>(fn: () => Promise<T>, tries: number, stepMs: number, onRetry: (message: string, seconds: number) => void) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= tries) throw err;
+      onRetry((err as Error).message, (stepMs * attempt) / 1000);
+      await delay(stepMs * attempt);
+    }
+  }
+}
+
+/** Downloads to a temp file from the first URL that works; null when none does. */
+export async function downloadFirst(get: typeof fetch, urls: string[], headBytes: number, headers: Record<string, string> = {}) {
+  for (const url of urls) {
+    try {
+      const res = await get(url, { headers: { "user-agent": UA, ...headers }, signal: AbortSignal.timeout(180_000) });
+      if (!res.ok || !res.body) continue;
+      // Too big (some illustrated editions are 80+ MB): try the next URL, e.g. the edition without images.
+      if (Number(res.headers.get("content-length") ?? 0) > MAX_BYTES) {
+        await res.body.cancel().catch(() => {});
+        continue;
+      }
+      return await streamToTemp(Readable.fromWeb(res.body as unknown as WebReadableStream), headBytes);
+    } catch {
+      /* try the next URL */
+    }
+  }
+  return null;
+}
+
+/** The text entries of Gutenberg's catalog file; throws when it can't be had. */
+export async function gutenbergCatalog(get: typeof fetch) {
+  const res = await get(CATALOG_CSV, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(300_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return catalogEntries(gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8"));
+}
+
+/**
+ * Stores a downloaded EPUB as a public book of the library account (unless it has the file
+ * already), with its catalog record. Covers must be JPEGs, or also PNGs with `pngCovers`.
+ */
+export async function storePublicBook(
+  ownerId: string,
+  file: TempFile,
+  b: {
+    source: string;
+    sourceId: string;
+    sourceUrl: string;
+    title: string;
+    authors: Person[];
+    translators: Person[];
+    language: string;
+    subjects: string[];
+    bookshelves?: string[];
+    themes: string[];
+    tags: string[];
+    description: string | null;
+    popularity: number;
+  },
+  coverUrls: string[],
+  get: typeof fetch,
+  pngCovers = false,
+) {
+  const title = cleanTitle(b.title).slice(0, 500);
+  const author = b.authors.map((a) => displayName(a.name)).join(", ").slice(0, 500) || null;
+  const filename = `${title.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120).trim() || `${b.source}-${b.sourceId}`}.epub`;
+  let bookId = (await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [ownerId, file.sha256])).rows[0]?.id;
+  if (!bookId) {
+    const koreaderMd5 = await partialMd5OfFile(file.tmpPath, file.size);
+    await commitBookFile(file);
+    const { rows } = await query<{ id: string }>(
+      `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
+                         koreader_md5, is_public, published_at, language, tags, themes, description)
+       VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, true, now(), $9, $10, $11, $12) RETURNING id`,
+      [ownerId, title, author, filename, MIME_TYPES.epub, file.size, file.sha256, koreaderMd5, b.language, b.tags.slice(0, 5), b.themes, b.description],
+    );
+    bookId = rows[0]!.id;
+    const cover = coverUrls.length ? await downloadFirst(get, coverUrls, 16) : null;
+    if (cover && ((cover.head[0] === 0xff && cover.head[1] === 0xd8) || (pngCovers && cover.head[0] === 0x89))) {
+      await commitCover(cover.tmpPath, bookId);
+      await query("UPDATE book SET has_cover = true WHERE id = $1", [bookId]);
+    } else if (cover) {
+      await fs.rm(cover.tmpPath, { force: true });
+    }
+  }
+  await query(
+    `INSERT INTO catalog_book (source, source_id, title, authors, translators, language, subjects, bookshelves, themes, download_count, source_url, book_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT (source, source_id) DO UPDATE SET book_id = EXCLUDED.book_id, download_count = EXCLUDED.download_count,
+       bookshelves = EXCLUDED.bookshelves, themes = EXCLUDED.themes`,
+    [
+      b.source,
+      b.sourceId,
+      title,
+      JSON.stringify(b.authors),
+      JSON.stringify(b.translators),
+      b.language,
+      b.subjects.slice(0, 20),
+      (b.bookshelves ?? []).slice(0, 20),
+      b.themes,
+      b.popularity,
+      b.sourceUrl,
+      bookId,
+    ],
+  );
+  return title;
+}
 
 export type ImportOptions = {
   languages: string[];
@@ -75,47 +188,26 @@ export async function ensureLibraryAccount() {
 export async function importPublicDomain(opts: ImportOptions) {
   const get = opts.fetch ?? fetch;
   const log = opts.log ?? (() => {});
-  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
   await ensureStorageDirs();
   const ownerId = await ensureLibraryAccount();
   const summary = { imported: 0, skipped: 0, duplicates: 0, failed: 0 };
 
-  async function getJson(url: string) {
-    for (let attempt = 1; ; attempt++) {
-      try {
+  // Gutendex is a free service that is sometimes overloaded: back off and retry.
+  const getJson = (url: string) =>
+    retry(
+      async () => {
         const res = await get(url, { headers: { "user-agent": UA, accept: "application/json" }, signal: AbortSignal.timeout(120_000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as { next: string | null; results: GutendexBook[] };
-      } catch (err) {
-        // Gutendex is a free service that is sometimes overloaded: back off and retry.
-        if (attempt >= 6) throw err;
-        log(`  catalog request failed (${(err as Error).message}), retrying in ${15 * attempt}s…`);
-        await delay(15_000 * attempt);
-      }
-    }
-  }
-
-  /** Downloads to a temp file (first URL that works). */
-  async function download(urls: string[], headBytes: number) {
-    for (const url of urls) {
-      try {
-        const res = await get(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(180_000) });
-        if (!res.ok || !res.body) continue;
-        // Too big (some illustrated editions are 80+ MB): try the next URL, e.g. the edition without images.
-        if (Number(res.headers.get("content-length") ?? 0) > MAX_BYTES) {
-          await res.body.cancel().catch(() => {});
-          continue;
-        }
-        return await streamToTemp(Readable.fromWeb(res.body as unknown as WebReadableStream), headBytes);
-      } catch {
-        /* try the next URL */
-      }
-    }
-    return null;
-  }
+      },
+      6,
+      15_000,
+      (message, seconds) => log(`  catalog request failed (${message}), retrying in ${seconds}s…`),
+    );
 
   async function importOne(b: GutendexBook, lang: string, themes: Theme[]) {
-    const epub = await download(
+    const epub = await downloadFirst(
+      get,
       [
         ...MIRRORS.flatMap((m) => [
           `${m}/cache/epub/${b.id}/pg${b.id}-images-3.epub`, // EPUB 3 with images
@@ -129,51 +221,27 @@ export async function importPublicDomain(opts: ImportOptions) {
     try {
       if (epub.size > MAX_BYTES || detectFormat(epub.head, "book.epub") !== "epub") throw new Error("not an EPUB");
       if (await isFileBlocked(epub.sha256)) throw new Error("blocked by an administrator");
-
-      const title = cleanTitle(b.title).slice(0, 500);
-      const author = b.authors.map((a) => displayName(a.name)).join(", ").slice(0, 500) || null;
-      const filename = `${title.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120).trim() || `gutenberg-${b.id}`}.epub`;
-
-      let bookId = (await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [ownerId, epub.sha256])).rows[0]?.id;
-      if (!bookId) {
-        const koreaderMd5 = await partialMd5OfFile(epub.tmpPath, epub.size);
-        await commitBookFile(epub);
-        const { rows } = await query<{ id: string }>(
-          `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
-                             koreader_md5, is_public, published_at, language, tags, themes, description)
-           VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, true, now(), $9, $10, $11, $12) RETURNING id`,
-          [ownerId, title, author, filename, MIME_TYPES.epub, epub.size, epub.sha256, koreaderMd5, lang, tagsFrom(b), themes, summaryOf(b)],
-        );
-        bookId = rows[0]!.id;
-        const cover = await download([...MIRRORS.map((m) => `${m}/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`), b.formats["image/jpeg"]].filter(Boolean) as string[], 16);
-        if (cover && cover.head[0] === 0xff && cover.head[1] === 0xd8) {
-          await commitCover(cover.tmpPath, bookId);
-          await query("UPDATE book SET has_cover = true WHERE id = $1", [bookId]);
-        } else if (cover) {
-          await fs.rm(cover.tmpPath, { force: true });
-        }
-      }
-
-      await query(
-        `INSERT INTO catalog_book (source, source_id, title, authors, translators, language, subjects, bookshelves, themes, download_count, source_url, book_id)
-         VALUES ('gutenberg', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (source, source_id) DO UPDATE SET book_id = EXCLUDED.book_id, download_count = EXCLUDED.download_count,
-           bookshelves = EXCLUDED.bookshelves, themes = EXCLUDED.themes`,
-        [
-          String(b.id),
-          title,
-          JSON.stringify(b.authors),
-          JSON.stringify(b.translators),
-          lang,
-          b.subjects.slice(0, 20),
-          b.bookshelves.slice(0, 20),
+      return await storePublicBook(
+        ownerId,
+        epub,
+        {
+          source: "gutenberg",
+          sourceId: String(b.id),
+          sourceUrl: `https://www.gutenberg.org/ebooks/${b.id}`,
+          title: b.title,
+          authors: b.authors,
+          translators: b.translators,
+          language: lang,
+          subjects: b.subjects,
+          bookshelves: b.bookshelves,
           themes,
-          b.download_count,
-          `https://www.gutenberg.org/ebooks/${b.id}`,
-          bookId,
-        ],
+          tags: tagsFrom(b),
+          description: summaryOf(b),
+          popularity: b.download_count,
+        },
+        [...MIRRORS.map((m) => `${m}/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`), b.formats["image/jpeg"]].filter(Boolean) as string[],
+        get,
       );
-      return title;
     } finally {
       await fs.rm(epub.tmpPath, { force: true });
     }
@@ -289,18 +357,16 @@ export async function importPublicDomain(opts: ImportOptions) {
   let catalog: Promise<CatalogEntry[] | null> | null = null;
   /** Gutenberg's catalog file, downloaded once per run; null when it can't be had. */
   function loadCatalog() {
-    catalog ??= (async () => {
-      try {
-        const res = await get(CATALOG_CSV, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(300_000) });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const entries = catalogEntries(gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8"));
+    catalog ??= gutenbergCatalog(get).then(
+      (entries) => {
         log(`Gutenberg catalog: ${entries.length} texts`);
         return entries;
-      } catch (err) {
-        log(`  ! Gutenberg catalog unavailable (${(err as Error).message}), using Gutendex searches`);
+      },
+      (err: Error) => {
+        log(`  ! Gutenberg catalog unavailable (${err.message}), using Gutendex searches`);
         return null;
-      }
-    })();
+      },
+    );
     return catalog;
   }
 

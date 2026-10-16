@@ -23,7 +23,8 @@ export async function authRoutes(app: FastifyInstance) {
       const req = new Request(url, {
         method: request.method,
         headers,
-        body: body && body.length > 0 ? new Uint8Array(body) : undefined,
+        // Request copies the bytes itself; the Buffer is never backed by shared memory.
+        body: body && body.length > 0 ? (body as Uint8Array<ArrayBuffer>) : undefined,
       });
 
       const response = await auth.handler(req);

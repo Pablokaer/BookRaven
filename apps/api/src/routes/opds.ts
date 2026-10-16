@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { config } from "../config.js";
 import { query } from "../db.js";
 import { verifyAppPassword } from "../lib/devices.js";
+import { UUID_RE } from "../lib/http.js";
 import { bookKey } from "../lib/storage.js";
 import { SELECT_BOOK, sendCover, sendFile, type BookRow } from "./books.js";
 
@@ -11,7 +12,6 @@ import { SELECT_BOOK, sendCover, sendFile, type BookRow } from "./books.js";
  */
 
 const PAGE_SIZE = 50;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NAV = "application/atom+xml;profile=opds-catalog;kind=navigation";
 const ACQ = "application/atom+xml;profile=opds-catalog;kind=acquisition";
 
@@ -177,25 +177,16 @@ export async function opdsRoutes(app: FastifyInstance) {
     if (!UUID_RE.test(request.params.id)) return null;
     return (await query<BookRow>(`SELECT b.*, false AS is_shared FROM book b WHERE b.id = $1 AND b.is_public`, [request.params.id])).rows[0] ?? null;
   }
-  const download = (reply: FastifyReply, b: BookRow) =>
-    reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(b.original_filename)}`);
-
-  app.get<{ Params: { id: string } }>("/opds/books/:id/file", async (request, reply) => {
-    const b = await own(request);
-    if (!b) return reply.code(404).send();
-    return sendFile(request, download(reply, b), bookKey(b.sha256), b.mime_type, b.sha256);
-  });
-  app.get<{ Params: { id: string } }>("/opds/books/:id/cover", async (request, reply) => {
-    const b = await own(request);
-    return b ? sendCover(request, reply, b) : reply.code(404).send();
-  });
-  app.get<{ Params: { id: string } }>("/opds/public/:id/file", async (request, reply) => {
-    const b = await pub(request);
-    if (!b) return reply.code(404).send();
-    return sendFile(request, download(reply, b), bookKey(b.sha256), b.mime_type, b.sha256);
-  });
-  app.get<{ Params: { id: string } }>("/opds/public/:id/cover", async (request, reply) => {
-    const b = await pub(request);
-    return b ? sendCover(request, reply, b) : reply.code(404).send();
-  });
+  for (const [base, load] of [["books", own], ["public", pub]] as const) {
+    app.get<{ Params: { id: string } }>(`/opds/${base}/:id/file`, async (request, reply) => {
+      const b = await load(request);
+      if (!b) return reply.code(404).send();
+      reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(b.original_filename)}`);
+      return sendFile(request, reply, bookKey(b.sha256), b.mime_type, b.sha256);
+    });
+    app.get<{ Params: { id: string } }>(`/opds/${base}/:id/cover`, async (request, reply) => {
+      const b = await load(request);
+      return b ? sendCover(request, reply, b) : reply.code(404).send();
+    });
+  }
 }

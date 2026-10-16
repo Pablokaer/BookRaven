@@ -2,8 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { createAppPassword } from "../lib/devices.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { obj, UUID_RE } from "../lib/http.js";
 
 /** App passwords for OPDS readers and KOReader (managed from the profile page). */
 export async function deviceRoutes(app: FastifyInstance) {
@@ -22,7 +21,7 @@ export async function deviceRoutes(app: FastifyInstance) {
     "/api/app-passwords",
     {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
-      schema: { body: { type: "object", required: ["name"], additionalProperties: false, properties: { name: { type: "string", minLength: 1, maxLength: 60 } } } },
+      schema: { body: obj({ name: { type: "string", minLength: 1, maxLength: 60 } }, ["name"]) },
     },
     async (request, reply) => {
       const count = await query("SELECT 1 FROM app_password WHERE user_id = $1", [request.user.id]);

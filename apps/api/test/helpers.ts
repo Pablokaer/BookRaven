@@ -70,13 +70,16 @@ export function fakePdf(sizeBytes = 2048) {
   return Buffer.concat([Buffer.from("%PDF-1.4\n"), randomBytes(sizeBytes)]);
 }
 
-/** Multipart upload of a book file. */
-export async function upload(user: TestUser, filename: string, data: Buffer, fields: Record<string, string> = {}) {
+/** Multipart upload of a book file (and optionally a cover image). */
+export async function upload(user: TestUser, filename: string, data: Buffer, fields: Record<string, string> = {}, cover?: Buffer) {
   const a = await getApp();
   const boundary = `----readsync${randomBytes(6).toString("hex")}`;
   const parts: Buffer[] = [];
   for (const [k, v] of Object.entries(fields)) {
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));
+  }
+  if (cover) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="cover"; filename="cover"\r\nContent-Type: application/octet-stream\r\n\r\n`), cover, Buffer.from("\r\n"));
   }
   parts.push(
     Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`),

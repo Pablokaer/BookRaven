@@ -7,10 +7,10 @@ const md5 = (s: string) => createHash("md5").update(s).digest("hex");
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /** Stored form of an app password. KOReader sends md5(password), so we hash that. */
-export const hashFromMd5 = (md5hex: string) => sha256(md5hex.toLowerCase());
+const hashFromMd5 = (md5hex: string) => sha256(md5hex.toLowerCase());
 
 /** A readable random password like "kq3m-x8fp-2nwd-rv7a". */
-export function generateAppPassword() {
+function generateAppPassword() {
   const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
   const bytes = randomBytes(16);
   const chars = [...bytes].map((b) => alphabet[b % alphabet.length]).join("");

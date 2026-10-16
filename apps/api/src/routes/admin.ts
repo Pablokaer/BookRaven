@@ -5,13 +5,12 @@ import { requireUser } from "../auth.js";
 import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { broadcast, publish } from "../lib/events.js";
+import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { quotaOf } from "../lib/quota.js";
 import { removeBookFile, removeCover } from "../lib/storage.js";
 import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
+async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
 }
 
@@ -23,31 +22,24 @@ export async function adminUserIds() {
 }
 
 /** Takes every publication of a file out of the public library and tells the owners. */
-export async function unpublishFile(sha256: string) {
-  const { rows } = await query<{ id: string; user_id: string }>(
-    "UPDATE book SET is_public = false, published_at = NULL WHERE sha256 = $1 AND is_public RETURNING id, user_id",
-    [sha256],
-  );
-  for (const r of rows) {
-    const book = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [r.id]);
-    if (book.rows[0]) publish(r.user_id, "book.updated", toBookDto(book.rows[0]));
-  }
-  if (rows.length) broadcast("public.changed", { sha256 });
-  return rows.length;
+async function unpublishFile(sha256: string) {
+  const { rows } = await query<{ id: string }>("UPDATE book SET is_public = false, published_at = NULL WHERE sha256 = $1 AND is_public RETURNING id", [sha256]);
+  if (!rows.length) return;
+  const books = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = ANY($1)`, [rows.map((r) => r.id)]);
+  for (const b of books.rows) publish(b.user_id, "book.updated", toBookDto(b));
+  broadcast("public.changed", { sha256 });
 }
 
 /** Deletes the given books and any stored file no other book uses any more. */
 async function deleteBooks(books: { id: string; user_id: string; sha256: string }[]) {
   if (!books.length) return;
   await query("DELETE FROM book WHERE id = ANY($1)", [books.map((b) => b.id)]);
-  for (const b of books) {
-    await removeCover(b.id).catch(() => {});
-    publish(b.user_id, "book.deleted", { id: b.id });
-  }
-  for (const sha of new Set(books.map((b) => b.sha256))) {
-    const still = await query("SELECT 1 FROM book WHERE sha256 = $1 LIMIT 1", [sha]);
-    if (!still.rowCount) await removeBookFile(sha).catch(() => {});
-  }
+  await Promise.all(books.map((b) => removeCover(b.id).catch(() => {})));
+  for (const b of books) publish(b.user_id, "book.deleted", { id: b.id });
+  const shas = [...new Set(books.map((b) => b.sha256))];
+  const { rows } = await query<{ sha256: string }>("SELECT DISTINCT sha256 FROM book WHERE sha256 = ANY($1)", [shas]);
+  const still = new Set(rows.map((r) => r.sha256));
+  await Promise.all(shas.filter((sha) => !still.has(sha)).map((sha) => removeBookFile(sha).catch(() => {})));
 }
 
 type UserRow = {
@@ -108,29 +100,19 @@ export async function adminRoutes(app: FastifyInstance) {
     }));
   });
 
-  async function loadTarget(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-    const { rows } = await query<{ id: string; email: string }>(`SELECT id, email FROM "user" WHERE id = $1`, [request.params.id]);
-    if (!rows[0]) {
-      reply.code(404).send({ error: "not_found" });
-      return null;
-    }
-    return rows[0];
-  }
+  const loadTarget = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+    findOr404<{ id: string; email: string }>(reply, true, `SELECT id, email FROM "user" WHERE id = $1`, [request.params.id]);
 
   /** Per-account storage limit (MB, null = default) and blocking. */
   app.patch<{ Params: { id: string }; Body: { quotaMb?: number | null; blocked?: boolean; blockedReason?: string | null } }>(
     "/api/admin/users/:id",
     {
       schema: {
-        body: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            quotaMb: { type: ["number", "null"], minimum: 0, maximum: 10_000_000 },
-            blocked: { type: "boolean" },
-            blockedReason: { type: ["string", "null"], maxLength: 500 },
-          },
-        },
+        body: obj({
+          quotaMb: { type: ["number", "null"], minimum: 0, maximum: 10_000_000 },
+          blocked: { type: "boolean" },
+          blockedReason: { type: ["string", "null"], maxLength: 500 },
+        }),
       },
     },
     async (request, reply) => {
@@ -248,24 +230,17 @@ export async function adminRoutes(app: FastifyInstance) {
     "/api/admin/reports/:id/resolve",
     {
       schema: {
-      body: {
-        type: "object",
-        required: ["action"],
-        additionalProperties: false,
-        properties: {
-          action: { type: "string", enum: ["dismiss", "unpublish", "block", "purge"] },
-          note: { type: "string", maxLength: 1000 },
-        },
-      },
+        body: obj({ action: { type: "string", enum: ["dismiss", "unpublish", "block", "purge"] }, note: { type: "string", maxLength: 1000 } }, ["action"]),
       },
     },
     async (request, reply) => {
-      if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
-      const { rows } = await query<{ sha256: string; title: string; reason: string }>("SELECT sha256, title, reason FROM content_report WHERE id = $1", [
-      request.params.id,
-      ]);
-      const report = rows[0];
-      if (!report) return reply.code(404).send({ error: "not_found" });
+      const report = await findOr404<{ sha256: string; title: string; reason: string }>(
+        reply,
+        UUID_RE.test(request.params.id),
+        "SELECT sha256, title, reason FROM content_report WHERE id = $1",
+        [request.params.id],
+      );
+      if (!report) return;
       const { action, note } = request.body;
 
       let removed = 0;

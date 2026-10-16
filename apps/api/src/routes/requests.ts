@@ -4,11 +4,10 @@ import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { bookRequestEmail } from "../lib/emails.js";
 import { broadcast, publish } from "../lib/events.js";
+import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { sendMailInBackground } from "../lib/mailer.js";
 import { isFileBlocked } from "../lib/moderation.js";
-import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { bookDto, SELECT_BOOK, type BookRow } from "./books.js";
 
 type RequestRow = {
   id: string;
@@ -56,18 +55,8 @@ const toDto = (r: RequestRow, viewer: { id: string; email: string }) => ({
 export async function requestRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
 
-  async function load(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-    if (!UUID_RE.test(request.params.id)) {
-      reply.code(404).send({ error: "not_found" });
-      return null;
-    }
-    const { rows } = await query<RequestRow>(`${SELECT_REQUEST} WHERE r.id = $2`, [request.user.id, request.params.id]);
-    if (!rows[0]) {
-      reply.code(404).send({ error: "not_found" });
-      return null;
-    }
-    return rows[0];
-  }
+  const load = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
+    findOr404<RequestRow>(reply, UUID_RE.test(request.params.id), `${SELECT_REQUEST} WHERE r.id = $2`, [request.user.id, request.params.id]);
 
   app.get("/api/requests", async (request) => {
     const { rows } = await query<RequestRow>(
@@ -85,16 +74,14 @@ export async function requestRoutes(app: FastifyInstance) {
     {
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          required: ["title"],
-          additionalProperties: false,
-          properties: {
+        body: obj(
+          {
             title: { type: "string", minLength: 1, maxLength: 300 },
             author: { type: "string", maxLength: 300 },
             note: { type: "string", maxLength: 1000 },
           },
-        },
+          ["title"],
+        ),
       },
     },
     async (request, reply) => {
@@ -136,13 +123,13 @@ export async function requestRoutes(app: FastifyInstance) {
   /** Answers a request with one of the caller's books, publishing it if needed. */
   app.post<{ Params: { id: string }; Body: { bookId: string } }>(
     "/api/requests/:id/fulfill",
-    { schema: { body: { type: "object", required: ["bookId"], additionalProperties: false, properties: { bookId: { type: "string" } } } } },
+    { schema: { body: obj({ bookId: { type: "string" } }, ["bookId"]) } },
     async (request, reply) => {
       const r = await load(request, reply);
       if (!r) return;
       if (r.status !== "open") return reply.code(409).send({ error: "not_open" });
       if (!UUID_RE.test(request.body.bookId)) return reply.code(404).send({ error: "book_not_found" });
-      const { rows } = await query<BookRow & { user_id: string }>(`${SELECT_BOOK} WHERE b.id = $1 AND b.user_id = $2`, [
+      const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1 AND b.user_id = $2`, [
         request.body.bookId,
         request.user.id,
       ]);
@@ -152,8 +139,7 @@ export async function requestRoutes(app: FastifyInstance) {
 
       if (!book.is_public) {
         await query("UPDATE book SET is_public = true, published_at = COALESCE(published_at, now()) WHERE id = $1", [book.id]);
-        const updated = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [book.id]);
-        publish(request.user.id, "book.updated", toBookDto(updated.rows[0]!));
+        publish(request.user.id, "book.updated", await bookDto(book.id));
         broadcast("public.changed", { bookId: book.id });
       }
       await query(

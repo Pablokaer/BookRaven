@@ -11,6 +11,22 @@ export async function query<T extends pg.QueryResultRow = any>(text: string, par
   return pool.query<T>(text, params);
 }
 
+/** Runs `fn` in a transaction on one pooled connection, rolled back when it throws. */
+export async function withTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "migrations");
 
 /**

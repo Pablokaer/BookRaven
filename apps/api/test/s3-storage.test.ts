@@ -45,7 +45,8 @@ describe("S3 storage driver", () => {
     const tmp = await storage.streamToTemp(Readable.from([data]));
     expect(tmp.size).toBe(4096);
 
-    await storage.commitBookFile(tmp);
+    expect(await storage.commitBookFile(tmp)).toBe(true);
+    expect(await storage.commitBookFile(await storage.streamToTemp(Readable.from([data])))).toBe(false); // already there
     const key = storage.bookKey(tmp.sha256);
     expect(await storage.objectSize(key)).toBe(4096);
     await expect(fs.access(tmp.tmpPath)).rejects.toThrow(); // temp file was cleaned up

@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
-import { progressDto as toDto, saveReadingProgress, type ProgressRow } from "../lib/progress.js";
+import { findOr404, obj, UUID_RE } from "../lib/http.js";
+import { progressDto as toDto, saveReadingProgress, type Position, type ProgressRow } from "../lib/progress.js";
 
 type ProgressBody = {
   locator: string;
@@ -12,8 +13,6 @@ type ProgressBody = {
   /** Client time (ms since epoch) when this position was reached. */
   clientUpdatedAt: number;
 };
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function progressRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
@@ -37,11 +36,8 @@ export async function progressRoutes(app: FastifyInstance) {
     {
       config: { rateLimit: { max: 240, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          required: ["locator", "percentage", "deviceId", "clientUpdatedAt"],
-          additionalProperties: false,
-          properties: {
+        body: obj(
+          {
             locator: { type: "string", minLength: 1, maxLength: 2000 },
             percentage: { type: "number", minimum: 0, maximum: 1 },
             label: { type: ["string", "null"], maxLength: 200 },
@@ -49,30 +45,28 @@ export async function progressRoutes(app: FastifyInstance) {
             deviceName: { type: ["string", "null"], maxLength: 100 },
             clientUpdatedAt: { type: "number" },
           },
-        },
+          ["locator", "percentage", "deviceId", "clientUpdatedAt"],
+        ),
       },
     },
     async (request, reply) => {
       const bookId = request.params.id;
-      if (!UUID_RE.test(bookId)) return reply.code(404).send({ error: "not_found" });
-      const owned = await query("SELECT 1 FROM book WHERE id = $1 AND user_id = $2", [bookId, request.user.id]);
-      if (owned.rowCount === 0) return reply.code(404).send({ error: "not_found" });
+      // The book must be the caller's; its stored position comes along (null fields when none).
+      const owned = await findOr404<Position | { locator: null }>(
+        reply,
+        UUID_RE.test(bookId),
+        `SELECT p.locator, p.percentage, p.updated_at FROM book b
+         LEFT JOIN reading_progress p ON p.book_id = b.id AND p.user_id = b.user_id
+         WHERE b.id = $1 AND b.user_id = $2`,
+        [bookId, request.user.id],
+      );
+      if (!owned) return;
 
       const b = request.body;
-      const saved = await saveReadingProgress(request.user.id, bookId, {
-        locator: b.locator,
-        percentage: b.percentage,
-        label: b.label ?? null,
-        deviceId: b.deviceId,
-        deviceName: b.deviceName ?? null,
-        at: new Date(b.clientUpdatedAt),
-      });
-      if (saved) return { applied: true, progress: toDto(bookId, saved) };
-      const current = await query<ProgressRow>(
-        "SELECT * FROM reading_progress WHERE user_id = $1 AND book_id = $2",
-        [request.user.id, bookId],
-      );
-      return { applied: false, progress: toDto(bookId, current.rows[0]!) };
+      const prev = owned.locator === null ? null : (owned as Position);
+      const p = { locator: b.locator, percentage: b.percentage, label: b.label ?? null, deviceId: b.deviceId, deviceName: b.deviceName ?? null, at: new Date(b.clientUpdatedAt) };
+      const saved = await saveReadingProgress(request.user.id, bookId, p, prev);
+      return { applied: saved.applied, progress: toDto(bookId, saved) };
     },
   );
 }

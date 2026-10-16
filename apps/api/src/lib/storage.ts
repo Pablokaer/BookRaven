@@ -31,14 +31,16 @@ import { config } from "../config.js";
  * "derived/ab/cd/<sha256>.cbz" (a CBZ copy of a RAR/7z/TAR comic, see comicConvert.ts).
  */
 interface Driver {
-  /** Moves a local temp file into the store (no-op if the key already exists). */
-  putFile(key: string, localPath: string): Promise<void>;
+  /** Moves a local temp file into the store (no-op if the key already exists); true when it was stored. */
+  putFile(key: string, localPath: string): Promise<boolean>;
   /** Size in bytes, or null when missing. */
   size(key: string): Promise<number | null>;
   /** Byte stream, optionally of an inclusive range. */
   read(key: string, start?: number, end?: number): Promise<Readable>;
   remove(key: string): Promise<void>;
   copy(from: string, to: string): Promise<void>;
+  /** The error `read` fails with for a missing key. */
+  isMissing(err: unknown): boolean;
 }
 
 export const tmpDir = path.join(config.storageDir, "tmp");
@@ -52,9 +54,11 @@ class LocalDriver implements Driver {
     try {
       await fs.access(dest);
       await fs.rm(localPath, { force: true });
+      return false;
     } catch {
       await fs.mkdir(path.dirname(dest), { recursive: true });
       await fs.rename(localPath, dest);
+      return true;
     }
   }
   async size(key: string) {
@@ -74,6 +78,9 @@ class LocalDriver implements Driver {
     await fs.mkdir(path.dirname(this.file(to)), { recursive: true });
     await fs.copyFile(this.file(from), this.file(to));
   }
+  isMissing(err: unknown) {
+    return (err as NodeJS.ErrnoException)?.code === "ENOENT";
+  }
 }
 
 class S3Driver implements Driver {
@@ -88,19 +95,20 @@ class S3Driver implements Driver {
   });
   private bucket = config.s3.bucket;
 
-  private isMissing(err: unknown) {
+  isMissing(err: unknown) {
     return err instanceof NotFound || (err instanceof S3ServiceException && (err.$metadata.httpStatusCode === 404 || err.name === "NoSuchKey"));
   }
   async putFile(key: string, localPath: string) {
     if ((await this.size(key)) !== null) {
       await fs.rm(localPath, { force: true });
-      return;
+      return false;
     }
     const { size } = await fs.stat(localPath);
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: createReadStream(localPath), ContentLength: size }),
     );
     await fs.rm(localPath, { force: true });
+    return true;
   }
   async size(key: string) {
     try {
@@ -171,7 +179,7 @@ export async function streamToTemp(source: Readable, headBytes = 128): Promise<T
   return { tmpPath, sha256: hash.digest("hex"), size, head: Buffer.concat(headChunks) };
 }
 
-/** Moves a temp upload into its content-addressed location (no-op if it already exists). */
+/** Moves a temp upload into its content-addressed location (no-op if it already exists); true when it was stored. */
 export function commitBookFile(tmp: TempFile) {
   return driver.putFile(bookKey(tmp.sha256), tmp.tmpPath);
 }
@@ -184,19 +192,44 @@ export async function removeTemp(tmpPath: string | undefined) {
   if (tmpPath) await fs.rm(tmpPath, { force: true });
 }
 
-export const objectSize = (key: string) => driver.size(key);
+/**
+ * Sizes of stored objects, most recently used last. What is stored under a key never changes
+ * (putFile doesn't overwrite), so an entry only goes when its object is removed. Saves the
+ * storage lookup (an S3 HEAD) that every range request of a reader would need.
+ */
+const sizes = new Map<string, number>();
+const MAX_SIZES = 5000;
+
+export async function objectSize(key: string) {
+  const size = sizes.get(key) ?? (await driver.size(key));
+  if (size === null) return null;
+  sizes.delete(key); // moves it last
+  sizes.set(key, size);
+  if (sizes.size > MAX_SIZES) sizes.delete(sizes.keys().next().value!);
+  return size;
+}
+
+function remove(key: string) {
+  sizes.delete(key);
+  return driver.remove(key);
+}
+
 export const readObject = (key: string, start?: number, end?: number) => driver.read(key, start, end);
 /** Moves a local file into the store under `key` (no-op if the key already exists). */
 export const putObject = (key: string, localPath: string) => driver.putFile(key, localPath);
 /** Removes a book file and the CBZ copy made from it, if any. */
-export const removeBookFile = (sha256: string) => Promise.all([driver.remove(bookKey(sha256)), driver.remove(cbzKey(sha256))]).then(() => {});
-export const removeCover = (bookId: string) => driver.remove(coverKey(bookId));
+export const removeBookFile = (sha256: string) => Promise.all([remove(bookKey(sha256)), remove(cbzKey(sha256))]).then(() => {});
+export const removeCover = (bookId: string) => remove(coverKey(bookId));
 export const copyCover = (fromBookId: string, toBookId: string) => driver.copy(coverKey(fromBookId), coverKey(toBookId));
 
 /** First `n` bytes of an object (e.g. to sniff an image type), or null when missing. */
 export async function readHead(key: string, n: number) {
-  if ((await driver.size(key)) === null) return null;
   const chunks: Buffer[] = [];
-  for await (const chunk of await driver.read(key, 0, n - 1)) chunks.push(Buffer.from(chunk));
+  try {
+    for await (const chunk of await driver.read(key, 0, n - 1)) chunks.push(Buffer.from(chunk));
+  } catch (err) {
+    if (driver.isMissing(err)) return null;
+    throw err;
+  }
   return Buffer.concat(chunks).subarray(0, n);
 }

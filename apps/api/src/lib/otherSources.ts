@@ -1,15 +1,11 @@
 import fs from "node:fs/promises";
-import { gunzipSync } from "node:zlib";
-import { Readable } from "node:stream";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { query } from "../db.js";
-import { epubPackage, opfPeople } from "./epubInfo.js";
-import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
-import { ensureLibraryAccount } from "./gutenbergImport.js";
-import { partialMd5OfFile } from "./koreader.js";
+import { decodeEntities as decode, epubPackage, opfPeople } from "./epubInfo.js";
+import { DETECT_BYTES, detectFormat } from "./formats.js";
+import { delay, downloadFirst, ensureLibraryAccount, gutenbergCatalog, MAX_BYTES, retry, storePublicBook, UA } from "./gutenbergImport.js";
 import { isFileBlocked } from "./moderation.js";
-import { catalogEntries, cleanTitle, deathYearCutoff, displayName, type Person } from "./publicDomain.js";
-import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp } from "./storage.js";
+import { cleanTitle, deathYearCutoff, displayName, normalize as norm, type Person } from "./publicDomain.js";
+import { ensureStorageDirs } from "./storage.js";
 import { themesFor } from "./themes.js";
 
 /**
@@ -25,8 +21,6 @@ import { themesFor } from "./themes.js";
  * keeps the book out. A work already in the library from any source is not imported again.
  */
 
-const UA = "BookRaven/1.0 (self-hosted reader; public-domain import)";
-const MAX_BYTES = 60 * 1024 * 1024;
 const SE_OPEN_FEED = "https://standardebooks.org/feeds/atom/new-releases";
 const SE_CATALOG = "https://standardebooks.org/feeds/opds/all";
 const WIKIDATA_SPARQL = "https://query.wikidata.org/sparql";
@@ -52,14 +46,6 @@ export type SourceOptions = {
 
 export type SourceSummary = { imported: number; skipped: number; duplicates: number; failed: number };
 
-const norm = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-
 /** One work across sources: language, title without subtitle, authors as "First Last". */
 export function crossKey(title: string, authors: string[], language: string) {
   const t = norm(cleanTitle(title).replace(/\s*[:;(].*$/, ""));
@@ -76,16 +62,6 @@ async function knownWorks() {
     works: new Set(rows.map((r) => crossKey(r.title, r.authors.map((a) => a.name), r.language))),
   };
 }
-
-const decode = (s: string) =>
-  s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&amp;/g, "&")
-    .trim();
 
 const attr = (tag: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
 
@@ -121,79 +97,9 @@ export function parseStandardEbooksFeed(xml: string): { entries: FeedEntry[]; ne
   return { entries: entries.filter((x) => x.title && x.url), next: nextLink ? decode(attr(nextLink, "href") ?? "") : null };
 }
 
-/** Stores a downloaded EPUB as a public book of the library account, with its catalog record. */
-async function store(
-  ownerId: string,
-  file: { tmpPath: string; sha256: string; size: number; head: Buffer },
-  b: {
-    source: string;
-    sourceId: string;
-    sourceUrl: string;
-    title: string;
-    authors: Person[];
-    translators: Person[];
-    language: string;
-    subjects: string[];
-    themes: string[];
-    tags: string[];
-    description: string | null;
-    popularity: number;
-  },
-  coverUrl: string | null,
-  download: (urls: string[], head: number) => Promise<{ tmpPath: string; head: Buffer } | null>,
-) {
-  const title = cleanTitle(b.title).slice(0, 500);
-  const author = b.authors.map((a) => displayName(a.name)).join(", ").slice(0, 500) || null;
-  const filename = `${title.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120).trim() || `${b.source}-${b.sourceId}`}.epub`;
-  let bookId = (await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [ownerId, file.sha256])).rows[0]?.id;
-  if (!bookId) {
-    const koreaderMd5 = await partialMd5OfFile(file.tmpPath, file.size);
-    await commitBookFile(file);
-    const { rows } = await query<{ id: string }>(
-      `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
-                         koreader_md5, is_public, published_at, language, tags, themes, description)
-       VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, true, now(), $9, $10, $11, $12) RETURNING id`,
-      [ownerId, title, author, filename, MIME_TYPES.epub, file.size, file.sha256, koreaderMd5, b.language, b.tags.slice(0, 5), b.themes, b.description],
-    );
-    bookId = rows[0]!.id;
-    const cover = coverUrl ? await download([coverUrl], 16) : null;
-    if (cover && ((cover.head[0] === 0xff && cover.head[1] === 0xd8) || cover.head[0] === 0x89)) {
-      await commitCover(cover.tmpPath, bookId);
-      await query("UPDATE book SET has_cover = true WHERE id = $1", [bookId]);
-    } else if (cover) {
-      await fs.rm(cover.tmpPath, { force: true });
-    }
-  }
-  await query(
-    `INSERT INTO catalog_book (source, source_id, title, authors, translators, language, subjects, bookshelves, themes, download_count, source_url, book_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, '{}', $8, $9, $10, $11)
-     ON CONFLICT (source, source_id) DO UPDATE SET book_id = EXCLUDED.book_id, download_count = EXCLUDED.download_count, themes = EXCLUDED.themes`,
-    [b.source, b.sourceId, title, JSON.stringify(b.authors), JSON.stringify(b.translators), b.language, b.subjects.slice(0, 20), b.themes, b.popularity, b.sourceUrl, bookId],
-  );
-  return title;
-}
-
 function tools(opts: SourceOptions) {
   const get = opts.fetch ?? fetch;
   const log = opts.log ?? (() => {});
-  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  async function download(urls: string[], headBytes: number, headers: Record<string, string> = {}) {
-    for (const url of urls) {
-      try {
-        const res = await get(url, { headers: { "user-agent": UA, ...headers }, signal: AbortSignal.timeout(180_000) });
-        if (!res.ok || !res.body) continue;
-        if (Number(res.headers.get("content-length") ?? 0) > MAX_BYTES) {
-          await res.body.cancel().catch(() => {});
-          continue;
-        }
-        return await streamToTemp(Readable.fromWeb(res.body as unknown as WebReadableStream), headBytes);
-      } catch {
-        /* next URL */
-      }
-    }
-    return null;
-  }
 
   /**
    * Death years by name: the ones known beforehand, then Wikidata (people with that exact
@@ -230,18 +136,17 @@ function tools(opts: SourceOptions) {
     return out;
   }
 
-  return { get, log, delay, download, deathsOf };
+  return { get, log, deathsOf };
 }
 
 /**
  * Death years from Gutenberg's catalog file, by normalized "First Last" name (namesakes:
- * the latest death counts). Saves asking Wikidata about most authors.
+ * the latest death counts). Saves asking Wikidata about most authors. Throws when the file
+ * can't be had.
  */
 export async function gutenbergDeaths(get: typeof fetch = fetch) {
   const deaths = new Map<string, number | null>();
-  const res = await get("https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz", { headers: { "user-agent": UA }, signal: AbortSignal.timeout(300_000) });
-  if (!res.ok) return deaths;
-  for (const e of catalogEntries(gunzipSync(Buffer.from(await res.arrayBuffer())).toString("utf8"))) {
+  for (const e of await gutenbergCatalog(get)) {
     for (const p of [...e.authors, ...e.translators]) {
       if (p.death_year === null) continue;
       const key = norm(displayName(p.name));
@@ -257,7 +162,7 @@ function allDeadLongEnough(people: Person[], cutoff = deathYearCutoff()) {
 }
 
 export async function importStandardEbooks(opts: SourceOptions & { patronEmail?: string }): Promise<SourceSummary> {
-  const { get, log, delay, download, deathsOf } = tools(opts);
+  const { get, log, deathsOf } = tools(opts);
   await ensureStorageDirs();
   const ownerId = await ensureLibraryAccount();
   const summary: SourceSummary = { imported: 0, skipped: 0, duplicates: 0, failed: 0 };
@@ -285,7 +190,7 @@ export async function importStandardEbooks(opts: SourceOptions & { patronEmail?:
         summary.skipped++;
         continue;
       }
-      const file = await download([e.epub], DETECT_BYTES, auth);
+      const file = await downloadFirst(get, [e.epub], DETECT_BYTES, auth);
       if (!file) {
         summary.failed++;
         log(`  ! ${e.title}: download failed`);
@@ -308,7 +213,7 @@ export async function importStandardEbooks(opts: SourceOptions & { patronEmail?:
           log(`  - ${e.title}: not public domain everywhere (life + 70)`);
           continue;
         }
-        const title = await store(
+        const title = await storePublicBook(
           ownerId,
           file,
           {
@@ -325,8 +230,9 @@ export async function importStandardEbooks(opts: SourceOptions & { patronEmail?:
             description: e.summary,
             popularity: 0,
           },
-          e.cover,
-          (urls, head) => download(urls, head),
+          e.cover ? [e.cover] : [],
+          get,
+          true,
         );
         known.works.add(crossKey(e.title, e.authors, "en"));
         summary.imported++;
@@ -364,16 +270,16 @@ export type WikisourceWork = {
  * translations of them). Asked kind by kind: one query over all of Wikisource's pages
  * is too slow for Wikidata's 60-second limit.
  */
-export const wikisourceListQuery = (kind: string) => `
+const wikisourceListQuery = (kind: string) => `
 SELECT ?item ?page WHERE {
   ?item wdt:P31 wd:${kind} .
   ?article schema:about ?item ; schema:isPartOf <https://pt.wikisource.org/> ; schema:name ?page .
 }`;
 /** Literary work, and version/edition/translation. */
-export const WIKISOURCE_KINDS = ["Q7725634", "Q3331189"];
+const WIKISOURCE_KINDS = ["Q7725634", "Q3331189"];
 
 /** Authors, translators, original language, genres and popularity of up to ~150 items. */
-export const wikisourceDetailsQuery = (items: string[]) => `
+const wikisourceDetailsQuery = (items: string[]) => `
 SELECT ?item
   (GROUP_CONCAT(DISTINCT CONCAT(?aName, "|", COALESCE(STR(YEAR(?aDied)), "")); separator=";") AS ?authors)
   (GROUP_CONCAT(DISTINCT CONCAT(?tName, "|", COALESCE(STR(YEAR(?tDied)), "")); separator=";") AS ?translators)
@@ -447,30 +353,28 @@ export function wikisourceEligible(w: WikisourceWork, cutoff = deathYearCutoff()
 }
 
 export async function importWikisource(opts: SourceOptions): Promise<SourceSummary> {
-  const { get, log, delay, download } = tools(opts);
+  const { get, log } = tools(opts);
   await ensureStorageDirs();
   const ownerId = await ensureLibraryAccount();
   const summary: SourceSummary = { imported: 0, skipped: 0, duplicates: 0, failed: 0 };
   const known = await knownWorks();
 
   log("Wikisource (pt): asking Wikidata for works…");
-  const sparql = async (q: string) => {
-    for (let attempt = 1; ; attempt++) {
-      try {
+  // The public endpoint is busy at times: back off and retry a few times.
+  const sparql = (q: string) =>
+    retry(
+      async () => {
         const res = await get(`${WIKIDATA_SPARQL}?query=${encodeURIComponent(q)}`, {
           headers: { "user-agent": UA, accept: "application/sparql-results+json" },
           signal: AbortSignal.timeout(90_000),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return ((await res.json()) as { results: { bindings: Binding[] } }).results.bindings;
-      } catch (err) {
-        // The public endpoint is busy at times: back off and retry a few times.
-        if (attempt >= 4) throw err;
-        log(`  Wikidata busy (${(err as Error).message}), retrying in ${10 * attempt}s…`);
-        await delay(10_000 * attempt);
-      }
-    }
-  };
+      },
+      4,
+      10_000,
+      (message, seconds) => log(`  Wikidata busy (${message}), retrying in ${seconds}s…`),
+    );
   const pages = new Map<string, string>();
   try {
     for (const kind of WIKISOURCE_KINDS) {
@@ -504,7 +408,7 @@ export async function importWikisource(opts: SourceOptions): Promise<SourceSumma
       summary.duplicates++;
       continue;
     }
-    const file = await download([`${WS_EXPORT}?format=epub-3&lang=pt&page=${encodeURIComponent(w.page)}`], DETECT_BYTES);
+    const file = await downloadFirst(get, [`${WS_EXPORT}?format=epub-3&lang=pt&page=${encodeURIComponent(w.page)}`], DETECT_BYTES);
     if (!file) {
       summary.failed++;
       log(`  ! ${w.page}: export failed`);
@@ -516,7 +420,7 @@ export async function importWikisource(opts: SourceOptions): Promise<SourceSumma
         continue;
       }
       const themes = themesFor(w.genres);
-      const title = await store(
+      const title = await storePublicBook(
         ownerId,
         file,
         {
@@ -533,8 +437,8 @@ export async function importWikisource(opts: SourceOptions): Promise<SourceSumma
           description: w.description,
           popularity: w.links,
         },
-        null,
-        (urls, head) => download(urls, head),
+        [],
+        get,
       );
       known.works.add(crossKey(w.title, w.authors.map((a) => a.name), "pt"));
       summary.imported++;
