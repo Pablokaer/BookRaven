@@ -30,23 +30,17 @@ jobs:
         with:
           ref: ${{ env.COMMIT }}
 
-      - name: SSH key
+      # Writes the key and an `ssh vps` alias, then waits until the VPS answers (infra/ci-ssh.sh).
+      - name: SSH to the VPS
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
-
-      - name: Deploy
-        env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" bash -s -- "$APP_DIR" "$COMMIT" < infra/deploy.sh
+        run: bash infra/ci-ssh.sh
+
+      - name: Deploy
+        run: ssh vps bash -s -- "$APP_DIR" "$COMMIT" < infra/deploy.sh
 
   # Android app (README → Android app): a signed APK and a live-update bundle of the web app,
   # built while the server deploys and published under /downloads once it is up. Skipped
@@ -91,12 +85,8 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           if [ -z "$PUBLIC_URL" ]; then
-            install -d -m 700 ~/.ssh
-            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
-            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-            chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
-            PUBLIC_URL=$(ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
-              "sed -n 's/^PUBLIC_URL=//p' '$APP_DIR/.env'" | tr -d '\r"' | tail -n 1)
+            bash infra/ci-ssh.sh
+            PUBLIC_URL=$(ssh vps "sed -n 's/^PUBLIC_URL=//p' '$APP_DIR/.env'" | tr -d '\r"' | tail -n 1)
           fi
           if [ -z "$PUBLIC_URL" ]; then echo "::error::PUBLIC_URL not found"; exit 1; fi
           echo "VITE_API_URL=$PUBLIC_URL" >> "$GITHUB_ENV"
@@ -161,21 +151,15 @@ jobs:
           name: android-release
           path: android-release
 
-      - name: SSH key
+      - name: SSH to the VPS
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
-
-      - name: Publish
-        env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
+        run: bash infra/ci-ssh.sh
+
+      - name: Publish
         run: |
-          remote() { ssh -i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" "$@"; }
-          tar -C android-release -czf - . | remote "rm -rf '$APP_DIR/downloads/.incoming' && mkdir -p '$APP_DIR/downloads/.incoming' && tar -C '$APP_DIR/downloads/.incoming' -xzf -"
-          remote bash -s -- "$APP_DIR" < infra/publish-android.sh
+          tar -C android-release -czf - . | ssh vps "rm -rf '$APP_DIR/downloads/.incoming' && mkdir -p '$APP_DIR/downloads/.incoming' && tar -C '$APP_DIR/downloads/.incoming' -xzf -"
+          ssh vps bash -s -- "$APP_DIR" < infra/publish-android.sh

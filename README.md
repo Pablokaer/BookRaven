@@ -71,6 +71,7 @@ apps/
     scripts/          Android release helpers (native-version fingerprint, release files)
 infra/Caddyfile
 infra/deploy.sh          update the VPS to a commit and restart (used by the Deploy workflow)
+infra/ci-ssh.sh          SSH setup for the Deploy workflow: key, an `ssh vps` alias, and waiting until the VPS answers
 infra/publish-android.sh publish an Android release into ./downloads (used by the Deploy workflow)
 docker-compose.yml       production: postgres + api + caddy
 docker-compose.dev.yml   development: postgres only
@@ -154,7 +155,7 @@ The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF 
 
 ### Automatic deploys (GitHub Actions → VPS)
 
-Every push to `main` that passes CI is deployed by `.github/workflows/deploy.yml`: it connects to the VPS over SSH and runs `infra/deploy.sh`, which moves the clone in `/opt/mico-livrao` to the tested commit, rebuilds the images with `docker compose up -d --build` and waits for the API to answer (the job fails, with the API log, if it doesn't). `.env`, `data/`, `backups/` and `downloads/` are ignored by git and never touched. In parallel it builds the Android app and publishes it under `/downloads` (see *Android app*). *Actions → Deploy → Run workflow* deploys the current `main` by hand, and `bash infra/deploy.sh` on the server does the same.
+Every push to `main` that passes CI is deployed by `.github/workflows/deploy.yml`: it connects to the VPS over SSH and runs `infra/deploy.sh`, which moves the clone in `/opt/mico-livrao` to the tested commit, rebuilds the images with `docker compose up -d --build` and waits for the API to answer (the job fails, with the API log, if it doesn't). After a successful deploy it removes Docker build cache older than 3 days, which otherwise grows with every deploy (the newer cache keeps builds fast). Before connecting, each job runs `infra/ci-ssh.sh`: SSH connections time out after 20 s and are retried (3 attempts, up to 4 tries 15 s apart), so a short network hiccup between a GitHub runner and the VPS no longer fails a deploy; only this check is retried, never the deploy itself. Keepalives end a connection that stops answering after 3 minutes instead of holding the job until its timeout. `.env`, `data/`, `backups/` and `downloads/` are ignored by git and never touched. In parallel it builds the Android app and publishes it under `/downloads` (see *Android app*). *Actions → Deploy → Run workflow* deploys the current `main` by hand, and `bash infra/deploy.sh` on the server does the same.
 
 One-time setup (tested on a Hostinger KVM VPS with Ubuntu; the *Ubuntu with Docker* template already has Docker):
 
