@@ -20,6 +20,12 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-landing-phones",
+    date: "2026-10-16",
+    title: "The front page on phones",
+    items: ["On phones and tablets, the front page's headlines, buttons and footer are now centered, so it reads more evenly on a small screen."],
+  },
+  {
     id: "2026-10-16-small-fixes",
     date: "2026-10-16",
     title: "Small fixes",

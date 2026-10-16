@@ -84,14 +84,14 @@ export function LandingPage() {
       </main>
 
       <footer className="border-t border-line/70">
-        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] text-sm text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <p className="flex items-center gap-2.5">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-5 px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] text-center text-sm text-muted sm:flex-row sm:justify-between sm:px-8 sm:text-left">
+          <p className="flex flex-col items-center gap-2.5 sm:flex-row">
             <img src={logoIcon} alt="" width={24} height={24} className="h-6 w-6 rounded-md" />
             <span>
               <span className="font-medium text-fg">BookRaven</span> · a self-hosted reader for ebooks, PDFs and comics
             </span>
           </p>
-          <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-2">
+          <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-6 gap-y-2">
             <Link to="/login" className="hover:text-fg">
               Sign in
             </Link>
@@ -137,14 +137,15 @@ function Actions({ signupOpen, className = "" }: { signupOpen: boolean; classNam
   );
 }
 
+/** A section's eyebrow, title and lead: centered over the content on narrow screens, left-aligned from `lg`. */
 function SectionIntro({ id, eyebrow, title, children }: { id: string; eyebrow: string; title: string; children?: ReactNode }) {
   return (
-    <div>
+    <div className="text-center lg:text-left">
       <p className="eyebrow text-accent">{eyebrow}</p>
       <h2 id={id} className="mt-3 font-display text-[2rem] font-bold leading-[1.1] tracking-[-0.01em] text-balance sm:text-[2.5rem]">
         {title}
       </h2>
-      {children && <p className="mt-4 max-w-md text-[15px] leading-relaxed text-muted text-pretty">{children}</p>}
+      {children && <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted text-pretty lg:mx-0">{children}</p>}
     </div>
   );
 }
@@ -152,19 +153,20 @@ function SectionIntro({ id, eyebrow, title, children }: { id: string; eyebrow: s
 function Hero({ signupOpen }: { signupOpen: boolean }) {
   return (
     <section aria-labelledby="hero-title" className="mx-auto grid max-w-6xl items-center gap-14 px-5 pb-20 pt-10 sm:px-8 sm:pt-16 lg:grid-cols-12 lg:gap-10 lg:pb-28 lg:pt-20">
-      <div className="motion-safe:animate-rise lg:col-span-5">
-        <p className="eyebrow text-accent">Self-hosted reader · ebooks, PDFs &amp; comics</p>
+      {/* Centered while the hero is one column (phones, tablets); beside the preview it reads from the left. */}
+      <div className="text-center motion-safe:animate-rise lg:col-span-5 lg:text-left">
+        <p className="eyebrow text-accent text-balance">Self-hosted reader · ebooks, PDFs &amp; comics</p>
         <h1
           id="hero-title"
           className="mt-5 font-display text-[2.75rem] font-bold leading-[1.02] tracking-[-0.02em] text-balance sm:text-6xl lg:text-[4.1rem]"
         >
           Pick up where you left off. <span className="text-accent">On any device.</span>
         </h1>
-        <p className="mt-6 max-w-[34rem] text-[17px] leading-relaxed text-muted text-pretty">
+        <p className="mx-auto mt-6 max-w-[34rem] text-[17px] leading-relaxed text-muted text-pretty lg:mx-0">
           Read in the browser or the Android app, and your place, highlights and bookmarks follow you, down to the sentence. E-ink readers keep up
           through KOReader.
         </p>
-        <Actions signupOpen={signupOpen} className="mt-9" />
+        <Actions signupOpen={signupOpen} className="mt-9 justify-center lg:justify-start" />
       </div>
       <div className="lg:col-span-7">
         <ReaderPreview />
@@ -259,11 +261,11 @@ const FORMATS: [string, string[]][] = [
 function Formats() {
   return (
     <section aria-labelledby="formats-title" className="border-y border-line/70 bg-sidebar/60">
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-6 sm:px-8 md:flex-row md:items-center md:gap-10">
+      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-5 py-6 sm:px-8 md:flex-row md:gap-10">
         <h2 id="formats-title" className="eyebrow shrink-0">
           Opens
         </h2>
-        <dl className="flex flex-wrap gap-x-10 gap-y-3">
+        <dl className="flex flex-wrap justify-center gap-x-10 gap-y-3 md:justify-start">
           {FORMATS.map(([group, list]) => (
             <div key={group} className="flex items-baseline gap-3">
               <dt className="text-sm text-muted">{group}</dt>
