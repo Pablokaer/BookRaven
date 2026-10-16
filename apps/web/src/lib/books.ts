@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
+import { apiDelete, apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
 import { comicFormatOfName, type ComicFormat } from "./comicFormats";
 import { blobRangeFile, forgetSaved, openRemoteFile, savedWholeFile, saveWholeFile, type RangeFile } from "./rangeFile";
 
@@ -16,14 +16,7 @@ export function getBook(id: string) {
   return apiJson<Book>(`/api/books/${id}`);
 }
 
-export async function deleteBook(id: string) {
-  const res = await apiFetch(`/api/books/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) throw new ApiError(res.status, null);
-}
-
-export function bookFileUrl(id: string) {
-  return apiUrl(`/api/books/${id}/file`);
-}
+export const deleteBook = (id: string) => apiDelete(`/api/books/${id}`);
 
 /** Cache Storage key of a book's file saved on this device (`.cbz`: the CBZ copy of a RAR/7z/TAR comic). */
 const savedKey = (id: string, cbz = false) => `/books/${id}${cbz ? ".cbz" : ""}`;
@@ -92,12 +85,12 @@ export async function forgetCachedBook(id: string) {
 
 export type Meta = { title?: string; author?: string; description?: string; cover?: Blob };
 
-/** EPUB descriptions are often HTML: keep the text, one blank line between paragraphs. */
-function plainText(html: string | undefined) {
-  if (!html) return undefined;
+/** Book descriptions are often HTML: keep the text, one blank line between paragraphs. */
+export function htmlToText(html: string | null | undefined) {
+  if (!html) return null;
   const doc = new DOMParser().parseFromString(html.replace(/<\/(p|div|br)\s*>|<br\s*\/?>/gi, "\n\n$&"), "text/html");
   const text = (doc.body.textContent ?? "").replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*/g, "\n\n").trim();
-  return text || undefined;
+  return text || null;
 }
 
 function langString(v: unknown): string | undefined {
@@ -150,7 +143,7 @@ async function ebookMeta(file: File): Promise<Meta> {
     return {
       title: langString(book.metadata?.title),
       author: authorString(book.metadata?.author),
-      description: plainText(langString(book.metadata?.description)),
+      description: htmlToText(langString(book.metadata?.description)) ?? undefined,
       cover: cover ?? undefined,
     };
   } finally {

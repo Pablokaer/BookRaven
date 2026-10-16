@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { Landscape } from "../components/dashboard/Landscape";
 import logoIcon from "../assets/logo.webp";
 import wordmark from "../assets/wordmark.webp";
-import { Field } from "../components/ui/Field";
+import { Field, PasswordField } from "../components/ui/Field";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
 
@@ -35,6 +35,17 @@ export function AuthLayout({ children, homeLink = false }: { children: ReactNode
         {children}
       </div>
     </main>
+  );
+}
+
+/** The link under an auth card, back to the sign-in form. */
+export function AuthFooterLink({ onClick, children = "Back to sign in" }: { onClick: () => void; children?: ReactNode }) {
+  return (
+    <p className="mt-6 text-center text-sm">
+      <button className="font-medium text-accent hover:text-accent-hover" onClick={onClick}>
+        {children}
+      </button>
+    </p>
   );
 }
 
@@ -149,11 +160,7 @@ export function LoginPage({
             </button>
           </form>
         )}
-        <p className="mt-6 text-center text-sm">
-          <button className="font-medium text-accent hover:text-accent-hover" onClick={() => switchMode("signin")}>
-            Back to sign in
-          </button>
-        </p>
+        <AuthFooterLink onClick={() => switchMode("signin")} />
       </AuthLayout>
     );
   }
@@ -166,11 +173,7 @@ export function LoginPage({
           We sent a confirmation link to <span className="text-fg">{email}</span>. Open it to finish signing in. Check your spam folder if it does not
           arrive.
         </p>
-        <p className="mt-6 text-center text-sm">
-          <button className="font-medium text-accent hover:text-accent-hover" onClick={() => switchMode("signin")}>
-            Back to sign in
-          </button>
-        </p>
+        <AuthFooterLink onClick={() => switchMode("signin")} />
       </AuthLayout>
     );
   }
@@ -184,18 +187,14 @@ export function LoginPage({
           </Field>
         )}
         {emailInput}
-        <Field label="Password">
-          <input
-            className="input h-11 w-full"
-            type="password"
-            placeholder="At least 8 characters"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-          />
-        </Field>
+        <PasswordField
+          label="Password"
+          placeholder="At least 8 characters"
+          minLength={8}
+          value={password}
+          onValue={setPassword}
+          autoComplete={mode === "signin" ? "current-password" : "new-password"}
+        />
         {mode === "signin" && cfg?.passwordResetEnabled && (
           <div className="-mt-2 text-right">
             <button type="button" className="text-xs text-muted hover:text-accent" onClick={() => switchMode("forgot")}>

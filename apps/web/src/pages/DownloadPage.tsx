@@ -1,30 +1,11 @@
-import { Check, CheckCircle2, Copy, Download, Loader2, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
+import { CheckCircle2, Download, Loader2, RefreshCw, ShieldCheck, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApkUpdateButton } from "../components/AppUpdate";
+import { CopyField } from "../components/ui/CopyField";
+import { PageHeader } from "../components/ui/PageHeader";
 import { isNative } from "../lib/api";
 import { APK_URL, BUNDLE_VERSION, checkForUpdates, fetchRelease, restartWithUpdate, useAppUpdate, type AndroidRelease } from "../lib/appUpdate";
 import { fileSize, timeAgo } from "../lib/format";
-
-function CopyLink({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex gap-2">
-      <input readOnly value={value} className="input min-w-0 flex-1 font-mono text-xs" onFocus={(e) => e.target.select()} aria-label="Link to this page" />
-      <button
-        type="button"
-        className="btn-outline px-3"
-        aria-label="Copy link"
-        onClick={() => {
-          void navigator.clipboard?.writeText(value);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
-      >
-        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-      </button>
-    </div>
-  );
-}
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -121,7 +102,7 @@ function GetTheApp() {
         <section className="surface space-y-3 p-6">
           <h2 className="text-sm font-medium">On a computer? Open this page on your phone</h2>
           <p className="text-xs text-muted">Sign in to BookRaven in your phone’s browser and open Download in the menu, or send yourself this link:</p>
-          <CopyLink value={pageUrl} />
+          <CopyField label="Link to this page" value={pageUrl} inputClassName="font-mono text-xs" />
         </section>
       )}
 
@@ -178,10 +159,7 @@ function GetTheApp() {
 export function DownloadPage() {
   return (
     <>
-      <header className="mb-8">
-        <h1 className="font-display text-3xl font-bold tracking-tight">Android app</h1>
-        <p className="mt-1.5 text-sm text-muted">Read on your phone and tablet, with your library and reading progress in sync.</p>
-      </header>
+      <PageHeader title="Android app" subtitle="Read on your phone and tablet, with your library and reading progress in sync." />
       {isNative ? <InstalledApp /> : <GetTheApp />}
     </>
   );

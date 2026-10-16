@@ -1,10 +1,12 @@
 import { BookOpen, CheckCircle2, ChevronUp, HandHelping, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ApiError } from "../lib/api";
+import { confirmThen } from "../lib/confirm";
 import { timeAgo } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { closeRequest, createRequest, fulfillRequest, listRequests, vote, type BookRequest } from "../lib/requests";
+import { useApi } from "../lib/useApi";
 import { EmptyState } from "./books/BookBrowser";
 import { Modal } from "./ui/Modal";
 
@@ -75,16 +77,7 @@ function FulfillDialog({ request, onClose, onDone }: { request: BookRequest; onC
     <Modal
       title={<>Add “{request.title}”</>}
       onClose={onClose}
-      footer={
-        <>
-          <button className="btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn" disabled={!bookId} onClick={() => void submit()}>
-            Publish and answer
-          </button>
-        </>
-      }
+      confirm={{ label: "Publish and answer", disabled: !bookId, onClick: () => void submit() }}
     >
       <p className="-mt-2 text-sm text-muted">Choose the book from your library. It will be published to the Public Library for everyone.</p>
       <select className="input w-full" value={bookId} onChange={(e) => setBookId(e.target.value)} aria-label="Your book">
@@ -103,36 +96,27 @@ function FulfillDialog({ request, onClose, onDone }: { request: BookRequest; onC
 
 /** Book requests in the public library. */
 export function RequestsTab() {
-  const { requestsVersion, query } = useLibrary();
-  const [list, setList] = useState<BookRequest[] | null>(null);
+  const { requestsVersion } = useLibrary();
+  const { data: list, reload, setData } = useApi(listRequests, [], { fallback: [], reloadOn: [requestsVersion] });
   const [fulfilling, setFulfilling] = useState<BookRequest | null>(null);
-  const load = useCallback(() => {
-    listRequests()
-      .then(setList)
-      .catch(() => setList([]));
-  }, []);
-  useEffect(load, [load, requestsVersion]);
-
-  const q = query.trim().toLowerCase();
-  const visible = list?.filter((r) => !q || `${r.title} ${r.author ?? ""}`.toLowerCase().includes(q));
 
   const toggleVote = async (r: BookRequest) => {
-    setList((cur) => cur?.map((x) => (x.id === r.id ? { ...x, voted: !r.voted, votes: x.votes + (r.voted ? -1 : 1) } : x)) ?? cur);
-    await vote(r.id, !r.voted).catch(load);
+    setData((cur) => cur?.map((x) => (x.id === r.id ? { ...x, voted: !r.voted, votes: x.votes + (r.voted ? -1 : 1) } : x)) ?? cur);
+    await vote(r.id, !r.voted).catch(reload);
   };
 
   return (
     <>
-      <NewRequest onCreated={load} />
-      {visible === undefined ? (
+      <NewRequest onCreated={reload} />
+      {list === null ? (
         <div className="h-40 animate-pulse rounded-2xl bg-elevated/50" />
-      ) : visible.length === 0 ? (
-        <EmptyState icon={<HandHelping />} title={q ? "No matching requests" : "No requests yet"}>
-          {q ? "Try another search." : "Ask for the first book above."}
+      ) : list.length === 0 ? (
+        <EmptyState icon={<HandHelping />} title="No requests yet">
+          Ask for the first book above.
         </EmptyState>
       ) : (
         <ul className="space-y-3">
-          {visible.map((r) => (
+          {list.map((r) => (
             <li key={r.id} className="surface flex animate-rise items-start gap-4 p-4">
               <button
                 className={`flex w-12 shrink-0 flex-col items-center rounded-xl border py-1.5 text-sm transition ${
@@ -177,11 +161,7 @@ export function RequestsTab() {
                     className="icon-btn h-8 w-8"
                     aria-label={`Close request ${r.title}`}
                     title="Close request"
-                    onClick={async () => {
-                      if (!window.confirm(`Close the request for “${r.title}”?`)) return;
-                      await closeRequest(r.id).catch(() => {});
-                      load();
-                    }}
+                    onClick={() => void confirmThen(`Close the request for “${r.title}”?`, () => closeRequest(r.id), reload)}
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -197,7 +177,7 @@ export function RequestsTab() {
           onClose={() => setFulfilling(null)}
           onDone={() => {
             setFulfilling(null);
-            load();
+            reload();
           }}
         />
       )}

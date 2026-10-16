@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError, isNative, type Book, type Folder } from "./api";
+import { apiDelete, apiFetch, apiJson, ApiError, isNative, type Book, type Folder } from "./api";
 
 export function listFolders() {
   return apiJson<Folder[]>("/api/folders");
@@ -13,10 +13,7 @@ export function renameFolder(id: string, name: string) {
 }
 
 /** Deletes the folder; its books are kept and move back to "no folder". */
-export async function deleteFolder(id: string) {
-  const res = await apiFetch(`/api/folders/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) throw new ApiError(res.status, null);
-}
+export const deleteFolder = (id: string) => apiDelete(`/api/folders/${id}`);
 
 export function updateBook(id: string, patch: { folderId?: string | null; tags?: string[]; favorite?: boolean; isPublic?: boolean }) {
   return apiJson<Book>(`/api/books/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
@@ -36,14 +33,8 @@ async function saveFileNative(blob: Blob, filename: string) {
   window.alert(`Saved to Documents/${path}`);
 }
 
-/**
- * Saves a file from an authenticated URL to the device (the browser's download).
- * The whole file is fetched first, since a plain link cannot carry the bearer token.
- */
-export async function saveFile(path: string, filename: string) {
-  const res = await apiFetch(path);
-  if (!res.ok) throw new ApiError(res.status, null);
-  const blob = await res.blob();
+/** Saves a file to the device: the browser's download, or Documents/BookRaven in the Android app. */
+export async function saveBlob(blob: Blob, filename: string) {
   if (isNative) return saveFileNative(blob, filename);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -53,6 +44,13 @@ export async function saveFile(path: string, filename: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Saves a file from an authenticated URL: fetched whole first, since a plain link cannot carry the bearer token. */
+export async function saveFile(path: string, filename: string) {
+  const res = await apiFetch(path);
+  if (!res.ok) throw new ApiError(res.status, null);
+  await saveBlob(await res.blob(), filename);
 }
 
 export function downloadOwnBook(book: Book) {

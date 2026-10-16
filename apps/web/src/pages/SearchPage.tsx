@@ -1,16 +1,15 @@
 import { Globe, HandHelping, Library, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { BookGridSkeleton, EmptyState } from "../components/books/BookBrowser";
+import { BookGridSkeleton, EmptyState, GRID } from "../components/books/BookBrowser";
 import { BookCard } from "../components/books/BookCard";
-import type { PublicBook } from "../lib/api";
 import { byLastRead } from "../lib/bookStats";
 import { matchesQuery, useLibrary } from "../lib/libraryStore";
 import { listPublicBooks } from "../lib/publicLibrary";
 import { matchesText } from "../lib/search";
+import { useApi } from "../lib/useApi";
 import { PublicBookCard } from "./PublicLibraryPage";
 
-const GRID = "grid grid-cols-2 gap-x-5 gap-y-8 @lg:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5 @6xl:grid-cols-6";
 const PUBLIC_STEP = 12;
 
 /** One block of results, labelled with where the books come from. */
@@ -60,18 +59,9 @@ function ResultSection({
  */
 export function SearchPage() {
   const { books, folders, query, publicVersion } = useLibrary();
-  const [pub, setPub] = useState<PublicBook[] | null>(null);
-  const [pubError, setPubError] = useState(false);
+  const { data: pub, error: pubError, reload: load } = useApi(listPublicBooks, [], { reloadOn: [publicVersion] });
   const [shown, setShown] = useState(PUBLIC_STEP);
   const q = query.trim();
-
-  const load = useCallback(() => {
-    setPubError(false);
-    listPublicBooks()
-      .then(setPub)
-      .catch(() => setPubError(true));
-  }, []);
-  useEffect(load, [load, publicVersion]);
   useEffect(() => setShown(PUBLIC_STEP), [q]);
 
   const personal = useMemo(() => (books ?? []).filter((b) => matchesQuery(b, q, folders)).sort(byLastRead), [books, folders, q]);

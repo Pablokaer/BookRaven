@@ -1,12 +1,12 @@
 import type { Book, Me } from "./api";
+import { readJson, writeJson } from "./storage";
 
 /**
  * Last-known library snapshot kept in localStorage so a cold start (the Android app
  * especially) can paint real numbers on the first frame instead of empty placeholders.
  * It is only a first guess: the provider's network `refresh` overwrites it a moment later.
  *
- * Everything is keyed by user id so one account never sees another's cached data, and every
- * access is wrapped in try/catch — localStorage can be absent, full or blocked (private mode).
+ * Everything is keyed by user id so one account never sees another's cached data.
  */
 
 const BOOKS_KEY = "readsync.books";
@@ -16,37 +16,10 @@ const ME_KEY = "readsync.me";
 const key = (base: string, userId: string) => `${base}.${userId}`;
 
 export function loadCachedBooks(userId: string): Book[] | null {
-  try {
-    const raw = localStorage.getItem(key(BOOKS_KEY, userId));
-    if (!raw) return null;
-    const books = JSON.parse(raw);
-    return Array.isArray(books) ? (books as Book[]) : null;
-  } catch {
-    return null;
-  }
+  const books = readJson<unknown>(key(BOOKS_KEY, userId), null);
+  return Array.isArray(books) ? (books as Book[]) : null;
 }
 
-export function saveCachedBooks(userId: string, books: Book[]): void {
-  try {
-    localStorage.setItem(key(BOOKS_KEY, userId), JSON.stringify(books));
-  } catch {
-    /* quota or unavailable: the cache is optional */
-  }
-}
-
-export function loadCachedMe(userId: string): Me | null {
-  try {
-    const raw = localStorage.getItem(key(ME_KEY, userId));
-    return raw ? (JSON.parse(raw) as Me) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveCachedMe(userId: string, me: Me): void {
-  try {
-    localStorage.setItem(key(ME_KEY, userId), JSON.stringify(me));
-  } catch {
-    /* ignore */
-  }
-}
+export const saveCachedBooks = (userId: string, books: Book[]) => writeJson(key(BOOKS_KEY, userId), books);
+export const loadCachedMe = (userId: string) => readJson<Me | null>(key(ME_KEY, userId), null);
+export const saveCachedMe = (userId: string, me: Me) => writeJson(key(ME_KEY, userId), me);

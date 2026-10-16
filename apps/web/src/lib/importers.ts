@@ -1,15 +1,9 @@
 import type { Book, PublicBook } from "./api";
-import { SUPPORTED_EXTENSIONS } from "./books";
+import { byPopularity } from "./bookStats";
+import { htmlToText, SUPPORTED_EXTENSIONS } from "./books";
+import { foldWords } from "./search";
 
 // ---------- Matching books by title and author ----------
-
-const norm = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
 
 /**
  * A title reduced to what identifies the work: no series ("(Discworld, #1)"), no subtitle
@@ -20,7 +14,7 @@ export function titleKey(title: string) {
     .replace(/\s*\([^)]*#\s*\d+[^)]*\)\s*$/, "") // Goodreads series suffix
     .replace(/\s*[:;].*$/, "")
     .trim();
-  return norm(t).replace(/^(the|a|an|o|a|os|as|um|uma)\s+/, "");
+  return foldWords(t).replace(/^(the|a|an|o|a|os|as|um|uma)\s+/, "");
 }
 
 /**
@@ -36,7 +30,7 @@ export function authorKeys(author: string | null | undefined) {
       if (parts.length === 2) return [`${parts[1]} ${parts[0]}`];
       return parts;
     })
-    .map(norm)
+    .map(foldWords)
     .filter(Boolean);
 }
 
@@ -148,7 +142,7 @@ export function matchGoodreads(items: GoodreadsBook[], library: Book[], publicBo
     // Most popular edition first, when the public library has several.
     const pub = own
       ? null
-      : ([...publicBooks].sort((a, b) => (b.popularity ?? -1) - (a.popularity ?? -1)).find((b) => sameBook(item, b)) ?? null);
+      : ([...publicBooks].sort(byPopularity).find((b) => sameBook(item, b)) ?? null);
     return { item, own, pub };
   });
 }
@@ -172,14 +166,6 @@ export type CalibreBook = {
 const PREFERRED = [".epub", ".azw3", ".mobi", ".fb2", ".cbz", ".cbr", ".cb7", ".cbt", ".pdf", ".azw"];
 const ext = (name: string) => name.toLowerCase().slice(name.lastIndexOf("."));
 
-/** HTML from Calibre's comments field as plain text. */
-function plain(html: string | null | undefined) {
-  if (!html) return null;
-  const doc = new DOMParser().parseFromString(html.replace(/<\/(p|div)\s*>|<br\s*\/?>/gi, "\n\n$&"), "text/html");
-  const text = (doc.body.textContent ?? "").replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*/g, "\n\n").trim();
-  return text || null;
-}
-
 /** Reads one book's metadata.opf (Dublin Core plus Calibre's own <meta> entries). */
 export function parseOpf(xml: string) {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
@@ -196,7 +182,8 @@ export function parseOpf(xml: string) {
   return {
     title: dc("title")[0] ?? null,
     author: dc("creator").join(", ") || null,
-    description: plain(dc("description")[0]),
+    // Calibre's comments field is HTML.
+    description: htmlToText(dc("description")[0]),
     tags: dc("subject"),
     series: series ? `${series}${index && Number(index) ? ` #${Number(index)}` : ""}` : null,
   };

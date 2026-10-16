@@ -1,47 +1,22 @@
-import { Check, Copy, KeyRound, MonitorSmartphone, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { API_BASE, apiFetch, apiJson } from "../lib/api";
+import { KeyRound, MonitorSmartphone, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { API_BASE, apiDelete, apiJson } from "../lib/api";
+import { confirmThen } from "../lib/confirm";
 import { timeAgo } from "../lib/format";
+import { useApi } from "../lib/useApi";
+import { CopyField } from "./ui/CopyField";
 import { Modal } from "./ui/Modal";
 
 type AppPassword = { id: string; name: string; createdAt: string; lastUsedAt: string | null };
 
-function CopyField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <label className="block">
-      <span className="eyebrow">{label}</span>
-      <div className="mt-1.5 flex gap-2">
-        <input readOnly value={value} className="input min-w-0 flex-1 font-mono text-xs" onFocus={(e) => e.target.select()} />
-        <button
-          type="button"
-          className="btn-outline px-3"
-          aria-label={`Copy ${label}`}
-          onClick={() => {
-            void navigator.clipboard?.writeText(value);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-        >
-          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-        </button>
-      </div>
-    </label>
-  );
-}
+/** One of the values to type into the other app. */
+const Copyable = ({ label, value }: { label: string; value: string }) => <CopyField label={label} value={value} showLabel inputClassName="font-mono text-xs" />;
 
 /** Profile section: OPDS catalog and KOReader sync addresses, and app passwords for them. */
 export function OtherApps({ email }: { email: string }) {
-  const [list, setList] = useState<AppPassword[] | null>(null);
+  const { data: list, reload } = useApi(() => apiJson<AppPassword[]>("/api/app-passwords"), [], { fallback: [] });
   const [created, setCreated] = useState<{ name: string; password: string } | null>(null);
   const origin = API_BASE || window.location.origin;
-
-  const load = useCallback(() => {
-    apiJson<AppPassword[]>("/api/app-passwords")
-      .then(setList)
-      .catch(() => setList([]));
-  }, []);
-  useEffect(load, [load]);
 
   const create = async () => {
     const name = window.prompt("Name this device or app (e.g. “Kobo Libra”, “KOReader on phone”):")?.trim();
@@ -49,17 +24,14 @@ export function OtherApps({ email }: { email: string }) {
     try {
       const res = await apiJson<{ name: string; password: string }>("/api/app-passwords", { method: "POST", body: JSON.stringify({ name }) });
       setCreated(res);
-      load();
+      reload();
     } catch {
       window.alert("Could not create it, try again.");
     }
   };
 
-  const revoke = async (p: AppPassword) => {
-    if (!window.confirm(`Revoke “${p.name}”? That app will stop syncing until you give it a new password.`)) return;
-    await apiFetch(`/api/app-passwords/${p.id}`, { method: "DELETE" });
-    load();
-  };
+  const revoke = (p: AppPassword) =>
+    confirmThen(`Revoke “${p.name}”? That app will stop syncing until you give it a new password.`, () => apiDelete(`/api/app-passwords/${p.id}`), reload);
 
   return (
     <section className="surface space-y-5 p-6">
@@ -75,9 +47,9 @@ export function OtherApps({ email }: { email: string }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <CopyField label="OPDS catalog" value={`${origin}/opds`} />
-        <CopyField label="KOReader sync server" value={`${origin}/kosync`} />
-        <CopyField label="Username" value={email} />
+        <Copyable label="OPDS catalog" value={`${origin}/opds`} />
+        <Copyable label="KOReader sync server" value={`${origin}/kosync`} />
+        <Copyable label="Username" value={email} />
       </div>
       <p className="text-xs text-muted">
         In KOReader: Tools → Progress sync → Custom sync server, then Login. Choose “Binary” document matching. PDFs and comics sync page by
@@ -114,7 +86,7 @@ export function OtherApps({ email }: { email: string }) {
       {created && (
         <Modal title={<>App password for “{created.name}”</>} onClose={() => setCreated(null)} footer={<button className="btn" onClick={() => setCreated(null)}>Done</button>}>
           <p className="-mt-2 text-sm text-muted">Type it in the app as the password, with your email as the username. It is shown only once.</p>
-          <CopyField label="Password" value={created.password} />
+          <Copyable label="Password" value={created.password} />
         </Modal>
       )}
     </section>

@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { BookBrowser, EmptyState } from "../components/books/BookBrowser";
 import { FeaturedBookCard } from "../components/books/FeaturedBookCard";
 import { StorageMeter } from "../components/shell/StorageMeter";
+import { PageHeader } from "../components/ui/PageHeader";
 import { WelcomePanel } from "../components/dashboard/WelcomePanel";
 import { byLastRead, isInProgress } from "../lib/bookStats";
 import { useLibrary, useLibraryActions } from "../lib/libraryStore";
@@ -18,15 +19,6 @@ function UploadEmpty() {
       </button>
       .
     </EmptyState>
-  );
-}
-
-function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return (
-    <header className="mb-8">
-      <h1 className="font-display text-3xl font-bold tracking-tight">{title}</h1>
-      {subtitle && <p className="mt-1.5 text-sm text-muted">{subtitle}</p>}
-    </header>
   );
 }
 

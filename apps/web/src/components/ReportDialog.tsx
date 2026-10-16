@@ -31,21 +31,11 @@ export function ReportDialog({ book, onClose }: { book: { id: string; title: str
       title={<>Report “{book.title}”</>}
       onClose={onClose}
       footer={
-        state === "sent" ? (
-          <button className="btn" onClick={onClose}>
-            Done
-          </button>
-        ) : (
-          <>
-            <button className="btn-ghost" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="btn" disabled={state === "sending"} onClick={() => void send()}>
-              Send report
-            </button>
-          </>
-        )
+        <button className="btn" onClick={onClose}>
+          Done
+        </button>
       }
+      confirm={state === "sent" ? undefined : { label: "Send report", disabled: state === "sending", onClick: () => void send() }}
     >
       {state === "sent" ? (
         <p className="text-sm text-muted">Thanks. The administrators will review it.</p>

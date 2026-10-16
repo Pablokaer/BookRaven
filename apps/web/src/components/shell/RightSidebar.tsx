@@ -1,6 +1,7 @@
 import { ArrowRight, Pencil } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
+import type { Book } from "../../lib/api";
 import { byAdded, finishedThisYear, shortDate } from "../../lib/bookStats";
 import { useLibrary } from "../../lib/libraryStore";
 import { useSettings } from "../../lib/settings";
@@ -85,6 +86,22 @@ function ReadingGoal() {
   );
 }
 
+/** A small cover, the title and `detail` under it (and `date` on the right), linking to the book's page. */
+function BookLine({ book, detail, date }: { book: Book; detail: ReactNode; date?: string }) {
+  return (
+    <li>
+      <Link to={`/books/${book.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
+        <BookCover book={book} size="xs" className="w-9" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{book.title}</div>
+          <div className="truncate text-xs text-muted">{detail}</div>
+        </div>
+        {date && <time className="shrink-0 text-xs text-muted" dateTime={date}>{shortDate(date)}</time>}
+      </Link>
+    </li>
+  );
+}
+
 function RecentUploads() {
   const { books } = useLibrary();
   const recent = useMemo(() => [...(books ?? [])].sort(byAdded).slice(0, 4), [books]);
@@ -97,18 +114,7 @@ function RecentUploads() {
       ) : (
         <ul className="space-y-3">
           {recent.map((b) => (
-            <li key={b.id}>
-              <Link to={`/books/${b.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
-                <BookCover book={b} size="xs" className="w-9" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{b.title}</div>
-                  <div className="truncate text-xs text-muted">{b.author ?? b.format.toUpperCase()}</div>
-                </div>
-                <time className="shrink-0 text-xs text-muted" dateTime={b.createdAt}>
-                  {shortDate(b.createdAt)}
-                </time>
-              </Link>
-            </li>
+            <BookLine key={b.id} book={b} detail={b.author ?? b.format.toUpperCase()} date={b.createdAt} />
           ))}
         </ul>
       )}
@@ -135,17 +141,7 @@ function SharedWithYou() {
       ) : (
         <ul className="space-y-3">
           {shared.map((b) => (
-            <li key={b.id}>
-              <Link to={`/books/${b.id}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-1 transition hover:bg-white/5">
-                <BookCover book={b} size="xs" className="w-9" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{b.title}</div>
-                  <div className="truncate text-xs text-muted">
-                    from <span className="text-fg/80">{b.sharedBy}</span>
-                  </div>
-                </div>
-              </Link>
-            </li>
+            <BookLine key={b.id} book={b} detail={<>from <span className="text-fg/80">{b.sharedBy}</span></>} />
           ))}
         </ul>
       )}

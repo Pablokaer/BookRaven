@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError } from "./api";
+import { apiJson, apiOk } from "./api";
 
 export type BookRequest = {
   id: string;
@@ -16,14 +16,10 @@ export type BookRequest = {
   createdAt: string;
 };
 
-async function ok(res: Response) {
-  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
-}
-
 export const listRequests = () => apiJson<BookRequest[]>("/api/requests");
 export const createRequest = (r: { title: string; author?: string; note?: string }) =>
   apiJson<BookRequest>("/api/requests", { method: "POST", body: JSON.stringify(r) });
-export const vote = (id: string, on: boolean) => apiFetch(`/api/requests/${id}/vote`, { method: on ? "POST" : "DELETE" }).then(ok);
+export const vote = (id: string, on: boolean) => apiOk(`/api/requests/${id}/vote`, { method: on ? "POST" : "DELETE" });
 export const fulfillRequest = (id: string, bookId: string) =>
-  apiFetch(`/api/requests/${id}/fulfill`, { method: "POST", body: JSON.stringify({ bookId }) }).then(ok);
-export const closeRequest = (id: string) => apiFetch(`/api/requests/${id}`, { method: "DELETE" }).then(ok);
+  apiOk(`/api/requests/${id}/fulfill`, { method: "POST", body: JSON.stringify({ bookId }) });
+export const closeRequest = (id: string) => apiOk(`/api/requests/${id}`, { method: "DELETE" });

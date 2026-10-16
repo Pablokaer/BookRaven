@@ -29,6 +29,7 @@ vi.mock("./lib/auth", async () => {
       useSession: () => ({ ...useSyncExternalStore(env.subscribe, env.getSession), refetch: () => {} }),
     },
     signOut: async () => env.setSession({ data: null, isPending: false }),
+    flushChanges: async () => [],
   };
 });
 
@@ -70,18 +71,6 @@ vi.mock("./lib/events", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/events")>()),
   startEvents: () => {},
   stopEvents: () => {},
-}));
-vi.mock("./lib/progress", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./lib/progress")>()),
-  installProgressFlushers: () => {},
-}));
-vi.mock("./lib/bookmarks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./lib/bookmarks")>()),
-  installBookmarkFlushers: () => {},
-}));
-vi.mock("./lib/ink", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./lib/ink")>()),
-  installInkFlushers: () => {},
 }));
 
 const { App } = await import("./App");

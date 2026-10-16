@@ -1,3 +1,5 @@
+import { readJson, removeKey, writeJson } from "./storage";
+
 /**
  * Changes made on this device that still have to reach the server (bookmarks, handwriting;
  * reading progress uses the same response rules).
@@ -53,20 +55,9 @@ export function memoryStore<T>(): OutboxStore<T> {
  * `legacy` turns what an older version stored into queue items, once.
  */
 export function localStorageStore<T>(key: string, legacy?: { key: string; convert: (value: unknown) => T[] }): OutboxStore<T> {
-  const read = (): Queued<T>[] => {
-    try {
-      return JSON.parse(localStorage.getItem(key) ?? "[]");
-    } catch {
-      return [];
-    }
-  };
-  const write = (items: Queued<T>[]) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(items));
-    } catch {
-      /* storage full or blocked: the changes stay in memory for this session */
-    }
-  };
+  const read = () => readJson<Queued<T>[]>(key, []);
+  // Storage full or blocked: the changes stay in memory for this session.
+  const write = (items: Queued<T>[]) => writeJson(key, items);
   return {
     load: async () => {
       let items = read();
@@ -91,12 +82,8 @@ export function localStorageStore<T>(key: string, legacy?: { key: string; conver
       write(read().filter((i) => !seqs.has(i.seq)));
     },
     clear: async () => {
-      try {
-        localStorage.removeItem(key);
-        if (legacy) localStorage.removeItem(legacy.key);
-      } catch {
-        /* unavailable: nothing stored */
-      }
+      removeKey(key);
+      if (legacy) removeKey(legacy.key);
     },
   };
 }

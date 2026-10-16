@@ -3,6 +3,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import { fileSize } from "../../lib/format";
 import { isActiveUpload, useLibrary, useUploads, type UploadItem } from "../../lib/libraryStore";
+import { readJson, writeJson } from "../../lib/storage";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { AppUpdateBanner } from "../AppUpdate";
 import { OrganizeDialog } from "../OrganizeDialog";
@@ -13,13 +14,7 @@ import { TopBar } from "./TopBar";
 
 const LAYOUT_KEY = "readsync.layout";
 
-function loadLayout(): { leftCollapsed: boolean; rightOpen: boolean } {
-  try {
-    return { leftCollapsed: false, rightOpen: true, ...JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "{}") };
-  } catch {
-    return { leftCollapsed: false, rightOpen: true };
-  }
-}
+const loadLayout = (): { leftCollapsed: boolean; rightOpen: boolean } => ({ leftCollapsed: false, rightOpen: true, ...readJson(LAYOUT_KEY, {}) });
 
 function uploadLabel(u: UploadItem) {
   switch (u.status) {
@@ -157,13 +152,7 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
   const isDesktop = useMediaQuery("(min-width: 1024px)"); // lg: full sidebar possible
   const isWide = useMediaQuery("(min-width: 1280px)"); // xl: room for the right column
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
-    } catch {
-      /* ignore */
-    }
-  }, [layout]);
+  useEffect(() => writeJson(LAYOUT_KEY, layout), [layout]);
 
   // Close the mobile drawer whenever the page changes.
   useEffect(() => setMobileNav(false), [location.pathname]);

@@ -65,6 +65,18 @@ export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<
   return body as T;
 }
 
+/** A request whose answer has nothing to read: throws an ApiError when it fails. */
+export async function apiOk(path: string, init: RequestInit = {}) {
+  const res = await apiFetch(path, init);
+  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+}
+
+/** Deletes something; a 404 counts as done (it is already gone). */
+export async function apiDelete(path: string) {
+  const res = await apiFetch(path, { method: "DELETE" });
+  if (!res.ok && res.status !== 404) throw new ApiError(res.status, null);
+}
+
 // ---------- Types shared with the API ----------
 
 export type Progress = {

@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, ApiError } from "./api";
+import { apiJson, apiOk } from "./api";
 
 export type AdminStats = {
   users: number;
@@ -50,16 +50,12 @@ export type BlockedFile = { sha256: string; title: string; reason: string; block
 
 export type ReportAction = "dismiss" | "unpublish" | "block" | "purge";
 
-async function ok(res: Response) {
-  if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
-}
-
 export const getStats = () => apiJson<AdminStats>("/api/admin/stats");
 export const listUsers = (q = "") => apiJson<AdminUser[]>(`/api/admin/users?q=${encodeURIComponent(q)}`);
 export const updateUser = (id: string, patch: { quotaMb?: number | null; blocked?: boolean; blockedReason?: string | null }) =>
-  apiFetch(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }).then(ok);
+  apiOk(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const resetUserPassword = (id: string) => apiJson<{ password: string }>(`/api/admin/users/${id}/reset-password`, { method: "POST" });
-export const deleteUser = (id: string) => apiFetch(`/api/admin/users/${id}`, { method: "DELETE" }).then(ok);
+export const deleteUser = (id: string) => apiOk(`/api/admin/users/${id}`, { method: "DELETE" });
 export const listReports = (all = false) => apiJson<ContentReport[]>(`/api/admin/reports${all ? "?status=all" : ""}`);
 export const resolveReport = (id: string, action: ReportAction, note?: string) =>
   apiJson<{ action: ReportAction; removedCopies: number }>(`/api/admin/reports/${id}/resolve`, {
@@ -67,8 +63,8 @@ export const resolveReport = (id: string, action: ReportAction, note?: string) =
     body: JSON.stringify(note ? { action, note } : { action }),
   });
 export const listBlockedFiles = () => apiJson<BlockedFile[]>("/api/admin/blocked-files");
-export const unblockFile = (sha: string) => apiFetch(`/api/admin/blocked-files/${sha}`, { method: "DELETE" }).then(ok);
+export const unblockFile = (sha: string) => apiOk(`/api/admin/blocked-files/${sha}`, { method: "DELETE" });
 
 /** Anyone: report a public book. */
 export const reportPublicBook = (id: string, reason: ReportReason, details?: string) =>
-  apiFetch(`/api/public/${id}/report`, { method: "POST", body: JSON.stringify(details ? { reason, details } : { reason }) }).then(ok);
+  apiOk(`/api/public/${id}/report`, { method: "POST", body: JSON.stringify(details ? { reason, details } : { reason }) });

@@ -1,6 +1,7 @@
 import { apiFetch, apiJson, type Progress } from "./api";
 import { deviceId, deviceName } from "./device";
 import { retryDelay, settle } from "./outbox";
+import { readJson, removeKey, writeJson } from "./storage";
 
 /**
  * Saves reading positions to the server.
@@ -18,21 +19,8 @@ type Pending = Position & { bookId: string; clientUpdatedAt: number };
 const OUTBOX_KEY = "readsync.progressOutbox";
 const DEBOUNCE_MS = 1500;
 
-function readOutbox(): Record<string, Pending> {
-  try {
-    return JSON.parse(localStorage.getItem(OUTBOX_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
-function writeOutbox(outbox: Record<string, Pending>) {
-  try {
-    localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
-  } catch {
-    /* ignore */
-  }
-}
+const readOutbox = () => readJson<Record<string, Pending>>(OUTBOX_KEY, {});
+const writeOutbox = (outbox: Record<string, Pending>) => writeJson(OUTBOX_KEY, outbox);
 
 /** Position saved on this device but maybe not yet on the server. */
 export function getLocalPending(bookId: string): Pending | null {
@@ -110,27 +98,11 @@ export function clearProgress() {
   clearTimeout(retryTimer);
   attempt = 0;
   lastLocal.clear();
-  try {
-    localStorage.removeItem(OUTBOX_KEY);
-  } catch {
-    /* ignore */
-  }
+  removeKey(OUTBOX_KEY);
 }
 
 export function fetchProgress(bookId: string) {
   return apiJson<Progress | null>(`/api/books/${bookId}/progress`);
-}
-
-let installed = false;
-export function installProgressFlushers() {
-  if (installed) return;
-  installed = true;
-  window.addEventListener("online", () => flushProgress());
-  window.addEventListener("pagehide", () => flushProgress(true));
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flushProgress(true);
-  });
-  flushProgress();
 }
 
 /**

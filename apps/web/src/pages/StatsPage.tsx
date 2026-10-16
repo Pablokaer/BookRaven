@@ -1,12 +1,14 @@
 import { BarChart3, BookCheck, CalendarDays, Clock, Flame } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
 import { EmptyState } from "../components/books/BookBrowser";
 import { BookCover } from "../components/books/BookCover";
 import { ColumnChart, Heatmap, niceCeil } from "../components/stats/Charts";
+import { PageHeader } from "../components/ui/PageHeader";
 import { useLibrary } from "../lib/libraryStore";
 import { useSettings } from "../lib/settings";
-import { computeStats, duration, getActivity, heatmapWeeks, type Activity } from "../lib/stats";
+import { computeStats, duration, getActivity, heatmapWeeks } from "../lib/stats";
+import { useApi } from "../lib/useApi";
 import { useMediaQuery } from "../lib/useMediaQuery";
 
 function Tile({ icon, label, value, sub }: { icon: ReactNode; label: string; value: string; sub?: string }) {
@@ -48,13 +50,8 @@ const booksTop = (n: number) => Math.max(2, Math.ceil(n / 2) * 2);
 export function StatsPage() {
   const { books } = useLibrary();
   const { settings } = useSettings();
-  const [activity, setActivity] = useState<Activity[] | null>(null);
-  const [error, setError] = useState(false);
+  const { data: activity, error } = useApi(getActivity, []);
   const wide = useMediaQuery("(min-width: 640px)");
-
-  useEffect(() => {
-    getActivity().then(setActivity, () => setError(true));
-  }, []);
 
   const stats = useMemo(() => (activity ? computeStats(activity, books ?? []) : null), [activity, books]);
   const year = new Date().getFullYear();
@@ -74,10 +71,7 @@ export function StatsPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <header>
-        <h1 className="font-display text-3xl font-bold tracking-tight">Reading stats</h1>
-        <p className="mt-1.5 text-sm text-muted">Time read, streaks and finished books, from every device you read on.</p>
-      </header>
+      <PageHeader title="Reading stats" subtitle="Time read, streaks and finished books, from every device you read on." />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile icon={<Clock />} label="Last 7 days" value={duration(stats.weekSeconds)} />

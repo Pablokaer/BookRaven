@@ -3,10 +3,9 @@ import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type Compon
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { isNative } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
-import { authClient } from "./lib/auth";
-import { installBookmarkFlushers } from "./lib/bookmarks";
+import { authClient, flushChanges } from "./lib/auth";
 import { startEvents, stopEvents } from "./lib/events";
-import { installProgressFlushers } from "./lib/progress";
+import { flushProgress } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
 import { WhatsNew } from "./components/WhatsNew";
 import { AppShell } from "./components/shell/AppShell";
@@ -64,6 +63,18 @@ function prefetchPages() {
     clearTimeout(timer);
     if (handle !== undefined) cancelIdleCallback(handle);
   };
+}
+
+let flushersInstalled = false;
+/** Changes waiting for the server go now and whenever the device is back online; positions also when the page is hidden. */
+function installSyncFlushers() {
+  if (flushersInstalled) return;
+  flushersInstalled = true;
+  window.addEventListener("online", () => void flushChanges());
+  window.addEventListener("pagehide", () => flushProgress(true));
+  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushProgress(true));
+  // Handwriting from an earlier session too goes as soon as possible.
+  void flushChanges();
 }
 
 /** Android hardware back button: go back inside the app, exit from the library. */
@@ -142,11 +153,7 @@ export function App() {
   useEffect(() => {
     if (!signedIn) return;
     startEvents();
-    installProgressFlushers();
-    installBookmarkFlushers();
-    // Handwriting waiting to be sent (from an earlier session too) goes as soon as possible;
-    // the module itself is the reader's, so it loads apart from the first screen.
-    void import("./lib/ink").then((m) => m.installInkFlushers());
+    installSyncFlushers();
     return () => stopEvents();
   }, [signedIn]);
 

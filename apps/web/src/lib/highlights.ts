@@ -1,4 +1,5 @@
-import { apiFetch, apiJson, ApiError, type Highlight, type HighlightColor } from "./api";
+import { apiDelete, apiJson, type Highlight, type HighlightColor } from "./api";
+import { saveBlob } from "./library";
 
 export const HIGHLIGHT_COLORS: Record<HighlightColor, { label: string; fill: string }> = {
   yellow: { label: "Yellow", fill: "#facc15" },
@@ -38,16 +39,9 @@ export function highlightsToMarkdown(book: { title: string; author: string | nul
   return lines.join("\n").trimEnd() + "\n";
 }
 
+/** Saves text as a file (in the Android app, where WebViews ignore download links, to Documents/BookRaven). */
 export function downloadText(filename: string, text: string, type = "text/markdown") {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  void saveBlob(new Blob([text], { type }), filename).catch(() => window.alert("Could not save the file, try again."));
 }
 
-export async function deleteHighlight(id: string) {
-  const res = await apiFetch(`/api/highlights/${id}`, { method: "DELETE" });
-  if (!res.ok && res.status !== 404) throw new ApiError(res.status, null);
-}
+export const deleteHighlight = (id: string) => apiDelete(`/api/highlights/${id}`);

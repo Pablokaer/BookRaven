@@ -1,25 +1,22 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { AuthImage } from "../components/AuthImage";
 import { ApiError } from "../lib/api";
 import { fileSize } from "../lib/format";
-import { acceptCollectionShare, acceptShare, getSharedBook, getSharedCollection, type SharedBook, type SharedCollection } from "../lib/shares";
+import { acceptCollectionShare, acceptShare, getSharedBook, getSharedCollection } from "../lib/shares";
+import { useApi } from "../lib/useApi";
+
+const linkError = (err: unknown) =>
+  err instanceof ApiError && err.status === 404 ? "This share link is invalid or was revoked." : "Could not load this link.";
 
 /** Landing page for a share link: preview the book and add it to your library. */
 export function SharePage() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
-  const [book, setBook] = useState<SharedBook | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: book, error: loadError } = useApi(() => getSharedBook(token), [token]);
+  const [addError, setAddError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    getSharedBook(token)
-      .then(setBook)
-      .catch((err) =>
-        setError(err instanceof ApiError && err.status === 404 ? "This share link is invalid or was revoked." : "Could not load this link."),
-      );
-  }, [token]);
+  const error = loadError ? linkError(loadError) : addError;
 
   const add = async () => {
     setBusy(true);
@@ -27,7 +24,7 @@ export function SharePage() {
       const added = await acceptShare(token);
       navigate(`/read/${added.id}`, { replace: true });
     } catch {
-      setError("Could not add the book, try again.");
+      setAddError("Could not add the book, try again.");
       setBusy(false);
     }
   };
@@ -81,17 +78,10 @@ export function SharePage() {
 export function SharedCollectionPage() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
-  const [collection, setCollection] = useState<SharedCollection | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: collection, error: loadError } = useApi(() => getSharedCollection(token), [token]);
+  const [addError, setAddError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    getSharedCollection(token)
-      .then(setCollection)
-      .catch((err) =>
-        setError(err instanceof ApiError && err.status === 404 ? "This share link is invalid or was revoked." : "Could not load this link."),
-      );
-  }, [token]);
+  const error = loadError ? linkError(loadError) : addError;
 
   const missing = collection?.books.filter((b) => !b.ownBookId) ?? [];
   const missingBytes = missing.reduce((n, b) => n + b.sizeBytes, 0);
@@ -108,7 +98,7 @@ export function SharedCollectionPage() {
         navigate(`/collections/${err.body.folderId}`, { replace: true });
         return;
       }
-      setError(err instanceof ApiError && err.status === 413 ? "Your storage is full." : "Could not add the books, try again.");
+      setAddError(err instanceof ApiError && err.status === 413 ? "Your storage is full." : "Could not add the books, try again.");
       setBusy(false);
     }
   };
