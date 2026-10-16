@@ -109,14 +109,19 @@ export type Book = {
   isPublic: boolean;
   /** ISO 639-1 code, when known. */
   language: string | null;
-  /** Blurb from the file's metadata or the catalog. */
-  description: string | null;
+  /**
+   * Blurb from the file's metadata or the catalog: only `GET /api/books/:id` has it (the book's
+   * page reads it from `BookAbout`), the library list and live events leave it out.
+   */
+  description?: string | null;
   createdAt: string;
   progress: Progress | null;
 };
 
 /** Extra facts for a book's page. */
 export type BookAbout = {
+  /** Blurb from the file's metadata or the catalog. */
+  description: string | null;
   /** Other accounts with this file in their library. */
   readers: number;
   /** The public-library entry for this file, if it was published. */
@@ -126,7 +131,7 @@ export type BookAbout = {
 };
 
 /** A book in the public library, as other accounts see it. */
-export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "filename" | "sizeBytes" | "hasCover" | "description"> & {
+export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "filename" | "sizeBytes" | "hasCover"> & {
   /** ISO 639-1 code, when known. */
   language: string | null;
   /** Set for public-domain books imported from a catalog such as Project Gutenberg. */
@@ -143,8 +148,8 @@ export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "file
   canRemove: boolean;
 };
 
-/** A public book's page: also how many people have it and its catalog subjects. */
-export type PublicBookDetails = PublicBook & { readers: number; subjects: string[] };
+/** A public book's page: also its description (not in the catalog list), how many people have it and its catalog subjects. */
+export type PublicBookDetails = PublicBook & { description: string | null; readers: number; subjects: string[] };
 
 /** The signed-in account. `quotaBytes` is null when storage is unlimited (administrators). */
 export type Me = { isAdmin: boolean; usedBytes: number; quotaBytes: number | null };

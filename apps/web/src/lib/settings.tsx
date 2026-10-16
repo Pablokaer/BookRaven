@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiJson } from "./api";
 import { deviceId } from "./device";
-import { onServerEvent } from "./events";
+import { onServerEvent, RECONNECTED } from "./events";
 import type { FontId } from "./fonts";
 import { dictionaryTarget, type WordLanguage } from "./lookup";
 import { readJson, writeJson } from "./storage";
@@ -97,6 +97,8 @@ const SettingsContext = createContext<Ctx | null>(null);
 export function SettingsProvider({ children, enabled }: { children: ReactNode; enabled: boolean }) {
   const [settings, setSettings] = useState<ReaderSettings>(loadLocal);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** A change of this device not saved on the server yet (waiting, or the request failed). */
+  const unsaved = useRef<ReaderSettings | null>(null);
 
   const applyLocal = useCallback((s: ReaderSettings) => {
     setSettings(s);
@@ -105,15 +107,20 @@ export function SettingsProvider({ children, enabled }: { children: ReactNode; e
 
   useEffect(() => {
     if (!enabled) return;
-    apiJson<{ settings: Partial<ReaderSettings> }>("/api/settings")
-      .then((r) => {
-        if (r.settings && Object.keys(r.settings).length) applyLocal({ ...DEFAULT_SETTINGS, ...r.settings });
-      })
-      .catch(() => {});
+    const load = () =>
+      apiJson<{ settings: Partial<ReaderSettings> }>("/api/settings")
+        .then((r) => {
+          if (r.settings && Object.keys(r.settings).length) applyLocal({ ...DEFAULT_SETTINGS, ...r.settings });
+        })
+        .catch(() => {});
+    void load();
     return onServerEvent((event, data) => {
       if (event === "settings.updated" && data.deviceId !== deviceId) {
         applyLocal({ ...DEFAULT_SETTINGS, ...data.settings });
       }
+      // Changes from other devices while the live connection was down; a change of ours not
+      // saved yet wins.
+      if (event === RECONNECTED && !unsaved.current) void load();
     });
   }, [enabled, applyLocal]);
 
@@ -122,12 +129,17 @@ export function SettingsProvider({ children, enabled }: { children: ReactNode; e
       setSettings((prev) => {
         const next = { ...prev, ...patch };
         writeJson(LOCAL_KEY, next);
+        unsaved.current = next;
         clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => {
           apiJson("/api/settings", {
             method: "PUT",
             body: JSON.stringify({ settings: next, deviceId }),
-          }).catch(() => {});
+          })
+            .then(() => {
+              if (unsaved.current === next) unsaved.current = null;
+            })
+            .catch(() => {});
         }, 800);
         return next;
       });

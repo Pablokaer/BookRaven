@@ -2,12 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { ApiError, type Book, type Folder, type Me, type Progress } from "./api";
 import { deleteBook, forgetCachedBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
 import { deviceId } from "./device";
-import { onServerEvent } from "./events";
+import { eventsConnected, onServerEvent, RECONNECTED } from "./events";
 import { loadCachedBooks, loadCachedMe, saveCachedBooks, saveCachedMe } from "./libraryCache";
 import { percent } from "./format";
 import { fileSize } from "./format";
 import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } from "./library";
-import { getMe } from "./publicLibrary";
+import { forgetPublicBooks, getMe } from "./publicLibrary";
 import { matchesText } from "./search";
 
 export type UploadStatus = "queued" | "preparing" | "uploading" | "processing" | "done" | "duplicate" | "error";
@@ -46,9 +46,16 @@ const byName = (a: Folder, b: Folder) => a.name.localeCompare(b.name, undefined,
 
 /** Most recent activity first (reading, else when it was added). */
 function sortBooks(books: Book[]) {
-  const t = (b: Book) => new Date(b.progress?.updatedAt ?? b.createdAt).getTime();
-  return [...books].sort((a, b) => t(b) - t(a));
+  return books
+    .map((book) => ({ book, at: Date.parse(book.progress?.updatedAt ?? book.createdAt) }))
+    .sort((a, b) => b.at - a.at)
+    .map((x) => x.book);
 }
+
+/** Back on the tab, the library is reloaded unless live events kept it current this recently. */
+const FRESH_FOR = 60_000;
+/** Storage use is asked for at most this often (adding or removing many books at once). */
+const ME_DEBOUNCE = 500;
 
 /** What the library knows: changes whenever the books, collections, activity… change. */
 type LibraryData = {
@@ -183,15 +190,26 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     setActivity((a) => [{ id: `${Date.now()}-${Math.random()}`, text, at: Date.now(), bookId }, ...a].slice(0, 30));
   }, []);
 
-  const refreshMe = useCallback(() => {
+  const loadMe = useCallback(() => {
     getMe()
       .then(setMe)
       .catch(() => {});
   }, []);
+  const meTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const refreshMe = useCallback(() => {
+    clearTimeout(meTimer.current);
+    meTimer.current = setTimeout(loadMe, ME_DEBOUNCE);
+  }, [loadMe]);
+  useEffect(() => () => clearTimeout(meTimer.current), []);
 
+  /** When the books list last loaded from the server. */
+  const refreshedAt = useRef(0);
   const refresh = useCallback(() => {
     listBooks()
-      .then((b) => setBooks(sortBooks(b)))
+      .then((b) => {
+        refreshedAt.current = Date.now();
+        setBooks(sortBooks(b));
+      })
       .catch(() => setBooks((prev) => prev ?? []));
     listFolders()
       .then((f) => setFolders(f.sort(byName)))
@@ -199,16 +217,37 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
       .finally(() => setFoldersReady(true));
   }, []);
 
+  // The public catalog says which books are the viewer's own: the next account gets its own.
+  useEffect(() => forgetPublicBooks, [userId]);
+
   useEffect(() => {
     refresh();
-    refreshMe();
-    const onVisible = () => document.visibilityState === "visible" && refresh();
+    loadMe();
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (eventsConnected() && Date.now() - refreshedAt.current < FRESH_FOR) return;
+      refresh();
+    };
     document.addEventListener("visibilitychange", onVisible);
     const off = onServerEvent((event, data) => {
-      // Storage use changes whenever a book is added or removed (from any device).
-      if (event === "book.created" || event === "book.deleted") refreshMe();
+      if (event === "book.created" || event === "book.deleted") {
+        // Storage use changes whenever a book is added or removed (from any device), and so
+        // does which public books are the viewer's own.
+        refreshMe();
+        forgetPublicBooks();
+      }
       switch (event) {
+        case RECONNECTED:
+          // Events sent while disconnected were missed: reload everything they would have updated.
+          refresh();
+          refreshMe();
+          forgetPublicBooks();
+          setPublicVersion((v) => v + 1);
+          setRequestsVersion((v) => v + 1);
+          setClubsVersion((v) => v + 1);
+          return;
         case "public.changed":
+          forgetPublicBooks();
           setPublicVersion((v) => v + 1);
           return;
         case "requests.changed":
@@ -264,7 +303,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
       off();
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refresh, refreshMe, log]);
+  }, [refresh, refreshMe, loadMe, log]);
 
   // Progress updates wait and are applied together, once every PROGRESS_INTERVAL; any other
   // change (a new state: processing, done, failed…) applies at once, after the waiting ones.
@@ -322,6 +361,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
           let book = result.book;
           if (tags?.length) book = await updateBook(book.id, { tags }).catch(() => book);
           patchUpload(key, { status: "done", progress: 1, bookId: book.id });
+          forgetPublicBooks();
           log(`Uploaded “${book.title}”`, book.id);
           setBooks((prev) => (prev?.some((b) => b.id === book.id) ? prev : sortBooks([book, ...(prev ?? [])])));
         } else if (result.error === "duplicate" && result.bookId) {
@@ -387,6 +427,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
     if (!window.confirm(`Delete "${book.title}" from your library on all devices?`)) return;
     await deleteBook(book.id);
     await forgetCachedBook(book.id);
+    forgetPublicBooks();
     setBooks((prev) => prev?.filter((b) => b.id !== book.id) ?? prev);
     refreshMe();
   }, [refreshMe]);

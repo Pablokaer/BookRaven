@@ -34,15 +34,39 @@ export function authorKeys(author: string | null | undefined) {
     .filter(Boolean);
 }
 
-/** Same work: same title key, and a shared author when both sides name one. */
-export function sameBook(a: { title: string; author: string | null }, b: { title: string; author: string | null }) {
-  if (titleKey(a.title) !== titleKey(b.title)) return false;
-  const x = authorKeys(a.author);
-  const y = authorKeys(b.author);
+type Named = { title: string; author: string | null };
+/** What `sameBook` compares, worked out once per book. */
+type BookKeys = { title: string; authors: string[] };
+const keysOf = (b: Named): BookKeys => ({ title: titleKey(b.title), authors: authorKeys(b.author) });
+
+function sameKeys(a: BookKeys, b: BookKeys) {
+  if (a.title !== b.title) return false;
+  const x = a.authors;
+  const y = b.authors;
   if (!x.length || !y.length) return true;
   // Surnames are enough ("J. R. R. Tolkien" vs "John Ronald Reuel Tolkien").
   const last = (n: string) => n.split(" ").at(-1);
   return x.some((n) => y.some((m) => n === m || last(n) === last(m)));
+}
+
+/** Same work: same title key, and a shared author when both sides name one. */
+export function sameBook(a: Named, b: Named) {
+  return sameKeys(keysOf(a), keysOf(b));
+}
+
+/**
+ * Finds the first book of `books` (in their order) that is the same work as the one asked
+ * for. Only books with the same title key can match, so they are grouped by it once.
+ */
+function matcher<T extends Named>(books: T[]) {
+  const byTitle = new Map<string, { book: T; keys: BookKeys }[]>();
+  for (const book of books) {
+    const keys = keysOf(book);
+    const group = byTitle.get(keys.title);
+    if (group) group.push({ book, keys });
+    else byTitle.set(keys.title, [{ book, keys }]);
+  }
+  return (keys: BookKeys) => byTitle.get(keys.title)?.find((x) => sameKeys(keys, x.keys))?.book ?? null;
 }
 
 // ---------- Goodreads ----------
@@ -137,13 +161,13 @@ export type GoodreadsMatch = {
 };
 
 export function matchGoodreads(items: GoodreadsBook[], library: Book[], publicBooks: PublicBook[]): GoodreadsMatch[] {
+  const findOwn = matcher(library);
+  // Most popular edition first, when the public library has several.
+  const findPublic = matcher([...publicBooks].sort(byPopularity));
   return items.map((item) => {
-    const own = library.find((b) => sameBook(item, b)) ?? null;
-    // Most popular edition first, when the public library has several.
-    const pub = own
-      ? null
-      : ([...publicBooks].sort(byPopularity).find((b) => sameBook(item, b)) ?? null);
-    return { item, own, pub };
+    const keys = keysOf(item);
+    const own = findOwn(keys);
+    return { item, own, pub: own ? null : findPublic(keys) };
   });
 }
 

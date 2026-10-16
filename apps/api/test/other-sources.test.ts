@@ -142,10 +142,10 @@ describe("Standard Ebooks", () => {
     expect(book).toMatchObject({
       author: "Old Novelist",
       language: "en",
-      description: "A story about The Old One.",
       source: { name: "Standard Ebooks", url: "https://standardebooks.org/ebooks/se/old-one" },
     });
     expect(book.themes).toContain("literature");
+    expect((await api(reader, "GET", `/api/public/${book.id}`)).json().description).toBe("A story about The Old One.");
 
     const again = await importStandardEbooks({ limit: 10, fetch: fakeFetch, delayMs: 0, deaths });
     expect(again.imported).toBe(0);

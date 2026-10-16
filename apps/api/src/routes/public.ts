@@ -37,7 +37,6 @@ const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id
   themes: [...new Set([...(r.themes ?? []), ...themesFor(r.tags ?? [])])],
   /** Downloads at the source (Gutenberg), a popularity signal; null for books people published. */
   popularity: r.download_count ?? null,
-  description: r.description,
   publishedBy: r.owner_name,
   publishedAt: (r.published_at ?? r.created_at).toISOString(),
   /** The viewer's own copy of this file, if they have one. */
@@ -104,7 +103,8 @@ export async function publicRoutes(app: FastifyInstance) {
     );
     if (!r) return;
     const about = await aboutFile(r.sha256, null); // everyone who has it, the viewer included
-    return { ...toPublicDto(r, request.user), readers: about.readers, subjects: about.subjects };
+    // The description only here: the catalog list leaves it out (up to 4000 characters per book).
+    return { ...toPublicDto(r, request.user), description: r.description, readers: about.readers, subjects: about.subjects };
   });
 
   app.get<{ Params: { id: string } }>("/api/public/:id/cover", async (request, reply) => {

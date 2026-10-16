@@ -65,6 +65,10 @@ export const SELECT_BOOK = `
   FROM book b
   LEFT JOIN reading_progress p ON p.book_id = b.id AND p.user_id = b.user_id`;
 
+/**
+ * A book as lists and live events carry it. The description (up to 4000 characters) is left
+ * out: only the book's page shows it, and it gets it from `/api/books/:id` or `/about`.
+ */
 export function toBookDto(r: BookRow) {
   return {
     id: r.id,
@@ -85,7 +89,6 @@ export function toBookDto(r: BookRow) {
     /** Published in the public library. */
     isPublic: r.is_public,
     language: r.language,
-    description: r.description,
     createdAt: r.created_at.toISOString(),
     progress: r.p_locator
       ? {
@@ -210,13 +213,13 @@ export async function bookRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>("/api/books/:id", async (request, reply) => {
     const book = await loadOwnedBook(request, reply);
-    if (book) return toBookDto(book);
+    if (book) return { ...toBookDto(book), description: book.description };
   });
 
-  /** For the book's page: other readers, its public-library entry and its source. */
+  /** For the book's page: its description, other readers, its public-library entry and its source. */
   app.get<{ Params: { id: string } }>("/api/books/:id/about", async (request, reply) => {
     const book = await loadOwnedBook(request, reply);
-    if (book) return aboutFile(book.sha256, request.user.id);
+    if (book) return { description: book.description, ...(await aboutFile(book.sha256, request.user.id)) };
   });
 
   /**

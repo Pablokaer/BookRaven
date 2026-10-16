@@ -4,7 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { isNative } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
 import { authClient, flushChanges } from "./lib/auth";
-import { startEvents, stopEvents } from "./lib/events";
+import { retryEvents, startEvents, stopEvents } from "./lib/events";
 import { flushProgress } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
 import { WhatsNew } from "./components/WhatsNew";
@@ -156,6 +156,10 @@ export function App() {
     installSyncFlushers();
     return () => stopEvents();
   }, [signedIn]);
+  // A refetched session that is still valid: live events stopped by a 401 can try again.
+  useEffect(() => {
+    if (session?.user) retryEvents();
+  }, [session]);
 
   // The password-reset link works whether or not someone is signed in on this browser.
   if (window.location.pathname === "/reset-password") {

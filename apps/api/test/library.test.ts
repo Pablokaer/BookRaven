@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { detectFormat } from "../src/lib/formats.js";
 import { bookKey, objectSize, removeCover } from "../src/lib/storage.js";
-import { adminSession, api, fakePdf, getApp, ORIGIN, signUp, upload } from "./helpers.js";
+import { adminSession, api, fakePdf, getApp, ORIGIN, signUp, upload, type TestUser } from "./helpers.js";
 
 const stored = (file: Buffer) => objectSize(bookKey(createHash("sha256").update(file).digest("hex")));
 
@@ -159,22 +159,27 @@ describe("sharing and the public library", () => {
     const owner = await signUp(undefined, "Owner");
     const reader = await signUp();
     const long = "x".repeat(5000);
+    const description = async (user: TestUser, id: string) => (await api(user, "GET", `/api/books/${id}`)).json().description;
     const book = (await upload(owner, "d.pdf", fakePdf(), { title: "Described", description: `  A quiet story.  ` })).json();
-    expect(book.description).toBe("A quiet story.");
-    expect((await upload(owner, "f.pdf", fakePdf(), { description: "One.\r\n\r\nTwo." })).json().description).toBe("One.\n\nTwo.");
-    expect((await upload(owner, "e.pdf", fakePdf(), { description: long })).json().description).toHaveLength(4000);
+    expect(await description(owner, book.id)).toBe("A quiet story.");
+    expect(await description(owner, (await upload(owner, "f.pdf", fakePdf(), { description: "One.\r\n\r\nTwo." })).json().id)).toBe("One.\n\nTwo.");
+    expect(await description(owner, (await upload(owner, "e.pdf", fakePdf(), { description: long })).json().id)).toHaveLength(4000);
+    // Only the book's page shows it: the library list and the upload answer leave it out.
+    expect(book).not.toHaveProperty("description");
+    expect((await api(owner, "GET", "/api/books")).json().every((b: object) => !("description" in b))).toBe(true);
 
-    expect((await api(owner, "GET", `/api/books/${book.id}/about`)).json()).toEqual({ readers: 0, publicBookId: null, source: null, subjects: [] });
+    expect((await api(owner, "GET", `/api/books/${book.id}/about`)).json()).toEqual({ description: "A quiet story.", readers: 0, publicBookId: null, source: null, subjects: [] });
     expect((await api(reader, "GET", `/api/books/${book.id}/about`)).statusCode).toBe(404);
 
     await api(owner, "PATCH", `/api/books/${book.id}`, { isPublic: true });
     const page = (await api(reader, "GET", `/api/public/${book.id}`)).json();
     expect(page).toMatchObject({ title: "Described", description: "A quiet story.", publishedBy: "Owner", readers: 1, ownBookId: null });
+    expect((await api(reader, "GET", "/api/public")).json().find((b: { id: string }) => b.id === book.id)).not.toHaveProperty("description");
 
     // A copy keeps the blurb, and each side now sees one other reader.
     const copy = (await api(reader, "POST", `/api/public/${book.id}/add`)).json();
-    expect(copy.description).toBe("A quiet story.");
-    expect((await api(reader, "GET", `/api/books/${copy.id}/about`)).json()).toMatchObject({ readers: 1, publicBookId: book.id });
+    expect(await description(reader, copy.id)).toBe("A quiet story.");
+    expect((await api(reader, "GET", `/api/books/${copy.id}/about`)).json()).toMatchObject({ description: "A quiet story.", readers: 1, publicBookId: book.id });
     expect((await api(owner, "GET", `/api/books/${book.id}/about`)).json().readers).toBe(1);
     expect((await api(reader, "GET", `/api/public/${book.id}`)).json()).toMatchObject({ readers: 2, ownBookId: copy.id });
 

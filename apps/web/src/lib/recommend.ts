@@ -20,7 +20,9 @@ function weight(b: Book) {
   return w;
 }
 
-type Seed = { book: Book; weight: number; authors: string[]; themes: string[]; language: string | null; lastRead: number };
+type Seed = { book: Book; weight: number; authors: Set<string>; themes: Set<string>; language: string | null; lastRead: number };
+/** A public book with its authors worked out once. */
+type Candidate = { p: PublicBook; authors: string[] };
 
 export type Recommendations = {
   /** Best matches overall, best first. */
@@ -40,26 +42,28 @@ export function recommend(library: Book[], publicBooks: PublicBook[], options: P
   const seeds: Seed[] = library.map((b) => ({
     book: b,
     weight: weight(b),
-    authors: authorsOf(b.author),
-    themes: themesByOwnId.get(b.id) ?? [],
+    authors: new Set(authorsOf(b.author)),
+    themes: new Set(themesByOwnId.get(b.id) ?? []),
     language: b.language,
     lastRead: new Date(b.progress?.updatedAt ?? b.createdAt).getTime(),
   }));
   const languages = new Set(seeds.map((s) => s.language).filter(Boolean));
-  const candidates = publicBooks.filter((p) => !p.ownBookId && !p.isMine);
-
-  /** How strongly `seed` points to `p`: the same author counts more than a shared section. */
-  const affinity = (seed: Seed, p: PublicBook) => {
-    const sameAuthor = authorsOf(p.author).some((a) => seed.authors.includes(a));
-    const shared = p.themes.filter((t) => seed.themes.includes(t)).length;
-    return (sameAuthor ? 3 : 0) + shared;
-  };
   // Other languages only when the library gives no clue about the reader's.
   const inMyLanguage = (p: PublicBook) => !languages.size || !p.language || languages.has(p.language);
+  const candidates: Candidate[] = publicBooks
+    .filter((p) => !p.ownBookId && !p.isMine && inMyLanguage(p))
+    .map((p) => ({ p, authors: authorsOf(p.author) }));
+
+  /** How strongly `seed` points to `c`: the same author counts more than a shared section. */
+  const affinity = (seed: Seed, c: Candidate) => {
+    const sameAuthor = c.authors.some((a) => seed.authors.has(a));
+    let shared = 0;
+    for (const t of c.p.themes) if (seed.themes.has(t)) shared++;
+    return (sameAuthor ? 3 : 0) + shared;
+  };
 
   const scored = candidates
-    .filter(inMyLanguage)
-    .map((p) => ({ p, score: seeds.reduce((n, s) => n + s.weight * affinity(s, p), 0) }))
+    .map((c) => ({ p: c.p, score: seeds.reduce((n, s) => n + s.weight * affinity(s, c), 0) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || byPopularity(a.p, b.p));
   const forYou = scored.slice(0, opts.forYou).map((x) => x.p);
@@ -71,9 +75,12 @@ export function recommend(library: Book[], publicBooks: PublicBook[], options: P
   for (const seed of seeds.filter((s) => s.weight >= 2).sort((a, b) => b.weight - a.weight || b.lastRead - a.lastRead)) {
     if (because.length >= opts.rows) break;
     const books = candidates
-      .filter((p) => inMyLanguage(p) && !shown.has(p.id) && affinity(seed, p) > 0)
-      .sort((a, b) => affinity(seed, b) - affinity(seed, a) || byPopularity(a, b))
-      .slice(0, opts.rowSize);
+      .filter((c) => !shown.has(c.p.id))
+      .map((c) => ({ p: c.p, affinity: affinity(seed, c) }))
+      .filter((x) => x.affinity > 0)
+      .sort((a, b) => b.affinity - a.affinity || byPopularity(a.p, b.p))
+      .slice(0, opts.rowSize)
+      .map((x) => x.p);
     if (books.length < opts.minRow) continue;
     books.forEach((p) => shown.add(p.id));
     because.push({ seed: seed.book, books });
