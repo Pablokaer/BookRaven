@@ -3,8 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { isNative, loadToken } from "./lib/api";
 import "@fontsource-variable/inter";
-import "@fontsource/playfair-display/600.css";
-import "@fontsource/playfair-display/700.css";
+import "./displayFont.css";
 import "./index.css";
 
 // Offline support on the web (the Android app already ships its assets).

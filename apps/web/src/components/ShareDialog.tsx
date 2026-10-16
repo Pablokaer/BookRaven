@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Book, Folder } from "../lib/api";
 import { Check, Copy, Globe, Link2, Send } from "lucide-react";
 import { updateBook } from "../lib/library";
-import { useLibrary } from "../lib/libraryStore";
+import { useLibraryActions } from "../lib/libraryStore";
 import {
   collectionShareUrl,
   createCollectionShareToken,
@@ -20,7 +20,7 @@ export function ShareDialog({ book, onClose }: { book: Book; onClose: () => void
   const [token, setToken] = useState<string | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { replaceBook } = useLibrary();
+  const { replaceBook } = useLibraryActions();
 
   useEffect(() => {
     getShareToken(book.id)

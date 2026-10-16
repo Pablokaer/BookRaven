@@ -2,12 +2,9 @@ import { ApiError, type Book } from "./api";
 import { cachedBookFile, downloadBook, openBookFile, readsAsCbz } from "./books";
 import { blobRangeFile, type RangeFile } from "./rangeFile";
 import { localDataStart, openRangeZip } from "./rangeZip";
+import type { ComicFormat } from "./comicFormats";
 
-/** Comic book archives: ZIP, RAR, 7-Zip and TAR containers of page images. */
-export const COMIC_FORMATS = ["cbz", "cbr", "cb7", "cbt"] as const;
-export type ComicFormat = (typeof COMIC_FORMATS)[number];
-
-export const isComicFormat = (format: string): format is ComicFormat => (COMIC_FORMATS as readonly string[]).includes(format);
+export { COMIC_FORMATS, comicFormatOfName, isComicFormat, type ComicFormat } from "./comicFormats";
 
 const IMAGE_RE = /\.(jpe?g|png|gif|webp|avif|bmp|jxl|svg)$/i;
 const MIME: Record<string, string> = {
@@ -164,13 +161,6 @@ export function getComicArchive(book: Book): Promise<ComicArchive> {
     current = { bookId: book.id, archive };
   }
   return current.archive;
-}
-
-/** Guesses the format of a local file by extension (uploads, before the server checks it). */
-export function comicFormatOfName(name: string): ComicFormat | null {
-  const ext = name.toLowerCase().split(".").pop() ?? "";
-  const map: Record<string, ComicFormat> = { cbz: "cbz", cbr: "cbr", rar: "cbr", cb7: "cb7", "7z": "cb7", cbt: "cbt", tar: "cbt" };
-  return map[ext] ?? null;
 }
 
 /**

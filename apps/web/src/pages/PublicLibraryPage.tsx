@@ -8,7 +8,7 @@ import { RequestsTab } from "../components/RequestsTab";
 import { Avatar } from "../components/ui/Avatar";
 import { Menu } from "../components/ui/Menu";
 import { ApiError, type PublicBook } from "../lib/api";
-import { isComicFormat } from "../lib/comics";
+import { isComicFormat } from "../lib/comicFormats";
 import { recommend } from "../lib/recommend";
 import { matchesText } from "../lib/search";
 import { fileSize } from "../lib/format";

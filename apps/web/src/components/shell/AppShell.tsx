@@ -1,8 +1,8 @@
 import { CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock, CloudOff, Loader2, UploadCloud, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import { fileSize } from "../../lib/format";
-import { isActiveUpload, useLibrary, type UploadItem } from "../../lib/libraryStore";
+import { isActiveUpload, useLibrary, useUploads, type UploadItem } from "../../lib/libraryStore";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { AppUpdateBanner } from "../AppUpdate";
 import { OrganizeDialog } from "../OrganizeDialog";
@@ -40,7 +40,8 @@ function uploadLabel(u: UploadItem) {
 
 /** Every file being uploaded, with its state, until the user clears the finished ones. */
 function UploadPanel() {
-  const { uploads, clearUploads, folders } = useLibrary();
+  const { uploads, clearUploads } = useUploads();
+  const { folders } = useLibrary();
   const [collapsed, setCollapsed] = useState(false);
   if (!uploads.length) return null;
 
@@ -238,7 +239,10 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         <div className="flex flex-1">
           <main className="min-w-0 flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-[1400px]">
-              <Outlet />
+              {/* Most pages load when first opened: the shell stays up meanwhile. */}
+              <Suspense fallback={<div className="min-h-[60vh]" aria-busy="true" />}>
+                <Outlet />
+              </Suspense>
               {widgetsBelow && (
                 <div className="mt-12">
                   <RightSidebarWidgets layout="grid" />

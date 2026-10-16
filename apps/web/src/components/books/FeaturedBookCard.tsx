@@ -1,4 +1,5 @@
 import { Play } from "lucide-react";
+import { memo } from "react";
 import { Link } from "react-router";
 import type { Book } from "../../lib/api";
 import { percent, timeAgo } from "../../lib/format";
@@ -7,7 +8,7 @@ import { BookCover } from "./BookCover";
 import { ProgressBar } from "./ProgressBar";
 
 /** Wide "Continue reading" card. */
-export function FeaturedBookCard({ book }: { book: Book }) {
+export const FeaturedBookCard = memo(function FeaturedBookCard({ book }: { book: Book }) {
   const p = book.progress!;
   return (
     <article className="surface group relative flex animate-rise gap-5 overflow-hidden p-4 transition hover:border-accent/30 sm:p-5">
@@ -42,4 +43,4 @@ export function FeaturedBookCard({ book }: { book: Book }) {
       </div>
     </article>
   );
-}
+});

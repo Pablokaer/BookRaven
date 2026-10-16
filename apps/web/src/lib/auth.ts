@@ -1,7 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import { API_BASE, getToken, isNative, setToken } from "./api";
 import { clearBookmarks, flushBookmarks } from "./bookmarks";
-import { clearInk, flushInk } from "./ink";
 import { clearProgress, flushProgress } from "./progress";
 import { BOOK_CACHE, forgetOpenedFile } from "./rangeFile";
 
@@ -23,9 +22,15 @@ export const authClient = createAuthClient({
   },
 });
 
+/** Handwriting is a reader module; it is already loaded by then (App installs its flushers). */
+const ink = () => import("./ink");
+
 export async function signOut() {
   // Changes made on this device still get a moment to reach the server while the session works.
-  await Promise.race([Promise.allSettled([flushProgress(), flushBookmarks(), flushInk()]), new Promise((r) => setTimeout(r, 3000))]);
+  await Promise.race([
+    Promise.allSettled([flushProgress(), flushBookmarks(), ink().then((m) => m.flushInk())]),
+    new Promise((r) => setTimeout(r, 3000)),
+  ]);
   try {
     await authClient.signOut();
   } finally {
@@ -43,5 +48,5 @@ export async function forgetAccountData() {
   navigator.serviceWorker?.controller?.postMessage("signed-out");
   forgetOpenedFile();
   clearProgress();
-  await Promise.allSettled([clearBookmarks(), clearInk(), "caches" in window ? caches.delete(BOOK_CACHE) : null]);
+  await Promise.allSettled([clearBookmarks(), ink().then((m) => m.clearInk()), "caches" in window ? caches.delete(BOOK_CACHE) : null]);
 }

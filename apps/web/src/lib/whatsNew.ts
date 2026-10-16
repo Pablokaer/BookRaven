@@ -18,6 +18,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-16-lighter-app",
+    date: "2026-10-16",
+    title: "A lighter, smoother library",
+    items: [
+      "The app downloads about a fifth less before showing your library. Other pages load quietly in the background, so they still open instantly.",
+      "Uploading books, syncing your place from another device and marking favorites no longer redraw every book on the page, so big libraries stay smooth.",
+      "Long libraries scroll more smoothly: books off screen aren't drawn until you get to them.",
+      "On the web, updates download less: the parts of the app that rarely change stay saved in your browser.",
+    ],
+  },
+  {
     id: "2026-10-16-landing-page",
     date: "2026-10-16",
     title: "A front page for BookRaven",

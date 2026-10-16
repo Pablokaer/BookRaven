@@ -1,5 +1,5 @@
 import { apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
-import { comicFormatOfName, openComicArchive } from "./comics";
+import { comicFormatOfName, type ComicFormat } from "./comicFormats";
 import { blobRangeFile, forgetSaved, openRemoteFile, savedWholeFile, saveWholeFile, type RangeFile } from "./rangeFile";
 
 export const SUPPORTED_EXTENSIONS = [".pdf", ".epub", ".mobi", ".azw3", ".azw", ".fb2", ".cbz", ".cbr", ".cb7", ".cbt"];
@@ -174,7 +174,9 @@ async function coverFromImage(blob: Blob): Promise<Blob> {
   }
 }
 
-async function comicMeta(file: File, format: NonNullable<ReturnType<typeof comicFormatOfName>>): Promise<Meta> {
+async function comicMeta(file: File, format: ComicFormat): Promise<Meta> {
+  // The archive reader (and its worker) loads only when a comic is uploaded.
+  const { openComicArchive } = await import("./comics");
   const archive = await openComicArchive(file, format);
   return {
     title: archive.info?.title,
