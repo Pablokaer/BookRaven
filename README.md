@@ -122,6 +122,8 @@ HTTPS_PORT=127.0.0.1:8453
 TRUSTED_PROXIES=private_ranges      # believe the front server's X-Forwarded-For (real client IPs)
 ```
 
+Caddy then takes the client's address from the front server's `X-Forwarded-For`: the last address in it that isn't a trusted proxy, so one a client wrote into the header itself is ignored. It passes only that address on, and the API (which trusts only proxies on private addresses, as Caddy is) uses it for rate limits and the audit trail.
+
 Apache example (`a2enmod proxy proxy_http headers rewrite ssl`; get the certificate with `certbot --apache -d books.example.com`):
 
 ```apache
@@ -154,23 +156,24 @@ SMTP_URL=smtps://resend:<api key>@smtp.resend.com:465
 MAIL_FROM=BookRaven <no-reply@books.example.com>
 ```
 
-The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work` (with the reason). Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production; in development every email is printed to the API log.
+The `MAIL_FROM` domain must be verified with the provider (add the DKIM and SPF records it gives you to your DNS), or messages are rejected or land in spam. Special characters in the user or password part of `SMTP_URL` must be URL-encoded. The API checks the connection at startup and logs `SMTP ready` or `SMTP_URL does not work` (with the reason). Emails are sent in the background: sign-up and the reset request answer right away, a failed send is logged and never shown to the user (and the reset answer is the same whether or not the address has an account). Without `SMTP_URL`, *Forgot password?* is hidden in production and no email is sent: the API log only notes each one's subject, never its recipient or links. In development every email, links included, is printed to the API log instead.
 
 ### Logs
 
-The API writes JSON lines to standard output (`docker compose logs -f api`). `LOG_LEVEL` in `.env` sets how much: `info` by default in production, `debug` in development; `warn` or `error` keep only problems. At `info` you get one line when a request arrives and one when it is answered (status and time), plus failures that don't break the request: emails that could not be sent, dictionary or translation services that answer with an error, files that could not be removed after a book was deleted. Health checks and the readers' range requests for a book are frequent, so they are logged at `debug` only (their errors still show). Keys in URLs (share and invite links, password-reset and verification links) are written as `[redacted]`. Better Auth's own messages go to the same log.
+The API writes JSON lines to standard output (`docker compose logs -f api`). `LOG_LEVEL` in `.env` sets how much: `info` by default in production (also when it is empty), `debug` in development; `warn` or `error` keep only problems (and the audit trail below). At `info` you get one line when a request arrives and one when it is answered (status and time), plus failures that don't break the request: emails that could not be sent, dictionary or translation services that answer with an error, files that could not be removed after a book was deleted. Health checks and the readers' range requests for a book's file are frequent, so they are logged at `debug` when they succeed; an error answer still shows at `info`, with the request. Keys in URLs (share and invite links, password-reset and verification links) are written as `[redacted]`, also on paths that match no route: a route's key is redacted when its path parameter is named `:token`. Better Auth's own warnings and errors go to the same log, not its info messages (one of them holds the email typed at sign-up).
 
-Security-relevant events form an audit trail: each line has `"audit": true`, an `event` name and, for requests, the client `ip` (passwords and the email typed at sign-in are never logged). `docker compose logs api | grep '"audit":true'` shows them.
+Security-relevant events form an audit trail: each line has `"audit": true`, an `event` name and, for requests, the client `ip` (passwords and the email typed at sign-in are never logged). It is written at `info` whatever `LOG_LEVEL` says, except `silent`. An administrator's action that stops halfway (some books may already be deleted) is logged as `…_failed` (warn), with the error. `docker compose logs api | grep '"audit":true'` shows them.
 
 | Event | When |
 |---|---|
-| `auth.account_created`, `auth.signed_in` | a new account (email or Google), any sign-in |
-| `auth.sign_in_failed`, `auth.blocked_sign_in` (warn) | wrong email or password, a blocked account trying to sign in |
-| `auth.password_changed`, `auth.password_reset` (and `…_failed`, warn) | password changed from the profile, or reset with an email link |
-| `admin.user_updated`, `admin.password_reset`, `admin.user_deleted` | an administrator changes a quota or blocks, sets a temporary password, deletes an account (`adminId`, `userId`) |
+| `auth.account_created`, `auth.signed_in` | a new account (email or Google), any sign-in (`userId`; the new session a password change gets is not a sign-in) |
+| `auth.sign_in_failed`, `auth.blocked_sign_in` (warn) | wrong email or password (a blocked account, an unverified email or a rate limit is not a failed sign-in), a blocked account trying to sign in |
+| `auth.password_changed`, `auth.password_reset` (and `…_failed`, warn) | password changed from the profile, or reset with an email link (`userId`; a reset link that doesn't work has no account, only the `ip`) |
+| `admin.user_updated`, `admin.password_reset`, `admin.user_deleted` | an administrator changes a quota or blocks, sets a temporary password, deletes an account (`adminId`, `userId`, and the deleted account's `email`) |
 | `admin.report_resolved`, `admin.file_unblocked` | a report is settled (`action`, `removedCopies`), a blocked file is allowed again |
 | `app_password.created`, `app_password.revoked` | app passwords for OPDS / KOReader |
 | `app_password.auth_failed` (warn) | an OPDS reader or KOReader sent a wrong app password (`via`) |
+| `app_password.blocked_account` (warn) | the right app password of a blocked account (`via`, `userId`) |
 
 ### Automatic deploys (GitHub Actions → VPS)
 

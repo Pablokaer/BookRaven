@@ -5,7 +5,7 @@ import { log } from "./log.js";
 /** `html` is optional; `text` is always sent too, for clients that show plain text. */
 export type Mail = { to: string; subject: string; text: string; html?: string };
 
-/** Mails "sent" while running tests or without SMTP, newest last (tests read the links from here). */
+/** Mails "sent" while running tests, newest last (tests read the links from here). */
 export const outbox: Mail[] = [];
 
 const transport = config.smtpUrl ? nodemailer.createTransport(config.smtpUrl) : null;
@@ -22,13 +22,18 @@ if (transport && !config.isTest) {
 }
 
 /**
- * Sends an email through SMTP_URL. Without SMTP (development) the message is printed
- * to the server log instead, so password-reset links still work locally.
+ * Sends an email through SMTP_URL. Without SMTP in development the message is printed to the
+ * server log instead, so password-reset links still work locally. In production the log must
+ * not hold reset or verification links (whoever reads it could use them), so only the subject is.
  */
 async function sendMail(mail: Mail) {
-  if (!transport || config.isTest) {
+  if (config.isTest) {
     outbox.push(mail);
-    if (!config.isTest) log.info(`[mail to ${mail.to}] ${mail.subject}\n${mail.text}`);
+    return;
+  }
+  if (!transport) {
+    if (config.isProd) log.info({ subject: mail.subject }, "email not sent: SMTP_URL is not set");
+    else log.info(`[mail to ${mail.to}] ${mail.subject}\n${mail.text}`);
     return;
   }
   await transport.sendMail({ from: config.mailFrom, ...mail });

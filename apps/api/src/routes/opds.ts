@@ -24,15 +24,14 @@ async function basicAuth(request: FastifyRequest, reply: FastifyReply) {
   if (m) {
     const decoded = Buffer.from(m[1]!, "base64").toString("utf8");
     const sep = decoded.indexOf(":");
-    if (sep > 0) {
-      const user = await verifyAppPassword(decoded.slice(0, sep), { password: decoded.slice(sep + 1) });
-      if (user) {
-        request.user = user;
-        return;
-      }
+    const found = sep > 0 ? await verifyAppPassword(decoded.slice(0, sep), { password: decoded.slice(sep + 1) }) : null;
+    if (found && !found.blocked) {
+      request.user = found.user;
+      return;
     }
     // Readers first ask without credentials to get the challenge: only wrong ones are worth a line.
-    audit("app_password.auth_failed", { via: "opds", ip: request.ip }, "warn");
+    if (found) audit("app_password.blocked_account", { via: "opds", userId: found.user.id, ip: request.ip }, "warn");
+    else audit("app_password.auth_failed", { via: "opds", ip: request.ip }, "warn");
   }
   reply.header("WWW-Authenticate", 'Basic realm="BookRaven", charset="UTF-8"'); // ASCII-only header
   return reply.code(401).type("text/plain").send("Use your account email and an app password (Profile → Other apps).");
