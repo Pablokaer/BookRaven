@@ -7,7 +7,8 @@ import scholar560 from "../assets/landing/scholar-560.webp";
 import scholar880 from "../assets/landing/scholar-880.webp";
 import logoIcon from "../assets/logo.webp";
 import wordmark from "../assets/wordmark.webp";
-import { ArchedPlate, Edge, Feather, Fleuron, Medallion, type Vignette } from "../components/ui/Ornaments";
+import { Edge, Feather } from "../components/ui/LandingOrnaments";
+import { ArchedPlate, Fleuron, Medallion, type Vignette } from "../components/ui/Ornaments";
 import { apiJson, type ServerConfig } from "../lib/api";
 import { THEME_INFO, THEME_ORDER } from "../lib/themes";
 
@@ -115,7 +116,7 @@ function Header({ signupOpen }: { signupOpen: boolean }) {
   return (
     <header
       className={`fixed inset-x-0 top-0 z-40 pt-[env(safe-area-inset-top)] transition-[background-color,box-shadow] duration-500 ${
-        scrolled ? "bg-midnight/85 shadow-[0_1px_0_rgb(201_164_116/0.16)] backdrop-blur-md" : "bg-transparent"
+        scrolled ? "bg-midnight/95 shadow-[0_1px_0_rgb(201_164_116/0.16)]" : "bg-transparent"
       }`}
     >
       <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-4 px-5 sm:h-20 sm:px-8">
@@ -197,7 +198,7 @@ function Hero({ signupOpen }: { signupOpen: boolean }) {
       <div className="mx-auto grid max-w-[1240px] px-5 pb-28 pt-24 sm:px-8 sm:pt-28 lg:min-h-[min(100svh,1000px)] lg:grid-cols-12 lg:items-center lg:gap-8 lg:pb-32 lg:pt-28">
         <div className="relative lg:order-2 lg:col-span-5 lg:col-start-8">
           <figure className="lit-intro relative mx-auto w-[min(76vw,340px)] sm:w-[380px] lg:mr-0 lg:w-full lg:max-w-[460px]">
-            <ArchedPlate sizes="(min-width: 1024px) 460px, (min-width: 640px) 380px, 76vw" priority />
+            <ArchedPlate sizes="(min-width: 1024px) 460px, (min-width: 640px) 380px, 340px" priority />
             <figcaption className="-mt-6 hidden text-center font-literary text-[15px] italic leading-snug text-silver lg:block">
               &ldquo;Perched upon a bust of Pallas just above my chamber door.&rdquo;
               <span className="mt-1.5 block font-sans text-[10.5px] not-italic uppercase tracking-[0.2em] text-silver/70">

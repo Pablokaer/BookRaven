@@ -41,7 +41,7 @@ export function AuthLayout({
         className="relative flex justify-center px-4 pt-[calc(env(safe-area-inset-top)+4.5rem)] lg:items-center lg:border-r lg:border-gold/15 lg:p-12"
       >
         <figure className="w-[min(58vw,250px)] lg:w-[min(30vw,400px)]">
-          <ArchedPlate sizes="(min-width: 1024px) 30vw, 58vw" priority />
+          <ArchedPlate sizes="(min-width: 1024px) 400px, 250px" priority />
           <figcaption className="-mt-4 hidden text-center font-literary text-[16px] italic leading-snug text-silver lg:block">
             &ldquo;Deep into that darkness peering, long I stood there wondering&hellip;&rdquo;
             <span className="mt-2 block font-sans text-[10.5px] not-italic uppercase tracking-[0.2em] text-silver/70">Plate after Gustave Doré, 1884</span>
@@ -60,7 +60,7 @@ export function AuthLayout({
       )}
 
       <div className="relative z-10 -mt-24 flex justify-center px-4 pb-[max(3rem,env(safe-area-inset-bottom))] lg:mt-0 lg:items-center lg:px-10 lg:py-16">
-        <div className="relative w-full max-w-sm animate-rise rounded-md border border-gold/25 bg-navy/90 px-6 pb-8 pt-8 text-center shadow-[0_40px_80px_-30px_rgb(0_0_0/0.9)] backdrop-blur-md sm:px-8">
+        <div className="relative w-full max-w-sm animate-rise rounded-md border border-gold/25 bg-navy px-6 pb-8 pt-8 text-center shadow-[0_40px_80px_-30px_rgb(0_0_0/0.9)] sm:px-8">
           <span aria-hidden="true" className="pointer-events-none absolute inset-[6px] rounded-[3px] border border-gold/10" />
           <div className="flex items-center justify-center gap-3">
             <img src={logoIcon} alt="" className="h-11 w-11 rounded-[11px]" />

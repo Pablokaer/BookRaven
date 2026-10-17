@@ -29,7 +29,7 @@ export const BookCard = memo(function BookCard({ book }: { book: Book }) {
           extraBadge={
             book.isPublic && (
               <span
-                className="inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/30 backdrop-blur-sm"
+                className="inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-accent ring-1 ring-accent/30"
                 title="In the Public Library"
               >
                 <Globe className="h-3 w-3" /> Public
@@ -40,7 +40,7 @@ export const BookCard = memo(function BookCard({ book }: { book: Book }) {
         />
         <FavoriteButton
           book={book}
-          className={`absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition hover:bg-black/75 ${
+          className={`absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/65 text-white transition hover:bg-black/75 ${
             book.favorite ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
           }`}
         />

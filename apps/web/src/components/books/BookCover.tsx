@@ -23,7 +23,7 @@ function palette(text: string) {
 export function FormatBadge({ format, className = "" }: { format: Book["format"]; className?: string }) {
   return (
     <span
-      className={`rounded-[3px] bg-midnight/75 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-parchment ring-1 ring-gold/25 backdrop-blur-sm ${className}`}
+      className={`rounded-[3px] bg-midnight/85 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-parchment ring-1 ring-gold/25 ${className}`}
     >
       {format}
     </span>
