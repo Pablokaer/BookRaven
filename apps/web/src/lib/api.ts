@@ -11,11 +11,24 @@ export const isNative = Capacitor.isNativePlatform();
 export const API_BASE: string = isNative ? (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "") : "";
 
 const TOKEN_KEY = "readsync.authToken";
+const USER_KEY = "readsync.sessionUser";
 let token: string | null = null;
+
+/** Who is signed in: what the app shows of the account. */
+export type SessionUser = { id: string; name: string; email: string };
+
+/** Native app: the account the saved token signs in, as the server last said. */
+let lastUser: SessionUser | null = null;
 
 export async function loadToken() {
   if (!isNative) return;
-  token = (await Preferences.get({ key: TOKEN_KEY })).value;
+  const [saved, user] = await Promise.all([Preferences.get({ key: TOKEN_KEY }), Preferences.get({ key: USER_KEY })]);
+  token = saved.value;
+  try {
+    lastUser = token && user.value ? (JSON.parse(user.value) as SessionUser) : null;
+  } catch {
+    lastUser = null;
+  }
 }
 
 export function getToken() {
@@ -23,10 +36,37 @@ export function getToken() {
 }
 
 export async function setToken(value: string | null) {
+  // Another token (or none): the account kept for opening offline was the old one's.
+  if (value !== token) await rememberUser(null);
   token = value;
   if (!isNative) return;
   if (value) await Preferences.set({ key: TOKEN_KEY, value });
   else await Preferences.remove({ key: TOKEN_KEY });
+}
+
+/**
+ * Native app: the account to open the app as when the server can't be reached (on the web the
+ * service worker keeps the session). Null without a saved token.
+ */
+export const offlineUser = () => (isNative && token ? lastUser : null);
+
+/** Native app: keeps who the saved token signs in (null forgets it). */
+export async function rememberUser(user: SessionUser | null) {
+  if (!isNative) return;
+  const next = user && { id: user.id, name: user.name, email: user.email };
+  if (JSON.stringify(next) === JSON.stringify(lastUser)) return;
+  lastUser = next;
+  if (next) await Preferences.set({ key: USER_KEY, value: JSON.stringify(next) });
+  else await Preferences.remove({ key: USER_KEY });
+}
+
+/**
+ * A failed session check that leaves the session standing: no connection or the server down,
+ * not the server turning it down (401/403).
+ */
+export function sessionUnreachable(error: unknown) {
+  const status = (error as { status?: number } | null | undefined)?.status;
+  return !!error && status !== 401 && status !== 403;
 }
 
 export function apiUrl(path: string) {
@@ -57,12 +97,51 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
   return res;
 }
 
-export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await apiFetch(path, init);
+/**
+ * Library data kept for offline use: the last good answer to each of these GETs. The service
+ * worker keeps them on the web (public/sw.js, same cache); the Android app has none, so apiJson
+ * does it there: the same list, less reader settings (localStorage has them) and positions (only
+ * asked for to find newer ones).
+ */
+export const API_CACHE = "readsync-api-v1";
+const OFFLINE_COPIES = [/^\/api\/(config|me|folders|books)$/, /^\/api\/books\/[^/]+$/, /^\/api\/books\/[^/]+\/(about|highlights)$/];
+/** Marks an answer taken from the offline copy rather than the server (public/sw.js sets it too). */
+const OFFLINE_COPY = "X-Offline-Copy";
+
+export const openApiCache = () => ("caches" in window ? caches.open(API_CACHE).catch(() => null) : Promise.resolve(null));
+
+/** Native app: the server's answer, kept for offline use; the copy kept last time when the server can't be reached. */
+async function fetchWithCopy(path: string, init: RequestInit) {
+  if (!isNative || (init.method ?? "GET") !== "GET" || !OFFLINE_COPIES.some((re) => re.test(path))) return apiFetch(path, init);
+  try {
+    const res = await apiFetch(path, init);
+    if (res.ok) {
+      const copy = res.clone();
+      void openApiCache()
+        .then((cache) => cache?.put(path, copy))
+        .catch(() => {});
+    }
+    return res;
+  } catch (err) {
+    const copy = await (await openApiCache())?.match(path).catch(() => undefined);
+    if (!copy) throw err;
+    const headers = new Headers(copy.headers);
+    headers.set(OFFLINE_COPY, "1");
+    return new Response(copy.body, { status: copy.status, headers });
+  }
+}
+
+/** A JSON answer, and whether it is the copy kept for offline use (the server couldn't be reached). */
+export async function apiAnswer<T>(path: string, init: RequestInit = {}): Promise<{ body: T; offline: boolean }> {
+  const res = await fetchWithCopy(path, init);
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
   if (!res.ok) throw new ApiError(res.status, body);
-  return body as T;
+  return { body: body as T, offline: res.headers.has(OFFLINE_COPY) };
+}
+
+export async function apiJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await apiAnswer<T>(path, init)).body;
 }
 
 /** A request whose answer has nothing to read: throws an ApiError when it fails. */

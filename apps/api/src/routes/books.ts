@@ -8,14 +8,14 @@ import { broadcast, publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
 import { isFileBlocked } from "../lib/moderation.js";
 import { QuotaExceededError, quotaBody, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
-import { DETECT_BYTES, detectFormat, MIME_TYPES } from "../lib/formats.js";
+import { DETECT_BYTES, detectFormat, imageMime, MIME_TYPES } from "../lib/formats.js";
 import {
   bookKey,
   commitBookFile,
   commitCover,
   coverKey,
+  coverType,
   objectSize,
-  readHead,
   readObject,
   removeBookFile,
   removeCover,
@@ -117,15 +117,6 @@ function normalizeTags(tags: string[]) {
   return out;
 }
 
-/** Type of a JPEG, PNG, WebP or GIF image from its first bytes; null for anything else. */
-function imageMime(head: Buffer) {
-  if (head[0] === 0xff && head[1] === 0xd8) return "image/jpeg";
-  if (head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
-  if (head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP") return "image/webp";
-  if (head.toString("latin1", 0, 4) === "GIF8") return "image/gif";
-  return null;
-}
-
 export const loadOwnedBook = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
   findOr404<BookRow>(reply, UUID_RE.test(request.params.id), `${SELECT_BOOK} WHERE b.id = $1 AND b.user_id = $2`, [request.params.id, request.user.id]);
 
@@ -194,9 +185,9 @@ export async function sendCover(request: FastifyRequest, reply: FastifyReply, bo
   const etag = `cover-${book.id}`;
   // A book's cover never changes either: sendFile answers a revalidation before the type is needed.
   if (request.headers["if-none-match"] === `"${etag}"`) return sendFile(request, reply, key, "", etag);
-  const head = await readHead(key, 16);
-  if (!head) return reply.code(404).send({ error: "no_cover" });
-  return sendFile(request, reply, key, imageMime(head) ?? "image/gif", etag);
+  const type = await coverType(book.id);
+  if (!type) return reply.code(404).send({ error: "no_cover" });
+  return sendFile(request, reply, key, type, etag);
 }
 
 export async function bookRoutes(app: FastifyInstance) {
@@ -391,7 +382,11 @@ export async function bookRoutes(app: FastifyInstance) {
       );
       const dto = await bookDto(book.id);
       publish(request.user.id, "book.updated", dto);
-      if (isPublic !== undefined && isPublic !== book.is_public) broadcast("public.changed", { bookId: book.id });
+      // Published, unpublished, or a public book's catalog entry changed.
+      const listed = isPublic !== undefined && isPublic !== book.is_public;
+      if (listed || (book.is_public && (title !== undefined || author !== undefined || tags !== undefined))) {
+        broadcast("public.changed", { bookId: book.id });
+      }
       return dto;
     },
   );

@@ -1,8 +1,9 @@
 import { createAuthClient } from "better-auth/react";
-import { API_BASE, getToken, isNative, setToken } from "./api";
+import { API_BASE, API_CACHE, getToken, isNative, rememberUser, setToken } from "./api";
 import { clearBookmarks, flushBookmarks } from "./bookmarks";
+import { clearDeviceBooks } from "./deviceStorage";
+import { forgetCachedFolders } from "./libraryCache";
 import { clearProgress, flushProgress } from "./progress";
-import { BOOK_CACHE, forgetOpenedFile } from "./rangeFile";
 
 export const authClient = createAuthClient({
   baseURL: API_BASE || window.location.origin,
@@ -40,13 +41,21 @@ export async function signOut() {
 }
 
 /**
- * Forgets what this device keeps for the signed-out account: the library data kept for offline
- * use, the downloaded books, and changes not yet sent (positions, bookmarks, handwriting), so
- * the next account on this device never sees or sends them.
+ * Forgets what this device keeps for the signed-out account: the library data and covers kept
+ * for offline use (and the Android app's copy of the session), the collections, the downloaded
+ * books, and changes not yet sent (positions, bookmarks, handwriting), so the next account on
+ * this device never sees or sends them.
  */
 export async function forgetAccountData() {
   navigator.serviceWorker?.controller?.postMessage("signed-out");
-  forgetOpenedFile();
   clearProgress();
-  await Promise.allSettled([clearBookmarks(), ink().then((m) => m.clearInk()), "caches" in window ? caches.delete(BOOK_CACHE) : null]);
+  forgetCachedFolders();
+  await Promise.allSettled([
+    clearBookmarks(),
+    ink().then((m) => m.clearInk()),
+    clearDeviceBooks(),
+    rememberUser(null),
+    // The Android app keeps it without a service worker (lib/api.ts).
+    "caches" in window ? caches.delete(API_CACHE) : null,
+  ]);
 }

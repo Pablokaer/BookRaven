@@ -15,6 +15,7 @@ import {
   S3ServiceException,
 } from "@aws-sdk/client-s3";
 import { config } from "../config.js";
+import { imageMime } from "./formats.js";
 
 /**
  * File storage. Book files are content-addressed by SHA-256 (books/ab/cd/<hash>), so
@@ -198,19 +199,38 @@ export async function removeTemp(tmpPath: string | undefined) {
  * storage lookup (an S3 HEAD) that every range request of a reader would need.
  */
 const sizes = new Map<string, number>();
-const MAX_SIZES = 5000;
+/** Image types of stored covers, likewise: saves reading a cover's first bytes on every request. */
+const coverTypes = new Map<string, string>();
+const MAX_ENTRIES = 5000;
+
+function remember<V>(map: Map<string, V>, key: string, value: V) {
+  map.delete(key); // moves it last
+  map.set(key, value);
+  if (map.size > MAX_ENTRIES) map.delete(map.keys().next().value!);
+}
 
 export async function objectSize(key: string) {
   const size = sizes.get(key) ?? (await driver.size(key));
-  if (size === null) return null;
-  sizes.delete(key); // moves it last
-  sizes.set(key, size);
-  if (sizes.size > MAX_SIZES) sizes.delete(sizes.keys().next().value!);
+  if (size !== null) remember(sizes, key, size);
   return size;
+}
+
+/** A book's cover image type (GIF when unrecognised), or null when it has none stored. */
+export async function coverType(bookId: string) {
+  const key = coverKey(bookId);
+  let type = coverTypes.get(key);
+  if (type === undefined) {
+    const head = await readHead(key, 16);
+    if (!head) return null;
+    type = imageMime(head) ?? "image/gif";
+  }
+  remember(coverTypes, key, type);
+  return type;
 }
 
 function remove(key: string) {
   sizes.delete(key);
+  coverTypes.delete(key);
   return driver.remove(key);
 }
 

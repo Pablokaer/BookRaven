@@ -4,12 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Who is signed in, and what the server allows: changed by each test, read by the mocks below.
 const env = vi.hoisted(() => {
-  type Session = { data: { user: { id: string; name: string; email: string } } | null; isPending: boolean };
+  type User = { id: string; name: string; email: string };
+  type Session = { data: { user: User } | null; isPending: boolean; error?: unknown };
   let session: Session = { data: null, isPending: true };
   const listeners = new Set<() => void>();
   return {
     native: false,
     config: { allowSignup: true } as Record<string, unknown>,
+    /** The Android app's copy of the last account signed in with the saved token. */
+    offlineUser: null as User | null,
     getSession: () => session,
     setSession(next: Session) {
       session = next;
@@ -39,6 +42,7 @@ vi.mock("./lib/api", async (importOriginal) => ({
     return env.native;
   },
   apiJson: async (path: string) => (path === "/api/config" ? env.config : null),
+  offlineUser: () => env.offlineUser,
 }));
 
 // The signed-in app, reduced to what routing needs.
@@ -86,7 +90,7 @@ const signedOut = { data: null, isPending: false };
 let root: Root;
 let container: HTMLElement;
 
-async function open(path: string, session: typeof signedIn | typeof signedOut | { data: null; isPending: true }) {
+async function open(path: string, session: typeof signedIn | typeof signedOut | { data: null; isPending: boolean; error?: unknown }) {
   window.history.replaceState(null, "", path);
   env.setSession(session);
   container = document.createElement("div");
@@ -104,6 +108,7 @@ const landingTitle = () => container.querySelector("h1#hero-title");
 beforeEach(() => {
   env.native = false;
   env.config = { allowSignup: true };
+  env.offlineUser = null;
 });
 
 afterEach(() => {
@@ -197,5 +202,41 @@ describe("routing by sign-in state", () => {
     expect(landingTitle()).toBeNull();
     expect(button("Sign in")).toBeDefined();
     expect(link("Home")).toBeUndefined();
+  });
+});
+
+describe("the Android app without a connection", () => {
+  const unreachable = { data: null, isPending: false, error: new TypeError("Failed to fetch") };
+
+  it("opens the library as the account signed in last when the server can't be reached", async () => {
+    env.native = true;
+    env.offlineUser = reader;
+    await open("/", unreachable);
+    expect(text()).toContain("Dashboard");
+
+    // Checking again (back online) keeps the library on screen until the answer.
+    await act(async () => env.setSession({ data: null, isPending: true }));
+    expect(text()).toContain("Dashboard");
+    await act(async () => env.setSession(signedIn));
+    expect(text()).toContain("Dashboard");
+  });
+
+  it("asks to sign in when the server turns the session down, or nothing was kept", async () => {
+    env.native = true;
+    env.offlineUser = reader;
+    await open("/", { data: null, isPending: false, error: { status: 401 } });
+    expect(button("Sign in")).toBeDefined();
+    act(() => root.unmount());
+    container.remove();
+
+    env.offlineUser = null;
+    await open("/", unreachable);
+    expect(button("Sign in")).toBeDefined();
+  });
+
+  it("is only for the Android app (the web has its service worker)", async () => {
+    env.offlineUser = reader;
+    await open("/favorites", unreachable);
+    expect(button("Sign in")).toBeDefined();
   });
 });

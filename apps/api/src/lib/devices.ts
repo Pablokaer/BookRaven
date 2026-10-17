@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { SessionUser } from "../auth.js";
 import { query } from "../db.js";
+import { TtlCache } from "./cache.js";
 import { isAccountBlocked } from "./moderation.js";
 
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
@@ -27,6 +28,19 @@ export async function createAppPassword(userId: string, name: string) {
 }
 
 /**
+ * Accepted app passwords, for a minute: every OPDS/KOReader request signs in, and a catalog page
+ * fetches dozens of covers. Revoking the password, blocking or deleting the account forgets the
+ * account's entries at once (forgetAppPasswords).
+ */
+const verified = new TtlCache<SessionUser>(1000);
+const VERIFIED_TTL = 60_000;
+
+/** Drops an account's cached app-password sign-ins. */
+export function forgetAppPasswords(userId: string) {
+  verified.forget((user) => user.id === userId);
+}
+
+/**
  * Checks an email + app password. `secret` is the password itself (HTTP Basic, OPDS)
  * or its md5 (KOReader). Null when it is wrong; a blocked account's right password comes
  * back with `blocked`, and must be refused too.
@@ -37,6 +51,11 @@ export async function verifyAppPassword(
 ): Promise<{ user: SessionUser; blocked: boolean } | null> {
   const key = secret.md5 ?? (secret.password !== undefined ? md5(secret.password) : null);
   if (!key || !/^[0-9a-f]{32}$/i.test(key)) return null;
+  const cacheKey = sha256(`${email.trim().toLowerCase()}:${key.toLowerCase()}`);
+  const cached = verified.get(cacheKey);
+  if (cached) return { user: cached, blocked: false };
+
+  const version = verified.version;
   const want = Buffer.from(hashFromMd5(key), "hex");
   const { rows } = await query<{ id: string; hash: string; user_id: string; email: string; name: string }>(
     `SELECT p.id, p.hash, u.id AS user_id, u.email, u.name
@@ -48,10 +67,11 @@ export async function verifyAppPassword(
   if (!match) return null;
   const user = { id: match.user_id, email: match.email, name: match.name };
   if (await isAccountBlocked(match.user_id)) return { user, blocked: true };
-  // Every OPDS/KOReader request signs in: refresh "last used" at most once a minute.
+  // Only sign-ins that aren't cached get here, so "last used" moves about once a minute of use.
   await query(
     "UPDATE app_password SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')",
     [match.id],
   );
+  verified.set(cacheKey, user, VERIFIED_TTL, version);
   return { user, blocked: false };
 }

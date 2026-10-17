@@ -11,10 +11,14 @@ COPY patches patches
 COPY apps/api/package.json apps/api/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter api...
 COPY apps/api apps/api
-# Build, copy the production dependencies into /out, drop the ones only linked as optional peers,
-# and check that the app still loads.
+# Build (what `pnpm --filter api build` does, minus the type check that CI already ran: same output,
+# about half the time; --isolatedModules too, or tsc still checks every file to elide imports),
+# copy the production dependencies into /out, drop the ones only linked as optional peers, and
+# check that the app still loads.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-  pnpm --filter api build && pnpm --filter api deploy --prod --legacy /out \
+  pnpm --filter api exec tsc -p tsconfig.json --noCheck --isolatedModules \
+  && cp -r apps/api/src/migrations apps/api/dist/ \
+  && pnpm --filter api deploy --prod --legacy /out \
   && node apps/api/scripts/prune-optional-peers.mjs /out \
   && cd /out && node -e "import('./dist/app.js').then(() => process.exit(0))"
 

@@ -1,13 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, type Book, type Folder, type Me, type Progress } from "./api";
-import { deleteBook, forgetCachedBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
+import { deleteBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
 import { deviceId } from "./device";
+import { forgetDeviceBook, makeRoom, pruneDeviceBooks } from "./deviceStorage";
 import { eventsConnected, onServerEvent, RECONNECTED } from "./events";
-import { loadCachedBooks, loadCachedMe, saveCachedBooks, saveCachedMe } from "./libraryCache";
+import { afterIdle } from "./idle";
+import { loadCachedBooks, loadCachedFolders, loadCachedMe, saveCachedBooks, saveCachedFolders, saveCachedMe } from "./libraryCache";
 import { percent } from "./format";
 import { fileSize } from "./format";
 import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } from "./library";
 import { forgetPublicBooks, getMe } from "./publicLibrary";
+import { STORAGE_FULL } from "./rangeFile";
 import { matchesText } from "./search";
 
 export type UploadStatus = "queued" | "preparing" | "uploading" | "processing" | "done" | "duplicate" | "error";
@@ -128,10 +131,11 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   // Hydrate instantly from the last snapshot kept in localStorage (keyed by user), so a cold
   // start shows real numbers on the first frame; `refresh()` below updates them over the network.
   const [books, setBooks] = useState<Book[] | null>(() => loadCachedBooks(userId));
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [savedFolders] = useState(() => loadCachedFolders(userId));
+  const [folders, setFolders] = useState<Folder[]>(savedFolders ?? []);
   const foldersRef = useRef(folders);
   foldersRef.current = folders;
-  const [foldersReady, setFoldersReady] = useState(false);
+  const [foldersReady, setFoldersReady] = useState(savedFolders !== null);
   const [me, setMe] = useState<Me | null>(() => loadCachedMe(userId));
   const [publicVersion, setPublicVersion] = useState(0);
   const [requestsVersion, setRequestsVersion] = useState(0);
@@ -185,6 +189,16 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   useEffect(() => {
     if (me) saveCachedMe(userId, me);
   }, [me, userId]);
+  useEffect(() => {
+    if (foldersReady) saveCachedFolders(userId, folders);
+  }, [folders, foldersReady, userId]);
+
+  // A book's pieces found no room on the device: books read least recently make some.
+  useEffect(() => {
+    const onFull = () => void makeRoom();
+    window.addEventListener(STORAGE_FULL, onFull);
+    return () => window.removeEventListener(STORAGE_FULL, onFull);
+  }, []);
 
   const log = useCallback((text: string, bookId?: string) => {
     setActivity((a) => [{ id: `${Date.now()}-${Math.random()}`, text, at: Date.now(), bookId }, ...a].slice(0, 30));
@@ -206,9 +220,13 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   const refreshedAt = useRef(0);
   const refresh = useCallback(() => {
     listBooks()
-      .then((b) => {
-        refreshedAt.current = Date.now();
+      .then(({ books: b, offline }) => {
         setBooks(sortBooks(b));
+        if (offline) return;
+        refreshedAt.current = Date.now();
+        // Books deleted on another device meanwhile: what this device kept of them goes too. Only
+        // by the server's own list (never the copy kept for offline use), with books added since.
+        afterIdle(() => void pruneDeviceBooks(new Set((booksRef.current ?? b).map((x) => x.id))).catch(() => {}));
       })
       .catch(() => setBooks((prev) => prev ?? []));
     listFolders()
@@ -287,6 +305,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
           return;
         case "book.deleted":
           setBooks((prev) => prev?.filter((b) => b.id !== data.id) ?? prev);
+          void forgetDeviceBook(data.id).catch(() => {});
           return;
         case "progress.updated": {
           const p = data as Progress;
@@ -426,7 +445,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   const removeBook = useCallback(async (book: Book) => {
     if (!window.confirm(`Delete "${book.title}" from your library on all devices?`)) return;
     await deleteBook(book.id);
-    await forgetCachedBook(book.id);
+    await forgetDeviceBook(book.id);
     forgetPublicBooks();
     setBooks((prev) => prev?.filter((b) => b.id !== book.id) ?? prev);
     refreshMe();

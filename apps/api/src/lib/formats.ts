@@ -12,6 +12,15 @@ export const MIME_TYPES: Record<BookFormat, string> = {
   cbt: "application/x-cbt",
 };
 
+/** Type of a JPEG, PNG, WebP or GIF image from its first (16) bytes; null for anything else. */
+export function imageMime(head: Buffer) {
+  if (head[0] === 0xff && head[1] === 0xd8) return "image/jpeg";
+  if (head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+  if (head.toString("latin1", 0, 4) === "GIF8") return "image/gif";
+  return null;
+}
+
 /** Bytes of the file the detector needs (TAR's magic sits at offset 257). */
 export const DETECT_BYTES = 512;
 

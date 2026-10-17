@@ -80,7 +80,13 @@ export function BookMenu({ book, className }: { book: Book; className?: string }
           onSelect: () =>
             void saveForOffline(book)
               .then(() => window.alert(`“${book.title}” is saved on this device and opens without internet.`))
-              .catch(() => window.alert("Could not save it, try again.")),
+              .catch((err) =>
+                window.alert(
+                  err?.name === "QuotaExceededError"
+                    ? "There is no room left on this device. Clear downloaded books in your profile, then try again."
+                    : "Could not save it, try again.",
+                ),
+              ),
         },
         { label: "Download file", icon: <Download />, onSelect: () => void downloadOwnBook(book).catch(() => window.alert("Download failed, try again.")) },
         {

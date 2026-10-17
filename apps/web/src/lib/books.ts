@@ -1,11 +1,19 @@
-import { apiDelete, apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
+import { apiAnswer, apiDelete, apiFetch, apiJson, ApiError, apiUrl, authHeaders, type Book, type BookAbout } from "./api";
 import { comicFormatOfName, type ComicFormat } from "./comicFormats";
-import { blobRangeFile, forgetSaved, openRemoteFile, savedWholeFile, saveWholeFile, type RangeFile } from "./rangeFile";
+import { keepOnDevice, noteOpened, savedKey } from "./deviceStorage";
+import { afterIdle } from "./idle";
+import { onUnmeteredNetwork } from "./network";
+import { blobRangeFile, isOpenFile, openRemoteFile, savedWholeFile, saveWholeFile, type RangeFile } from "./rangeFile";
 
 export const SUPPORTED_EXTENSIONS = [".pdf", ".epub", ".mobi", ".azw3", ".azw", ".fb2", ".cbz", ".cbr", ".cb7", ".cbt"];
 
-export function listBooks() {
-  return apiJson<Book[]>("/api/books");
+/** Books up to this size finish downloading in the background once opened (on Wi-Fi), so they open whole offline. */
+const FINISH_IN_BACKGROUND = 30 * 1024 * 1024;
+
+/** The library's books; `offline` when they are the copy kept for offline use (the server couldn't be reached). */
+export async function listBooks() {
+  const { body, offline } = await apiAnswer<Book[]>("/api/books");
+  return { books: body, offline };
 }
 
 export function getBookAbout(id: string) {
@@ -18,9 +26,6 @@ export function getBook(id: string) {
 
 export const deleteBook = (id: string) => apiDelete(`/api/books/${id}`);
 
-/** Cache Storage key of a book's file saved on this device (`.cbz`: the CBZ copy of a RAR/7z/TAR comic). */
-const savedKey = (id: string, cbz = false) => `/books/${id}${cbz ? ".cbz" : ""}`;
-
 /** RAR, 7z and TAR comics are read from the server's CBZ copy of them (see openComicFile). */
 export const readsAsCbz = (format: string) => format === "cbr" || format === "cb7" || format === "cbt";
 
@@ -28,13 +33,15 @@ export const readsAsCbz = (format: string) => format === "cbr" || format === "cb
  * Downloads a whole book file and keeps it in Cache Storage so reopening it (or reading
  * offline) does not download it again. Files never change for a given book id, so the cache
  * never needs invalidation, only deletion. Readers use openBookFile instead, which downloads
- * only the parts being read; this is for "Save for offline reading" and FB2 (one XML file).
+ * only the parts being read; this is for FB2 (one XML file) and comics the server can't convert.
  */
 export async function downloadBook(book: Book, opts: { cbz?: boolean } = {}): Promise<File> {
   const key = savedKey(book.id, opts.cbz);
+  noteOpened(book.id);
   let blob = await savedWholeFile(key).catch(() => null);
   if (!blob) {
-    const res = await apiFetch(`/api/books/${book.id}/file${opts.cbz ? "?as=cbz" : ""}`);
+    // Kept in Cache Storage: the browser's HTTP cache needn't keep it too.
+    const res = await apiFetch(`/api/books/${book.id}/file${opts.cbz ? "?as=cbz" : ""}`, { cache: "no-store" });
     if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
     blob = await res.blob();
     // Saving it can take a while for big files: the book opens meanwhile.
@@ -43,42 +50,47 @@ export async function downloadBook(book: Book, opts: { cbz?: boolean } = {}): Pr
   return new File([blob], book.filename, { type: blob.type });
 }
 
-/** Keeps the whole book on this device. Comics in RAR/7z/TAR keep the CBZ copy the reader uses. */
+/**
+ * Keeps the whole book on this device, downloading only the pieces it doesn't have yet. Comics in
+ * RAR/7z/TAR keep the CBZ copy the reader uses (the original when the server can't make one).
+ * Rejects with a QuotaExceededError when the device has no room for it.
+ */
 export async function saveForOffline(book: Book) {
-  if (readsAsCbz(book.format)) {
-    const ok = await downloadBook(book, { cbz: true }).then(
-      () => true,
-      (err) => (err instanceof ApiError && err.status === 422 ? false : Promise.reject(err)),
-    );
-    if (ok) return;
-  }
-  const key = savedKey(book.id);
-  if (await savedWholeFile(key).catch(() => null)) return;
-  const res = await apiFetch(`/api/books/${book.id}/file`);
-  if (!res.ok) throw new ApiError(res.status, null);
-  await saveWholeFile(key, await res.blob());
+  keepOnDevice(book.id);
+  const cbz = readsAsCbz(book.format)
+    ? await bookFile(book, true).catch((err) => (err instanceof ApiError && err.status === 422 ? null : Promise.reject(err)))
+    : null;
+  await (cbz ?? (await bookFile(book, false))).fill?.();
+}
+
+/** The copy saved on this device if there is a whole one, otherwise the server's, read by ranges. */
+async function bookFile(book: Book, cbz: boolean): Promise<RangeFile> {
+  const key = savedKey(book.id, cbz);
+  const saved = await savedWholeFile(key).catch(() => null);
+  if (saved) return blobRangeFile(saved);
+  return openRemoteFile(`/api/books/${book.id}/file${cbz ? "?as=cbz" : ""}`, key);
 }
 
 /**
- * A book's file for range reads: the copy saved on this device if there is a whole one,
+ * A book's file for the reader: the copy saved on this device if there is a whole one,
  * otherwise the server's, downloaded piece by piece as the reader asks for them.
  * `cbz` opens the CBZ copy of a RAR/7z/TAR comic.
  */
 export async function openBookFile(book: Book, opts: { cbz?: boolean } = {}): Promise<RangeFile> {
-  const key = savedKey(book.id, opts.cbz);
-  const saved = await savedWholeFile(key).catch(() => null);
-  if (saved) return blobRangeFile(saved);
-  return openRemoteFile(`/api/books/${book.id}/file${opts.cbz ? "?as=cbz" : ""}`, key);
+  noteOpened(book.id);
+  const file = await bookFile(book, !!opts.cbz);
+  // Small books finish downloading in the background on Wi-Fi, behind the reader's own requests,
+  // so they open whole offline later. It stops when another book is opened.
+  if (file.fill && file.size <= FINISH_IN_BACKGROUND && onUnmeteredNetwork()) {
+    const key = savedKey(book.id, opts.cbz);
+    afterIdle(() => void file.fill!(() => isOpenFile(key) && onUnmeteredNetwork()).catch(() => {}), { delay: 3000 });
+  }
+  return file;
 }
 
 /** The book's whole file (or CBZ copy) if it was saved on this device (kept for offline, or read to the end). */
 export function cachedBookFile(id: string, opts: { cbz?: boolean } = {}): Promise<Blob | null> {
   return savedWholeFile(savedKey(id, opts.cbz)).catch(() => null);
-}
-
-/** Forgets everything saved on this device for a book (its file, CBZ copy and downloaded pieces). */
-export async function forgetCachedBook(id: string) {
-  await forgetSaved(savedKey(id));
 }
 
 // ---------- Metadata extraction (client-side, before upload) ----------
@@ -151,7 +163,10 @@ async function ebookMeta(file: File): Promise<Meta> {
   }
 }
 
-/** Scales a page image down to a cover-sized JPEG (comic pages are often several MB). */
+/**
+ * Scales a cover down to a cover-sized JPEG: comic pages and EPUB or Calibre covers are often
+ * several MB. A cover that is already smaller than that stays as it is.
+ */
 async function coverFromImage(blob: Blob): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(blob);
@@ -159,9 +174,13 @@ async function coverFromImage(blob: Blob): Promise<Blob> {
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(bitmap.width * scale);
     canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#fff"; // transparent parts on white, as on paper (JPEG has no transparency)
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
-    return (await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.85))) ?? blob;
+    const small = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.85));
+    return small && small.size < blob.size ? small : blob;
   } catch {
     return blob;
   }
@@ -174,7 +193,7 @@ async function comicMeta(file: File, format: ComicFormat): Promise<Meta> {
   return {
     title: archive.info?.title,
     author: archive.info?.author,
-    cover: await coverFromImage(await archive.loadPage(archive.pages[0]!.name)),
+    cover: await archive.loadPage(archive.pages[0]!.name),
   };
 }
 
@@ -214,7 +233,8 @@ export async function uploadBook(file: File, opts: UploadOptions = {}): Promise<
   if (meta.author) form.append("author", meta.author.trim().slice(0, 500));
   if (meta.description) form.append("description", meta.description.slice(0, 4000));
   if (opts.folderId) form.append("folderId", opts.folderId);
-  if (meta.cover && meta.cover.size < 5 * 1024 * 1024) form.append("cover", meta.cover, "cover");
+  const cover = meta.cover && (await coverFromImage(meta.cover));
+  if (cover && cover.size < 5 * 1024 * 1024) form.append("cover", cover, "cover");
   form.append("file", file, file.name); // file last: server reads fields first
 
   // XMLHttpRequest rather than fetch: only it reports upload progress.

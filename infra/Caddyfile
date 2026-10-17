@@ -10,7 +10,9 @@
 }
 
 {$DOMAIN} {
-	encode zstd gzip
+	# Not the Server-Sent Events stream: its events must go out as they are written (no-transform)
+	@compress not path /api/events
+	encode @compress zstd gzip
 
 	# API (auth, books, files, progress, SSE), OPDS catalog and KOReader sync
 	@api path /api/* /opds /opds/* /kosync/*

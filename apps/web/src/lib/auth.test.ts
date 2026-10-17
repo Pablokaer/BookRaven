@@ -22,4 +22,18 @@ describe("signing out", () => {
     expect(localStorage.getItem("readsync.settings")).toBe("{}");
     vi.unstubAllGlobals();
   });
+
+  it("forgets the downloaded books, the library data kept for offline use and the collections", async () => {
+    const deleted: string[] = [];
+    vi.stubGlobal("caches", { delete: async (name: string) => (deleted.push(name), true) });
+    localStorage.setItem("readsync.folders.u1", "[]");
+    localStorage.setItem("readsync.deviceBooks", JSON.stringify({ b1: { openedAt: 1, kept: true } }));
+
+    await forgetAccountData();
+
+    expect(deleted).toEqual(expect.arrayContaining(["readsync-books-v1", "readsync-api-v1"]));
+    expect(localStorage.getItem("readsync.folders.u1")).toBeNull();
+    expect(localStorage.getItem("readsync.deviceBooks")).toBeNull();
+    vi.unstubAllGlobals();
+  });
 });

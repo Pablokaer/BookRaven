@@ -16,6 +16,9 @@ let controller: AbortController | null = null;
 let running = false;
 let generation = 0;
 let connected = false;
+/** When the open connection was made, and when it last carried anything (the server pings every 25 s). */
+let connectedAt = 0;
+let heardAt = 0;
 /** Ends the wait before the next attempt (the backoff delay, or the wait after a 401). */
 let wake: (() => void) | null = null;
 /** Asked to retry now: the next wait starts again from the shortest delay. */
@@ -32,6 +35,13 @@ export function onServerEvent(handler: Handler) {
 
 /** The live connection is open: changes made elsewhere arrive as they happen. */
 export const eventsConnected = () => connected;
+
+/**
+ * The live connection has been open since `since` and still answers (heard from within two
+ * pings), so nothing sent since then was missed. A connection that died unnoticed (a phone
+ * asleep) fails this until it is replaced.
+ */
+export const eventsLiveSince = (since: number) => connected && connectedAt <= since && Date.now() - heardAt < 60_000;
 
 export function startEvents() {
   if (running) return;
@@ -109,6 +119,7 @@ async function loop(gen: number) {
         if (!res.ok || !res.body) throw new Error(`SSE HTTP ${res.status}`);
         delay = 1000;
         connected = true;
+        connectedAt = heardAt = Date.now();
         skipWait = false;
         // Anything that changed while disconnected was missed (the first try needs no catch-up).
         if (attempts > 0) handlers.forEach((h) => h(RECONNECTED, {}));
@@ -140,6 +151,7 @@ async function readStream(body: ReadableStream<Uint8Array>) {
   while (true) {
     const { value, done } = await reader.read();
     if (done) return;
+    heardAt = Date.now();
     buffer += value;
     let idx: number;
     while ((idx = buffer.indexOf("\n\n")) >= 0) {

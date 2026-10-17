@@ -20,6 +20,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-17-offline-and-storage",
+    date: "2026-10-17",
+    title: "Better offline, lighter on your device",
+    items: [
+      "The Android app now opens without a connection, with your library, collections, covers, highlights and book pages, and catches up when you're back online.",
+      "Save for offline now downloads only the parts of a book you don't have yet, and small books you open on Wi-Fi finish downloading by themselves.",
+      "Your profile shows how much space BookRaven uses on this device, with a button to clear downloaded books. When space runs short, the books you read longest ago make room; books saved for offline stay.",
+      "Books you delete on another device are removed from this one too, and new covers and app updates are smaller.",
+    ],
+  },
+  {
     id: "2026-10-17-smoother-library",
     date: "2026-10-17",
     title: "Smoother on phones",

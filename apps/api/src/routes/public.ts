@@ -4,7 +4,7 @@ import { isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { aboutFile } from "../lib/bookAbout.js";
 import { addCopyAndReply } from "../lib/copies.js";
-import { broadcast, publish } from "../lib/events.js";
+import { broadcast, onBroadcast, publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { SOURCE_NAMES } from "../lib/otherSources.js";
 import { themesFor } from "../lib/themes.js";
@@ -22,7 +22,15 @@ type PublicRow = BookRow & {
   download_count?: number | null;
 };
 
-const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id: string; email: string }) => ({
+/** The columns the catalog shows, and whose book it is. */
+type CatalogRow = Pick<
+  PublicRow,
+  "id" | "user_id" | "sha256" | "title" | "author" | "format" | "original_filename" | "size_bytes" | "has_cover" | "language" | "tags"
+  | "published_at" | "created_at" | "owner_name" | "source" | "source_url" | "themes" | "download_count"
+>;
+
+/** A public book as every viewer sees it. */
+const catalogEntry = (r: CatalogRow) => ({
   id: r.id,
   title: r.title,
   author: r.author,
@@ -39,11 +47,15 @@ const toPublicDto = (r: PublicRow & { own_book_id: string | null }, viewer: { id
   popularity: r.download_count ?? null,
   publishedBy: r.owner_name,
   publishedAt: (r.published_at ?? r.created_at).toISOString(),
+});
+
+/** What depends on who is looking. */
+const viewerPart = (publisherId: string, ownBookId: string | null, viewer: { id: string; email: string }) => ({
   /** The viewer's own copy of this file, if they have one. */
-  ownBookId: r.own_book_id,
-  isMine: r.user_id === viewer.id,
+  ownBookId,
+  isMine: publisherId === viewer.id,
   /** The publisher and administrators can take a book out of the public library. */
-  canRemove: r.user_id === viewer.id || isAdmin(viewer),
+  canRemove: publisherId === viewer.id || isAdmin(viewer),
 });
 
 /** A published book by id, or a 404 (unpublished books are invisible here). */
@@ -57,17 +69,22 @@ const loadPublic = (request: FastifyRequest<{ Params: { id: string } }>, reply: 
   );
 
 /**
- * Public library: books their owners published for every signed-in account.
- * Anyone can download the file or add a copy to their own library.
+ * The catalog list is the same for every viewer: it is read once (requests arriving meanwhile
+ * share the read) and kept until the public library changes (a `public.changed` broadcast), or
+ * for 5 minutes, for changes nothing broadcasts (the import script runs in its own process).
  */
-export async function publicRoutes(app: FastifyInstance) {
-  app.addHook("preHandler", requireUser);
+let catalog: { at: number; books: Promise<{ entry: ReturnType<typeof catalogEntry>; sha256: string; publisherId: string }[]> } | null = null;
+const CATALOG_MAX_AGE = 5 * 60_000;
+onBroadcast("public.changed", () => {
+  catalog = null;
+});
 
-  app.get("/api/public", async (request) => {
+function publicCatalog() {
+  if (!catalog || Date.now() - catalog.at > CATALOG_MAX_AGE) {
     // The same file published by several people is listed once (earliest publication). The
-    // dedup and the limit only look at ids (book_public_sha_idx); full rows and the viewer's
-    // own copy are fetched for the 1000 listed books only.
-    const { rows } = await query<PublicRow & { own_book_id: string | null }>(
+    // dedup and the limit only look at ids (book_public_sha_idx); the shown columns are fetched
+    // for the 1000 listed books only.
+    const books = query<CatalogRow>(
       `WITH pick AS (
          SELECT id, published_at FROM (
            SELECT DISTINCT ON (sha256) id, published_at FROM book
@@ -77,16 +94,43 @@ export async function publicRoutes(app: FastifyInstance) {
          ORDER BY published_at DESC
          LIMIT 1000
        )
-       SELECT b.*, u.name AS owner_name, cb.source, cb.source_url, cb.download_count,
-              (SELECT m.id FROM book m WHERE m.user_id = $1 AND m.sha256 = b.sha256) AS own_book_id
+       SELECT b.id, b.user_id, b.sha256, b.title, b.author, b.format, b.original_filename, b.size_bytes, b.has_cover,
+              b.language, b.tags, b.themes, b.published_at, b.created_at,
+              u.name AS owner_name, cb.source, cb.source_url, cb.download_count
        FROM pick JOIN book b ON b.id = pick.id JOIN "user" u ON u.id = b.user_id
        LEFT JOIN LATERAL (
          SELECT c.source, c.source_url, c.download_count FROM catalog_book c WHERE c.book_id = b.id LIMIT 1
        ) cb ON true
        ORDER BY pick.published_at DESC`,
-      [request.user.id],
-    );
-    return rows.map((r) => toPublicDto(r, request.user));
+    ).then(({ rows }) => rows.map((r) => ({ entry: catalogEntry(r), sha256: r.sha256, publisherId: r.user_id })));
+    const read = { at: Date.now(), books };
+    catalog = read;
+    // A failed read is not kept: the next request tries again.
+    books.catch(() => {
+      if (catalog === read) catalog = null;
+    });
+  }
+  return catalog.books;
+}
+
+/**
+ * Public library: books their owners published for every signed-in account.
+ * Anyone can download the file or add a copy to their own library.
+ */
+export async function publicRoutes(app: FastifyInstance) {
+  app.addHook("preHandler", requireUser);
+
+  app.get("/api/public", async (request) => {
+    const [books, own] = await Promise.all([
+      publicCatalog(),
+      // The viewer's copies of published files (at most one per file).
+      query<{ sha256: string; id: string }>(
+        "SELECT m.sha256, m.id FROM book m WHERE m.user_id = $1 AND EXISTS (SELECT 1 FROM book p WHERE p.sha256 = m.sha256 AND p.is_public)",
+        [request.user.id],
+      ),
+    ]);
+    const ownBook = new Map(own.rows.map((r) => [r.sha256, r.id]));
+    return books.map((b) => ({ ...b.entry, ...viewerPart(b.publisherId, ownBook.get(b.sha256) ?? null, request.user) }));
   });
 
   /** One public book, for its page: also how many people have it and its catalog subjects. */
@@ -104,7 +148,13 @@ export async function publicRoutes(app: FastifyInstance) {
     if (!r) return;
     const about = await aboutFile(r.sha256, null); // everyone who has it, the viewer included
     // The description only here: the catalog list leaves it out (up to 4000 characters per book).
-    return { ...toPublicDto(r, request.user), description: r.description, readers: about.readers, subjects: about.subjects };
+    return {
+      ...catalogEntry(r),
+      ...viewerPart(r.user_id, r.own_book_id, request.user),
+      description: r.description,
+      readers: about.readers,
+      subjects: about.subjects,
+    };
   });
 
   app.get<{ Params: { id: string } }>("/api/public/:id/cover", async (request, reply) => {

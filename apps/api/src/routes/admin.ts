@@ -1,9 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { hashPassword } from "better-auth/crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { requireUser } from "../auth.js";
+import { forgetSessions, requireUser } from "../auth.js";
 import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
+import { forgetAppPasswords } from "../lib/devices.js";
 import { broadcast, publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { audit, log } from "../lib/log.js";
@@ -159,6 +160,8 @@ export async function adminRoutes(app: FastifyInstance) {
         );
         // Signing them out everywhere makes the block immediate.
         if (blocked) await query(`DELETE FROM session WHERE "userId" = $1`, [target.id]);
+        forgetSessions(target.id);
+        forgetAppPasswords(target.id);
       }
       audit("admin.user_updated", { adminId: request.user.id, userId: target.id, quotaMb, blocked, ip: request.ip });
       return reply.code(204).send();
@@ -176,6 +179,7 @@ export async function adminRoutes(app: FastifyInstance) {
     ]);
     if (!res.rowCount) return reply.code(400).send({ error: "no_password_account" });
     await query(`DELETE FROM session WHERE "userId" = $1`, [target.id]);
+    forgetSessions(target.id);
     audit("admin.password_reset", { adminId: request.user.id, userId: target.id, ip: request.ip });
     return { password };
   });
@@ -194,6 +198,9 @@ export async function adminRoutes(app: FastifyInstance) {
     await audited("admin.user_deleted", fields, async () => {
       await deleteBooks(books);
       await query(`DELETE FROM "user" WHERE id = $1`, [target.id]);
+      // Its sessions and app passwords went with it (ON DELETE CASCADE).
+      forgetSessions(target.id);
+      forgetAppPasswords(target.id);
     });
     if (books.some((b) => b.is_public)) broadcast("public.changed", {});
     return reply.code(204).send();
