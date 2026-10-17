@@ -1,26 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { apiFetch } from "../lib/api";
+import { apiFetch, isNative, openApiCache } from "../lib/api";
+import { ObjectUrlCache } from "../lib/objectUrls";
+
+/** A book's own cover never changes: the Android app keeps it for offline use, as the service worker does on the web. */
+const OWN_COVER = /^\/api\/books\/[^/]+\/cover$/;
+
+async function load(path: string) {
+  const cache = isNative && OWN_COVER.test(path) ? await openApiCache() : null;
+  const kept = await cache?.match(path).catch(() => undefined);
+  if (kept) return kept.blob();
+  const res = await apiFetch(path);
+  if (!res.ok) return null;
+  if (cache) void cache.put(path, res.clone()).catch(() => {});
+  return res.blob();
+}
 
 /**
- * Object URLs per path. Covers never change for a given URL, and the same cover is
- * shown in several places at once (dashboard, grid, sidebar), so fetch each only once.
+ * Object URLs per path. Covers never change for a given URL, and the same cover is shown in
+ * several places at once (dashboard, grid, sidebar), so each is fetched only once; up to 150
+ * covers no longer shown stay ready, older ones are released.
  */
-const cache = new Map<string, Promise<string | null>>();
-
-function load(path: string) {
-  let p = cache.get(path);
-  if (!p) {
-    p = apiFetch(path)
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((b) => (b ? URL.createObjectURL(b) : null))
-      .catch(() => {
-        cache.delete(path); // retry next time
-        return null;
-      });
-    cache.set(path, p);
-  }
-  return p;
-}
+const images = new ObjectUrlCache(load, 150);
 
 /**
  * <img> for authenticated URLs (works with cookies on web and bearer tokens in the app).
@@ -43,9 +43,11 @@ export function AuthImage({ path, alt, className }: { path: string; alt: string;
   useEffect(() => {
     if (!near) return;
     let cancelled = false;
-    void load(path).then((url) => !cancelled && setSrc(url));
+    const image = images.acquire(path);
+    void image.url.then((url) => !cancelled && setSrc(url));
     return () => {
       cancelled = true;
+      image.release();
     };
   }, [path, near]);
 

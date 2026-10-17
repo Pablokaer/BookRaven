@@ -220,8 +220,8 @@ export function AppShell({ user }: { user: { name: string; email: string } }) {
         {!online && (
           <div className="flex items-center gap-2 border-b border-amber-400/30 bg-amber-400/10 px-6 py-2 text-xs text-amber-200" role="status">
             <CloudOff className="h-4 w-4 shrink-0" />
-            You are offline. Your saved library is shown; books you opened before (or saved for offline) can still be read, and your progress
-            syncs when you are back online.
+            You are offline. Your saved library is shown; books saved for offline can still be read, and so can the pages you already read of
+            other books. Your progress syncs when you are back online.
           </div>
         )}
 

@@ -17,17 +17,20 @@ jobs:
           POSTGRES_DB: readsync_test
         ports:
           - 5432:5432
+        # Checked every second, so the job starts as soon as Postgres is up; it may take up to a minute.
         options: >-
           --health-cmd "pg_isready -U readsync -d readsync_test"
-          --health-interval 5s
+          --health-interval 1s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 60
     env:
       DATABASE_URL: postgres://readsync:readsync@localhost:5432/readsync_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false # nothing here uses git after the checkout
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm

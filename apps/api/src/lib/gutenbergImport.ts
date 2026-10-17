@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { query } from "../db.js";
+import { broadcast } from "./events.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
 import { partialMd5OfFile } from "./koreader.js";
 import { isFileBlocked } from "./moderation.js";
@@ -155,6 +156,9 @@ export async function storePublicBook(
       bookId,
     ],
   );
+  // Reaches the API's catalog cache when the import runs inside it. The import script is a process
+  // of its own, with no one to tell: there the API's copy expires within 5 minutes.
+  broadcast("public.changed", {});
   return title;
 }
 

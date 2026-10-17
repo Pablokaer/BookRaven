@@ -123,3 +123,7 @@ declare module "foliate-js/mobi.js" {
 declare module "foliate-js/vendor/fflate.js" {
   export function unzlibSync(data: Uint8Array): Uint8Array;
 }
+
+// The page layouts view.js loads (the app only fetches them ahead, see App.tsx).
+declare module "foliate-js/paginator.js";
+declare module "foliate-js/fixed-layout.js";

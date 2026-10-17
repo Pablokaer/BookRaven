@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openComicArchive } from "./comics";
-import { CHUNK, forgetSaved, lazyBlob, openRemoteFile, saveWholeFile } from "./rangeFile";
+import { CHUNK, forgetSaved, lazyBlob, missingRun, openRemoteFile, saveWholeFile, STORAGE_FULL } from "./rangeFile";
 
 /** A server holding `data` that answers range requests (or, with `ranges: false`, sends it whole). */
 function serve(data: Uint8Array, { ranges = true } = {}) {
@@ -205,5 +205,72 @@ describe("saved files", () => {
     store.set("/books/s/part/7", new Response("x"));
     await forgetSaved("/books/s");
     expect([...store.keys()]).toEqual(["/books/t/part/0"]);
+  });
+});
+
+/** Cache Storage kept in memory (`full` makes saving pieces fail as on a full device). */
+function memoryCache({ full = false } = {}) {
+  const store = new Map<string, Response>();
+  const name = (k: string | Request) => (typeof k === "string" ? k : new URL(k.url).pathname);
+  const cache = {
+    put: async (k: string, r: Response) => {
+      if (full && name(k).includes("/part/")) throw new DOMException("No room left", "QuotaExceededError");
+      store.set(name(k), r);
+    },
+    match: async (k: string) => store.get(name(k))?.clone(),
+    delete: async (k: string | Request) => store.delete(name(k)),
+    keys: async () => [...store.keys()].map((k) => new Request(new URL(k, "http://localhost"))),
+  };
+  vi.stubGlobal("caches", { open: async () => cache });
+  return store;
+}
+
+describe("saving a whole book", () => {
+  it("finds the runs of pieces still missing, up to a size", () => {
+    const have = new Set([0, 1, 5, 9]);
+    const missing = (i: number) => !have.has(i);
+    expect(missingRun(missing, 0, 10, 32)).toEqual([2, 4]);
+    expect(missingRun(missing, 5, 10, 32)).toEqual([6, 8]);
+    expect(missingRun(missing, 6, 10, 2)).toEqual([6, 7]);
+    expect(missingRun(missing, 9, 10, 32)).toBeNull();
+    expect(missingRun(() => false, 0, 10, 32)).toBeNull();
+  });
+
+  it("downloads only the pieces the device doesn't have, without the HTTP cache, and keeps the file whole", async () => {
+    const data = bytes(10 * CHUNK);
+    const store = memoryCache();
+    store.set("/books/f/parts", new Response(JSON.stringify({ size: data.length, parts: [0, 1, 2, 5, 6] })));
+    for (const n of [0, 1, 2, 5, 6]) store.set(`/books/f/part/${n}`, new Response(data.slice(n * CHUNK, (n + 1) * CHUNK)));
+    const requests = serve(data);
+    const cacheModes = vi.mocked(fetch).mock.calls;
+
+    const file = await openRemoteFile("/api/books/f/file", "/books/f");
+    await file.fill!();
+
+    expect(requests).toEqual([`bytes=${3 * CHUNK}-${5 * CHUNK - 1}`, `bytes=${7 * CHUNK}-${10 * CHUNK - 1}`]);
+    expect(cacheModes.every(([, init]) => (init as RequestInit).cache === "no-store")).toBe(true);
+    expect([...store.keys()]).toEqual(["/books/f"]);
+    expect(new Uint8Array(await (await store.get("/books/f")!.clone().blob()).arrayBuffer())).toEqual(data);
+  });
+
+  it("says when the device has no room for it", async () => {
+    memoryCache({ full: true });
+    serve(bytes(3 * CHUNK));
+    const full = vi.fn();
+    window.addEventListener(STORAGE_FULL, full);
+    const file = await openRemoteFile("/api/books/g/file", "/books/g");
+    await expect(file.fill!()).rejects.toMatchObject({ name: "QuotaExceededError" });
+    expect(full).toHaveBeenCalled();
+    window.removeEventListener(STORAGE_FULL, full);
+  });
+
+  it("stops when told to (another book was opened)", async () => {
+    memoryCache();
+    const requests = serve(bytes(100 * CHUNK));
+    const file = await openRemoteFile("/api/books/h/file", "/books/h");
+    let asked = 0;
+    await file.fill!(() => ++asked <= 1);
+    // The first piece came with the open, then one run of at most 2 MB.
+    expect(requests).toEqual([`bytes=0-${CHUNK - 1}`, `bytes=${CHUNK}-${33 * CHUNK - 1}`]);
   });
 });

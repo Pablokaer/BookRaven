@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
-import { createAppPassword } from "../lib/devices.js";
+import { createAppPassword, forgetAppPasswords } from "../lib/devices.js";
 import { obj, UUID_RE } from "../lib/http.js";
 import { audit } from "../lib/log.js";
 
@@ -36,7 +36,10 @@ export async function deviceRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>("/api/app-passwords/:id", async (request, reply) => {
     if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
     const { rowCount } = await query("DELETE FROM app_password WHERE id = $1 AND user_id = $2", [request.params.id, request.user.id]);
-    if (rowCount) audit("app_password.revoked", { userId: request.user.id, appPasswordId: request.params.id, ip: request.ip });
+    if (rowCount) {
+      forgetAppPasswords(request.user.id);
+      audit("app_password.revoked", { userId: request.user.id, appPasswordId: request.params.id, ip: request.ip });
+    }
     return reply.code(204).send();
   });
 }

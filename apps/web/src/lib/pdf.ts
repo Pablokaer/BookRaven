@@ -5,5 +5,5 @@ import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-export { pdfjs };
+export { pdfjs, workerUrl };
 export type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";

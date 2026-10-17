@@ -1,7 +1,8 @@
 /*
  * BookRaven service worker: the app opens and shows your library without a connection.
  * - the app shell and its hashed assets are cached as they load; on a slow connection the
- *   cached shell opens the app after a few seconds while the network copy is still fetched;
+ *   cached shell opens the app after a few seconds while the network copy is still fetched
+ *   (the web app manifest, not hashed, is network-first);
  * - library data (books list, collections, settings, highlights, book pages, session) is
  *   network-first with the last good copy as the offline fallback; covers never change for a
  *   book, so a cached cover is used without asking the server;
@@ -53,9 +54,16 @@ async function networkFirst(event, cacheName) {
     return response;
   } catch (err) {
     const cached = await caches.match(request, { cacheName });
-    if (cached) return cached;
+    if (cached) return offlineCopy(cached);
     throw err;
   }
+}
+
+/** Marks an answer taken from the cache, so the app can tell it from the server's (src/lib/api.ts). */
+function offlineCopy(response) {
+  const headers = new Headers(response.headers);
+  headers.set("X-Offline-Copy", "1");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
 async function cacheFirst(event, cacheName) {
@@ -111,8 +119,11 @@ self.addEventListener("fetch", (event) => {
     // Registered before the page reads the response, so the copy is taken first.
     event.waitUntil(network.then((response) => response.ok && saveShell(response.clone())).catch(() => {}));
     event.respondWith(openShell(network));
-  } else if (url.pathname.startsWith("/assets/") || /\.(woff2?|svg|webmanifest)$/.test(url.pathname)) {
+  } else if (url.pathname.startsWith("/assets/") || /\.(woff2?|svg)$/.test(url.pathname)) {
     event.respondWith(cacheFirst(event, APP));
+  } else if (url.pathname.endsWith(".webmanifest")) {
+    // Not hashed: a changed name, color or icon reaches installed apps; the copy is for offline.
+    event.respondWith(networkFirst(event, APP));
   } else if (COVER.test(url.pathname)) {
     event.respondWith(cacheFirst(event, API));
   } else if (API_CACHED.some((re) => re.test(url.pathname))) {

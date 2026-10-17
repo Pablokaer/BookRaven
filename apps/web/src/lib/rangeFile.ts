@@ -15,6 +15,8 @@ export interface RangeFile {
   prefetch?(start: number, end: number): void;
   /** Bytes [start, end), downloaded exactly and not kept (a few bytes out of a big piece, like an image header). */
   peek?(start: number, end: number): Promise<Uint8Array>;
+  /** Downloads and saves what the device doesn't have yet, while `keepGoing()` allows (see RemoteFile.fill). */
+  fill?(keepGoing?: () => boolean): Promise<void>;
 }
 
 /** A file already on the device. */
@@ -30,6 +32,10 @@ const MAX_READAHEAD = 2 * 1024 * 1024;
 const MEMORY_LIMIT = 24 * 1024 * 1024;
 const PARALLEL_REQUESTS = 4;
 export const BOOK_CACHE = "readsync-books-v1";
+/** Sent on window when the device has no room left for a book's pieces (lib/deviceStorage.ts makes some). */
+export const STORAGE_FULL = "readsync:storage-full";
+
+const isQuotaError = (err: unknown) => (err as { name?: string } | null)?.name === "QuotaExceededError";
 
 /** Cache Storage keys: `<key>` is a whole saved file, `<key>/part/<n>` its pieces. */
 const partKey = (key: string, n: number) => `${key}/part/${n}`;
@@ -95,6 +101,19 @@ class RequestQueue {
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * The first run of pieces from `from` on (of `count`) for which `missing` is true, at most `max`
+ * long: [first, last], or null when none is missing.
+ */
+export function missingRun(missing: (i: number) => boolean, from: number, count: number, max: number): [number, number] | null {
+  let first = from;
+  while (first < count && !missing(first)) first++;
+  if (first >= count) return null;
+  let last = first;
+  while (last + 1 < count && last + 1 - first < max && missing(last + 1)) last++;
+  return [first, last];
+}
+
 class RemoteFile implements RangeFile {
   private memory = new Map<number, Uint8Array>();
   private memoryBytes = 0;
@@ -105,6 +124,10 @@ class RemoteFile implements RangeFile {
   private manifestTimer: ReturnType<typeof setTimeout> | null = null;
   /** Set once every piece is saved and they were joined into one file. */
   private whole: Blob | null = null;
+  private joining: Promise<void> | null = null;
+  /** Pieces being written to Cache Storage, and why the last write failed (no space left…). */
+  private writes = new Set<Promise<void>>();
+  private writeError: unknown = null;
   private readonly chunks: number;
 
   constructor(
@@ -130,7 +153,8 @@ class RemoteFile implements RangeFile {
       .catch(() => null);
     if (manifest) return new RemoteFile(manifest.size, path, key, cache, new Set(manifest.parts));
 
-    const res = await apiFetch(path, { headers: { Range: `bytes=0-${CHUNK - 1}` } });
+    // The pieces are kept in Cache Storage: the browser's HTTP cache needn't keep them too.
+    const res = await apiFetch(path, { headers: { Range: `bytes=0-${CHUNK - 1}` }, cache: "no-store" });
     if (res.status === 206) {
       const size = Number(/\/(\d+)\s*$/.exec(res.headers.get("Content-Range") ?? "")?.[1]);
       if (!Number.isFinite(size) || size <= 0) throw new Error("The server did not say how big this book is.");
@@ -155,6 +179,26 @@ class RemoteFile implements RangeFile {
 
   prefetch(start: number, end: number) {
     void this.load(start, end, 0, false).catch(() => {});
+  }
+
+  /**
+   * Downloads the pieces not saved on the device yet, a run at a time behind what the reader asks
+   * for, while `keepGoing()` allows, and joins them into one saved file. Rejects when some could
+   * not be downloaded or saved (a QuotaExceededError when there is no room left).
+   */
+  async fill(keepGoing = () => true) {
+    if (!this.cache) throw new Error("This browser can't keep books on the device.");
+    const unsaved = (i: number) => !this.saved.has(i) && !this.pending.has(i);
+    const max = MAX_READAHEAD / CHUNK;
+    for (let run = missingRun(unsaved, 0, this.chunks, max); run && keepGoing(); run = missingRun(unsaved, run[1] + 1, this.chunks, max)) {
+      await Promise.all(this.fetchRun(run[0], run[1], false).values());
+    }
+    // Pieces the reader was downloading meanwhile, then every write.
+    await Promise.allSettled(this.pending.values());
+    await Promise.allSettled(this.writes);
+    if (this.whole || !keepGoing()) return;
+    if (this.saved.size < this.chunks) throw this.writeError ?? new Error("Part of the book could not be saved.");
+    await this.join();
   }
 
   async peek(start: number, end: number) {
@@ -210,7 +254,7 @@ class RemoteFile implements RangeFile {
 
   /** Bytes [from, to) in one request (a server without range support sends the whole file). */
   private async fetchBytes(from: number, to: number) {
-    const res = await apiFetch(this.path, { headers: { Range: `bytes=${from}-${to - 1}` } });
+    const res = await apiFetch(this.path, { headers: { Range: `bytes=${from}-${to - 1}` }, cache: "no-store" });
     if (!res.ok) throw new ApiError(res.status, null);
     const data = new Uint8Array(await res.arrayBuffer());
     return res.status === 200 ? data.subarray(from, to) : data;
@@ -290,13 +334,19 @@ class RemoteFile implements RangeFile {
   private store(i: number, c: Uint8Array) {
     this.remember(i, c);
     if (!this.cache || this.saved.has(i) || this.whole) return;
-    void this.cache
-      .put(partKey(this.key, i), new Response(c as BlobPart))
-      .then(() => {
+    const write = this.cache.put(partKey(this.key, i), new Response(c as BlobPart)).then(
+      () => {
         this.saved.add(i);
         this.saveManifest();
-      })
-      .catch(() => {});
+      },
+      (err) => {
+        // The piece stays in memory; with no room left, older books can make some.
+        this.writeError = err;
+        if (isQuotaError(err)) window.dispatchEvent(new Event(STORAGE_FULL));
+      },
+    );
+    this.writes.add(write);
+    void write.finally(() => this.writes.delete(write));
   }
 
   private saveManifest() {
@@ -309,8 +359,12 @@ class RemoteFile implements RangeFile {
     }, 500);
   }
 
-  /** Every piece is on the device: keep them as one saved file. */
-  private async join() {
+  /** Every piece is on the device: keep them as one saved file (once, however many ask). */
+  private join() {
+    return (this.joining ??= this.joinParts().finally(() => (this.joining = null)));
+  }
+
+  private async joinParts() {
     const cache = this.cache;
     if (!cache || this.whole) return;
     try {
@@ -324,8 +378,9 @@ class RemoteFile implements RangeFile {
       if (whole.size !== this.size) return;
       this.whole = whole;
       await saveWholeFile(this.key, whole, this.saved);
-    } catch {
-      /* the pieces stay; joining is tried again on the next open */
+    } catch (err) {
+      // The pieces stay; joining is tried again on the next open.
+      if (isQuotaError(err)) window.dispatchEvent(new Event(STORAGE_FULL));
     }
   }
 }
@@ -337,6 +392,9 @@ let lastOpened: { key: string; file: Promise<RangeFile> } | null = null;
 export function forgetOpenedFile() {
   lastOpened = null;
 }
+
+/** Whether the file saved under `key` is the one opened last (the book being read). */
+export const isOpenFile = (key: string) => lastOpened?.key === key;
 
 /** Opens the file at API `path` for range reads, saved on the device under `key`. */
 export function openRemoteFile(path: string, key: string): Promise<RangeFile> {

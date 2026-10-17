@@ -1,6 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { execFileSync } from "node:child_process";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { defineConfig } from "vite";
 import { nativeVersion } from "./scripts/native-version.mjs";
 
@@ -16,7 +18,16 @@ export default defineConfig(({ mode }) => {
       __NATIVE_VERSION__: JSON.stringify(native ? nativeVersion() : ""),
       __BUNDLE_VERSION__: JSON.stringify(bundleVersion),
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // The Android app never shows the link-preview image: keep it out of the APK and live
+      // updates (App.tsx leaves out the landing page and its plates the same way).
+      native && {
+        name: "native-without-web-files",
+        writeBundle: ({ dir }) => rmSync(join(dir!, "og-image.png"), { force: true }),
+      },
+    ],
     server: {
       port: 5173,
       proxy: {

@@ -26,9 +26,10 @@ jobs:
       APP_DIR: ${{ vars.VPS_APP_DIR || '/opt/mico-livrao' }}
       SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.COMMIT }}
+          persist-credentials: false # nothing here uses git after the checkout
 
       # Writes the key and an `ssh vps` alias, then waits until the VPS answers (infra/ci-ssh.sh).
       - name: SSH to the VPS
@@ -69,11 +70,12 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.key.outputs.enabled
         with:
           ref: ${{ env.COMMIT }}
           fetch-depth: 0 # the commit count is the APK's versionCode
+          persist-credentials: false
 
       # The app talks to the server's PUBLIC_URL: the PUBLIC_URL variable, or the one in the server's .env.
       - name: Server URL
@@ -112,24 +114,30 @@ jobs:
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.changes.outputs.build
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.changes.outputs.build
         with:
           node-version: 22
           cache: pnpm
-      # Gradle's downloads (the Android Gradle plugin, aapt2, libraries) are cached between runs.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         if: steps.changes.outputs.build
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
-          cache-dependency-path: |
-            apps/web/android/**/*.gradle*
-            apps/web/android/gradle/wrapper/gradle-wrapper.properties
-            pnpm-lock.yaml
+      # Gradle's downloads (Gradle itself, the Android Gradle plugin, aapt2, libraries) and its build
+      # cache are kept between runs. The key follows the Gradle files and the lockfile (Capacitor
+      # plugins bring their own Gradle dependencies). When it changes, the newest older entry is
+      # restored instead of starting cold, and the run saves a new one.
+      - uses: actions/cache@v6
+        if: steps.changes.outputs.build
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/web/android/**/*.gradle*', 'apps/web/android/gradle/wrapper/gradle-wrapper.properties', 'pnpm-lock.yaml') }}
+          restore-keys: gradle-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build
         if: steps.changes.outputs.build
@@ -147,15 +155,18 @@ jobs:
           pnpm exec vite build --mode native
           pnpm exec cap sync android
           # Downloads from dl.google.com sometimes time out, so a failed Gradle build is tried again.
+          # --build-cache and --parallel are set here, not in android/gradle.properties: android/ is
+          # part of the app's native fingerprint (scripts/native-version.mjs), and changing it would
+          # make every installed app ask for a new APK.
           for attempt in 1 2 3; do
-            (cd android && ./gradlew --no-daemon assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME") && break
+            (cd android && ./gradlew --no-daemon --build-cache --parallel assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME") && break
             if [ "$attempt" = 3 ]; then exit 1; fi
             echo "::warning::Gradle build failed (attempt $attempt of 3), trying again"
             sleep 20
           done
           node scripts/android-release.mjs "$RUNNER_TEMP/android-release"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.changes.outputs.build
         with:
           name: android-release
@@ -175,11 +186,12 @@ jobs:
       APP_DIR: ${{ vars.VPS_APP_DIR || '/opt/mico-livrao' }}
       SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.COMMIT }}
+          persist-credentials: false # nothing here uses git after the checkout
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android-release
           path: android-release

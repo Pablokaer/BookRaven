@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { copyOrReply } from "../lib/copies.js";
-import { memberIds, notifyMembers } from "../lib/clubs.js";
+import { forgetClubMembership, memberIds, notifyMembers } from "../lib/clubs.js";
 import { publish } from "../lib/events.js";
 import { findOr404, obj, TOKEN_RE, UUID_RE } from "../lib/http.js";
 import { sendCover, type BookRow } from "./books.js";
@@ -89,6 +89,7 @@ export async function clubRoutes(app: FastifyInstance) {
         [name.trim(), description?.trim() || null, request.user.id, book.sha256, book.title, book.author, book.has_cover ? book.id : null, newToken()],
       );
       await query("INSERT INTO club_member (club_id, user_id) VALUES ($1, $2)", [rows[0]!.id, request.user.id]);
+      forgetClubMembership([request.user.id]);
       return reply.code(201).send({ ...summary({ ...rows[0]!, members: "1", my_book_id: book.id }, request.user.id), inviteToken: rows[0]!.invite_token });
     },
   );
@@ -224,6 +225,7 @@ export async function clubRoutes(app: FastifyInstance) {
     const copy = await copyOrReply(reply, src[0], request.user, club.owner_name);
     if (!copy) return;
     const joined = await query("INSERT INTO club_member (club_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [club.id, request.user.id]);
+    forgetClubMembership([request.user.id]);
     if (joined.rowCount) await notifyMembers(club.id, "club.member", { clubId: club.id, name: request.user.name });
     return { clubId: club.id, bookId: copy.id };
   });
@@ -245,6 +247,7 @@ export async function clubRoutes(app: FastifyInstance) {
     if (target === club.owner_id) return reply.code(400).send({ error: "owner_cannot_leave" });
     if (target !== request.user.id && club.owner_id !== request.user.id) return reply.code(403).send({ error: "forbidden" });
     await query("DELETE FROM club_member WHERE club_id = $1 AND user_id = $2", [club.id, target]);
+    forgetClubMembership([target]);
     await notifyMembers(club.id, "club.member", { clubId: club.id });
     return reply.code(204).send();
   });
@@ -255,6 +258,7 @@ export async function clubRoutes(app: FastifyInstance) {
     if (club.owner_id !== request.user.id) return reply.code(403).send({ error: "forbidden" });
     const ids = await memberIds(club.id);
     await query("DELETE FROM club WHERE id = $1", [club.id]);
+    forgetClubMembership(ids);
     for (const id of ids) publish(id, "club.deleted", { clubId: club.id });
     return reply.code(204).send();
   });

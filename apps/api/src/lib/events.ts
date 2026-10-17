@@ -34,8 +34,19 @@ export function publish(userId: string, event: string, data: unknown) {
   if (set) send(set, frame(event, data));
 }
 
+const listeners = new Map<string, (() => void)[]>();
+
+/**
+ * Runs `fn` whenever `event` is broadcast in this process, before it goes out: e.g. to forget a
+ * cache it makes stale, so the clients that reload on it get fresh data.
+ */
+export function onBroadcast(event: string, fn: () => void) {
+  listeners.set(event, [...(listeners.get(event) ?? []), fn]);
+}
+
 /** Sends an event to every connected user (e.g. the public library changed). */
 export function broadcast(event: string, data: unknown) {
+  for (const fn of listeners.get(event) ?? []) fn();
   const payload = frame(event, data);
   for (const set of streams.values()) send(set, payload);
 }

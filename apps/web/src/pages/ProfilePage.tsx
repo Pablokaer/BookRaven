@@ -1,12 +1,13 @@
-import { ArrowRight, Import, KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { ArrowRight, HardDriveDownload, Import, KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
 import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { PasswordField } from "../components/ui/Field";
 import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
+import { clearDeviceBooks, deviceUsage } from "../lib/deviceStorage";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { useSettings } from "../lib/settings";
@@ -60,6 +61,44 @@ function ChangePassword() {
           {message && <p className={`text-sm ${message.ok ? "text-accent" : "text-rose-300"}`}>{message.text}</p>}
         </div>
       </form>
+    </section>
+  );
+}
+
+/** What this device keeps (downloaded books, covers, the library for offline use), and a way to free it. */
+function DeviceStorage() {
+  const [usage, setUsage] = useState<{ bytes: number | null; books: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const measure = useCallback(() => {
+    deviceUsage()
+      .then(setUsage)
+      .catch(() => {});
+  }, []);
+  useEffect(measure, [measure]);
+
+  const clear = async () => {
+    if (!window.confirm("Remove the downloaded books from this device? They stay in your library and download again when you open them.")) return;
+    setBusy(true);
+    await clearDeviceBooks().catch(() => {});
+    setBusy(false);
+    measure();
+  };
+
+  const books = usage?.books ?? 0;
+  return (
+    <section className="surface flex flex-wrap items-center gap-4 p-6">
+      <div className="mr-auto">
+        <h2 className="flex items-center gap-2 text-sm font-medium">
+          <HardDriveDownload className="h-4 w-4 text-accent" /> On this device: {usage?.bytes != null ? fileSize(usage.bytes) : "–"}
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          {books === 1 ? "1 downloaded book" : `${books} downloaded books`}, covers and your library for offline use. Books saved for offline stay;
+          the others make room when space runs short.
+        </p>
+      </div>
+      <button className="btn-outline" disabled={busy || !books} onClick={() => void clear()}>
+        {busy ? "Clearing…" : "Clear downloaded books"}
+      </button>
     </section>
   );
 }
@@ -126,6 +165,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       <section className="surface p-6">
         <StorageMeter />
       </section>
+
+      <DeviceStorage />
 
       <ChangePassword />
 

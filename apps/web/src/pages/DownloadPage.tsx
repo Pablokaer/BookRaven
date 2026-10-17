@@ -147,7 +147,10 @@ function GetTheApp() {
               Google sign-in isn’t available in the app yet. If you signed up with Google, set a password with <b>Forgot password</b> on the
               sign-in screen.
             </li>
-            <li>Books you open or save for offline can be read without a connection; your progress syncs when you are back online.</li>
+            <li>
+              The app opens without a connection: books you save for offline can be read (and the pages you already read of others), and
+              your progress syncs when you are back online.
+            </li>
           </ul>
         </section>
       </div>

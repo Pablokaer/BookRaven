@@ -18,11 +18,15 @@ async function orUnavailable<T>(reply: FastifyReply, fn: () => Promise<T>) {
     if (err instanceof LookupUnavailableError || (err as Error).name === "TimeoutError") {
       // Without a message the provider is simply turned off: nothing went wrong.
       if ((err as Error).message) reply.log.warn({ err }, "lookup service unavailable");
+      reply.removeHeader("cache-control"); // an outage is not worth remembering
       return reply.code(503).send({ error: "unavailable" });
     }
     throw err;
   }
 }
+
+/** Definitions don't change from one day to the next: the browser may reuse an answer for a day. */
+const keepForADay = (reply: FastifyReply) => reply.header("Cache-Control", "private, max-age=86400");
 
 export async function lookupRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
@@ -36,6 +40,7 @@ export async function lookupRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const word = cleanWord(request.query.word);
       if (!word) return reply.code(400).send({ error: "invalid_word" });
+      keepForADay(reply);
       return orUnavailable(reply, async () => (await define(word, request.query.lang ?? null)) ?? reply.code(404).send({ error: "not_found" }));
     },
   );
@@ -56,7 +61,11 @@ export async function lookupRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const word = cleanWord(request.query.word);
       if (!word || /\s/.test(word)) return reply.code(400).send({ error: "invalid_word" });
-      return orUnavailable(reply, () => lookupWord(word, { to: request.query.to, from: request.query.from, book: request.query.lang ?? null }));
+      return orUnavailable(reply, async () => {
+        const { lookup, complete } = await lookupWord(word, { to: request.query.to, from: request.query.from, book: request.query.lang ?? null });
+        if (complete) keepForADay(reply);
+        return lookup;
+      });
     },
   );
 
