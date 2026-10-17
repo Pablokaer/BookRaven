@@ -2,8 +2,8 @@
  * Cormorant Garamond (headings, book titles and literary accents), weights 500, 600 and 700 and
  * italic 500: the same faces and unicode ranges as @fontsource/cormorant-garamond, Latin and Latin
  * Extended, in WOFF2 only. Each file is downloaded only when text on the page needs it; the Latin
- * 500 and 600 faces are also preloaded by index.html, as the front page's title and the app's
- * headings need them on the first screen.
+ * 600 face (the app's headings) is also preloaded by index.html, and the Latin 500 face (the front
+ * page and sign-in titles) is requested by App.tsx as soon as the visitor is known to be signed out.
  */
 
 /* Georgia resized to Cormorant's width and line metrics, shown while the web font loads: the swap

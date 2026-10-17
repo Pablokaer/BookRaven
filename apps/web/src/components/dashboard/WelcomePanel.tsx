@@ -32,7 +32,6 @@ export function WelcomePanel({ name }: { name: string }) {
         src={clouds900}
         alt=""
         decoding="async"
-        fetchPriority="high"
         className="absolute inset-0 h-full w-full object-cover object-[70%_20%]"
       />
       <div className="absolute inset-0 bg-gradient-to-r from-app/95 via-app/70 to-app/20" />

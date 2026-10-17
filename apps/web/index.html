@@ -9,8 +9,9 @@
     <link rel="icon" href="/icon-192.png" sizes="192x192" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <!-- Headings' font (see src/displayFont.css), fetched with the page instead of after the CSS. -->
-    <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-500-normal.woff2" />
+    <!-- The app headings' font (see src/displayFont.css), fetched with the page instead of after the
+         CSS. The 500 face of the front page and sign-in titles is requested by App.tsx once the
+         visitor turns out to be signed out. -->
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-normal.woff2" />
     <title>BookRaven</title>
     <meta name="description" content="Your books, on every device. A self-hosted reader for ebooks, PDFs and comics with synced progress." />

@@ -8,11 +8,13 @@
 /* Components layer, so Tailwind utilities (hidden, sm:…) still win over these. */
 @layer components {
   :root {
-    /* Dark specks for parchment, and the same specks in white for the night sections. Drawn in
-       their final color, so no layer needs a filter or a blend mode: over a solid background,
-       black specks look the same blended normally as multiplied, and white ones as screened. */
-    --lit-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    --lit-grain-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    /* Dark specks for parchment, and the same specks in white for the night sections: 160px
+       tiles of fractal noise (4.7 KB each), so the browser only decodes an image instead of
+       computing the noise at the screen's resolution. Drawn in their final color, so no layer needs
+       a filter or a blend mode: over a solid background, black specks look the same blended
+       normally as multiplied, and white ones as screened. */
+    --lit-grain: url("./assets/grain-dark.webp");
+    --lit-grain-light: url("./assets/grain-light.webp");
   }
   .lit {
     background: var(--color-midnight);
