@@ -3,6 +3,9 @@
 		# Proxies whose X-Forwarded-For / -Proto headers are believed. Set TRUSTED_PROXIES=private_ranges
 		# when another web server on the host (Apache, nginx) proxies to this Caddy.
 		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32}
+		# The client is the last address that isn't a trusted proxy: the ones before it in
+		# X-Forwarded-For may have been written by the client itself.
+		trusted_proxies_strict
 	}
 }
 
@@ -13,6 +16,9 @@
 	@api path /api/* /opds /opds/* /kosync/*
 	handle @api {
 		reverse_proxy api:3000 {
+			# The API takes the client's address from here (rate limits, audit trail): only the one
+			# worked out above, never a chain the client could have started.
+			header_up X-Forwarded-For {client_ip}
 			# Server-Sent Events must not be buffered
 			flush_interval -1
 			# While a deploy restarts the API, requests wait for it (up to 15 s) instead of failing with 502

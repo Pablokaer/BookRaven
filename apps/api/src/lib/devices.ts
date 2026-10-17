@@ -28,9 +28,13 @@ export async function createAppPassword(userId: string, name: string) {
 
 /**
  * Checks an email + app password. `secret` is the password itself (HTTP Basic, OPDS)
- * or its md5 (KOReader). Blocked accounts are refused.
+ * or its md5 (KOReader). Null when it is wrong; a blocked account's right password comes
+ * back with `blocked`, and must be refused too.
  */
-export async function verifyAppPassword(email: string, secret: { password?: string; md5?: string }): Promise<SessionUser | null> {
+export async function verifyAppPassword(
+  email: string,
+  secret: { password?: string; md5?: string },
+): Promise<{ user: SessionUser; blocked: boolean } | null> {
   const key = secret.md5 ?? (secret.password !== undefined ? md5(secret.password) : null);
   if (!key || !/^[0-9a-f]{32}$/i.test(key)) return null;
   const want = Buffer.from(hashFromMd5(key), "hex");
@@ -41,11 +45,13 @@ export async function verifyAppPassword(email: string, secret: { password?: stri
     [email.trim()],
   );
   const match = rows.find((r) => timingSafeEqual(Buffer.from(r.hash, "hex"), want));
-  if (!match || (await isAccountBlocked(match.user_id))) return null;
+  if (!match) return null;
+  const user = { id: match.user_id, email: match.email, name: match.name };
+  if (await isAccountBlocked(match.user_id)) return { user, blocked: true };
   // Every OPDS/KOReader request signs in: refresh "last used" at most once a minute.
   await query(
     "UPDATE app_password SET last_used_at = now() WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '1 minute')",
     [match.id],
   );
-  return { id: match.user_id, email: match.email, name: match.name };
+  return { user, blocked: false };
 }

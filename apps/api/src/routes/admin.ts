@@ -45,6 +45,21 @@ async function deleteBooks(books: { id: string; user_id: string; sha256: string 
   );
 }
 
+/**
+ * Runs an administrator's destructive action and audits it: `event` once it is done (it may fill
+ * counts into `fields` meanwhile), `<event>_failed` (warn, with the error) if it stops halfway,
+ * since part of it (books, files) may already be gone.
+ */
+async function audited(event: string, fields: Record<string, unknown>, action: () => Promise<void>) {
+  try {
+    await action();
+  } catch (err) {
+    audit(`${event}_failed`, { ...fields, err }, "warn");
+    throw err;
+  }
+  audit(event, fields);
+}
+
 type UserRow = {
   id: string;
   name: string;
@@ -174,10 +189,13 @@ export async function adminRoutes(app: FastifyInstance) {
       "SELECT id, user_id, sha256, is_public FROM book WHERE user_id = $1",
       [target.id],
     );
-    await deleteBooks(books);
-    await query(`DELETE FROM "user" WHERE id = $1`, [target.id]);
+    // With the email: once the account is gone, its id leads nowhere.
+    const fields = { adminId: request.user.id, userId: target.id, email: target.email, books: books.length, ip: request.ip };
+    await audited("admin.user_deleted", fields, async () => {
+      await deleteBooks(books);
+      await query(`DELETE FROM "user" WHERE id = $1`, [target.id]);
+    });
     if (books.some((b) => b.is_public)) broadcast("public.changed", {});
-    audit("admin.user_deleted", { adminId: request.user.id, userId: target.id, books: books.length, ip: request.ip });
     return reply.code(204).send();
   });
 
@@ -249,37 +267,31 @@ export async function adminRoutes(app: FastifyInstance) {
       if (!report) return;
       const { action, note } = request.body;
 
-      let removed = 0;
-      if (action !== "dismiss") await unpublishFile(report.sha256);
-      if (action === "block" || action === "purge") {
-      await query(
-        `INSERT INTO blocked_file (sha256, title, reason, blocked_by) VALUES ($1, $2, $3, $4) ON CONFLICT (sha256) DO NOTHING`,
-        [report.sha256, report.title, note?.trim() || report.reason, request.user.id],
-      );
-      }
-      if (action === "purge") {
-      const { rows: books } = await query<{ id: string; user_id: string; sha256: string }>("SELECT id, user_id, sha256 FROM book WHERE sha256 = $1", [
-        report.sha256,
-      ]);
-      await deleteBooks(books);
-      removed = books.length;
-      }
+      const fields = { adminId: request.user.id, reportId: request.params.id, sha256: report.sha256, action, removedCopies: 0, ip: request.ip };
+      await audited("admin.report_resolved", fields, async () => {
+        if (action !== "dismiss") await unpublishFile(report.sha256);
+        if (action === "block" || action === "purge") {
+          await query(
+            `INSERT INTO blocked_file (sha256, title, reason, blocked_by) VALUES ($1, $2, $3, $4) ON CONFLICT (sha256) DO NOTHING`,
+            [report.sha256, report.title, note?.trim() || report.reason, request.user.id],
+          );
+        }
+        if (action === "purge") {
+          const { rows: books } = await query<{ id: string; user_id: string; sha256: string }>("SELECT id, user_id, sha256 FROM book WHERE sha256 = $1", [
+            report.sha256,
+          ]);
+          await deleteBooks(books);
+          fields.removedCopies = books.length;
+        }
 
-      // Every open report about the same file is settled by the same decision.
-      await query(
-      `UPDATE content_report SET status = $2, resolution = $3, resolved_by = $4, resolved_at = now()
-       WHERE sha256 = $1 AND status = 'open'`,
-      [report.sha256, action === "dismiss" ? "dismissed" : "actioned", note?.trim() || action, request.user.id],
-      );
-      audit("admin.report_resolved", {
-        adminId: request.user.id,
-        reportId: request.params.id,
-        sha256: report.sha256,
-        action,
-        removedCopies: removed,
-        ip: request.ip,
+        // Every open report about the same file is settled by the same decision.
+        await query(
+          `UPDATE content_report SET status = $2, resolution = $3, resolved_by = $4, resolved_at = now()
+           WHERE sha256 = $1 AND status = 'open'`,
+          [report.sha256, action === "dismiss" ? "dismissed" : "actioned", note?.trim() || action, request.user.id],
+        );
       });
-      return { action, removedCopies: removed };
+      return { action, removedCopies: fields.removedCopies };
     },
   );
 

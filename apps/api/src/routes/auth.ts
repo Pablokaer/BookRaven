@@ -3,13 +3,18 @@ import { auth } from "../auth.js";
 import { config } from "../config.js";
 import { audit } from "../lib/log.js";
 
-/** Auth answers that go to the audit trail: the event on success and on failure ("" for none). */
-const AUDITED: Record<string, [success: string, failure: string]> = {
-  // A successful sign-in is logged when its session is created (also for Google).
-  "/api/auth/sign-in/email": ["", "auth.sign_in_failed"],
-  "/api/auth/reset-password": ["auth.password_reset", "auth.password_reset_failed"],
-  "/api/auth/change-password": ["auth.password_changed", "auth.password_change_failed"],
+/**
+ * Failed password attempts, for the audit trail: a wrong password, email or reset link answers 400
+ * or 401. Other refusals are not failed attempts: a blocked account (logged when its session is
+ * refused, auth.ts), an unverified email, a rate limit. Successful sign-ins are logged when their
+ * session is created (also for Google), and password resets by onPasswordReset (auth.ts).
+ */
+const FAILED: Record<string, string> = {
+  "/api/auth/sign-in/email": "auth.sign_in_failed",
+  "/api/auth/reset-password": "auth.password_reset_failed",
+  "/api/auth/change-password": "auth.password_change_failed",
 };
+const CHANGE_PASSWORD = "/api/auth/change-password";
 
 /**
  * Mounts Better Auth at /api/auth/*.
@@ -28,6 +33,9 @@ export async function authRoutes(app: FastifyInstance) {
         if (Array.isArray(value)) value.forEach((v) => headers.append(key, v));
         else headers.append(key, String(value));
       }
+      // Better Auth reads the client's address (sessions, its rate limit, the audit trail) from
+      // X-Forwarded-For: give it the one Fastify worked out from the proxies it trusts.
+      headers.set("x-forwarded-for", request.ip);
       const body = request.body as Buffer | undefined;
       const req = new Request(url, {
         method: request.method,
@@ -36,11 +44,14 @@ export async function authRoutes(app: FastifyInstance) {
         body: body && body.length > 0 ? (body as Uint8Array<ArrayBuffer>) : undefined,
       });
 
+      const failure = request.method === "POST" ? FAILED[url.pathname] : undefined;
+      const changingPassword = failure !== undefined && url.pathname === CHANGE_PASSWORD;
+      // Whose password is being changed: the answer only says it when it works.
+      const userId = changingPassword ? (await auth.api.getSession({ headers }))?.user.id : undefined;
       const response = await auth.handler(req);
-      const audited = request.method === "POST" ? AUDITED[url.pathname] : undefined;
-      if (audited) {
-        const event = audited[response.ok ? 0 : 1];
-        if (event) audit(event, { ip: request.ip, status: response.status }, response.ok ? "info" : "warn");
+      if (changingPassword && response.ok) audit("auth.password_changed", { userId, ip: request.ip });
+      else if (failure && (response.status === 400 || response.status === 401)) {
+        audit(failure, { userId, ip: request.ip, status: response.status }, "warn");
       }
 
       reply.status(response.status);

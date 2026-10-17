@@ -6,7 +6,7 @@ import { allowedOrigins, config, googleEnabled } from "./config.js";
 import { pool } from "./db.js";
 import { mailEnabled } from "./lib/mailer.js";
 import { connectionCount } from "./lib/events.js";
-import { log, RequestLogController } from "./lib/log.js";
+import { learnSecretRoute, log, RequestLogController } from "./lib/log.js";
 import { authRoutes } from "./routes/auth.js";
 import { bookmarkRoutes } from "./routes/bookmarks.js";
 import { bookRoutes } from "./routes/books.js";
@@ -34,8 +34,12 @@ export async function buildServer() {
   const app = Fastify({
     loggerInstance: log,
     logController: new RequestLogController(),
-    trustProxy: true,
+    // Caddy reaches the API from a private address (the API has no public port) and sends the
+    // client's address as the whole X-Forwarded-For (infra/Caddyfile), so addresses a client
+    // writes into that header itself never become request.ip.
+    trustProxy: "loopback,linklocal,uniquelocal",
   });
+  app.addHook("onRoute", learnSecretRoute);
 
   await app.register(cors, {
     origin: allowedOrigins,

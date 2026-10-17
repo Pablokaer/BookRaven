@@ -10,6 +10,9 @@ import { audit, log } from "./lib/log.js";
 import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
 
+/** The client's address: routes/auth.ts hands Better Auth Fastify's request.ip as X-Forwarded-For. */
+const clientIp = (from: { headers?: Headers } | null | undefined) => from?.headers?.get("x-forwarded-for") ?? "";
+
 export const auth = betterAuth({
   appName: "BookRaven",
   baseURL: config.publicUrl,
@@ -25,6 +28,10 @@ export const auth = betterAuth({
     // "Forgot password": emails a one-hour link; using it signs out every other session.
     resetPasswordTokenExpiresIn: 60 * 60,
     revokeSessionsOnPasswordReset: true,
+    // Here the account is known; a reset link that doesn't work is logged by routes/auth.ts.
+    onPasswordReset: async ({ user }, request) => {
+      audit("auth.password_reset", { userId: user.id, ip: clientIp(request) });
+    },
     // Not awaited: the answer must not depend on SMTP (see sendMailInBackground).
     sendResetPassword: async ({ user, url }) => {
       sendMailInBackground(resetPasswordEmail(user, url));
@@ -63,22 +70,25 @@ export const auth = betterAuth({
     // Blocked accounts cannot sign in (blocking also deletes their existing sessions).
     session: {
       create: {
-        before: async (session) => {
+        before: async (session, ctx) => {
           if (await isAccountBlocked(session.userId)) {
-            audit("auth.blocked_sign_in", { userId: session.userId, ip: session.ipAddress }, "warn");
+            audit("auth.blocked_sign_in", { userId: session.userId, ip: clientIp(ctx) }, "warn");
             throw new APIError("FORBIDDEN", { message: "This account has been blocked by an administrator.", code: "ACCOUNT_BLOCKED" });
           }
         },
-        // Every way in (email, Google, sign-up) creates a session.
-        after: async (session) => {
-          audit("auth.signed_in", { userId: session.userId, ip: session.ipAddress });
+        // Every way in (email, Google, sign-up) creates a session. So does changing the password,
+        // which replaces the revoked sessions with a new one: that is logged as a password change.
+        after: async (session, ctx) => {
+          if (ctx?.path === "/change-password") return;
+          audit("auth.signed_in", { userId: session.userId, ip: clientIp(ctx) });
         },
       },
     },
   },
-  // Its own messages (e.g. "Invalid password") go to the server log; LOG_LEVEL filters them.
+  // Its warnings and errors (e.g. "Invalid password") go to the server log. Not its info messages:
+  // one of them is the email typed at sign-up when it already has an account.
   logger: {
-    level: "debug",
+    level: "warn",
     log: (level, message, ...args) => {
       const err = args.find((a) => a instanceof Error);
       log[level]({ ...(err ? { err } : {}), ...(args.length && !err ? { args } : {}) }, `[Better Auth] ${message}`);

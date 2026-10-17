@@ -25,12 +25,13 @@ async function kosyncAuth(request: FastifyRequest, reply: FastifyReply) {
   const userHeader = request.headers["x-auth-user"];
   const keyHeader = request.headers["x-auth-key"];
   const sent = typeof userHeader === "string" && typeof keyHeader === "string";
-  const user = sent ? await verifyAppPassword(userHeader, { md5: keyHeader }) : null;
-  if (!user) {
-    if (sent) audit("app_password.auth_failed", { via: "kosync", ip: request.ip }, "warn");
+  const found = sent ? await verifyAppPassword(userHeader, { md5: keyHeader }) : null;
+  if (!found || found.blocked) {
+    if (found) audit("app_password.blocked_account", { via: "kosync", userId: found.user.id, ip: request.ip }, "warn");
+    else if (sent) audit("app_password.auth_failed", { via: "kosync", ip: request.ip }, "warn");
     return reply.code(401).send({ code: 2001, message: "Unauthorized" });
   }
-  request.user = user;
+  request.user = found.user;
 }
 
 export async function kosyncRoutes(app: FastifyInstance) {
