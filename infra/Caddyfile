@@ -41,6 +41,28 @@
 		file_server
 	}
 
+	# Search engines: only the front page is meant to be found. robots.txt lets crawlers fetch
+	# everything (a blocked page can't tell them not to index it, and Google needs the scripts and
+	# /api/config to draw the page); every other address says noindex in a header below.
+	handle /robots.txt {
+		header Content-Type "text/plain; charset=utf-8"
+		respond <<TXT
+			User-agent: *
+			Allow: /
+
+			Sitemap: {$PUBLIC_URL}/sitemap.xml
+			TXT 200
+	}
+	handle /sitemap.xml {
+		header Content-Type "application/xml; charset=utf-8"
+		respond <<XML
+			<?xml version="1.0" encoding="UTF-8"?>
+			<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+			  <url><loc>{$PUBLIC_URL}/</loc></url>
+			</urlset>
+			XML 200
+	}
+
 	# Static frontend (SPA)
 	handle {
 		root * /srv
@@ -58,6 +80,13 @@
 		@revalidate not path /assets/*
 		header @revalidate Cache-Control "no-cache"
 	}
+
+	# Every address falls back to index.html, so the sign-in form, the reader and share links would
+	# all look like pages to a crawler: only the front page may be indexed, under one address
+	# (PUBLIC_URL), whatever query string a link added.
+	@noindex not path / /robots.txt /sitemap.xml
+	header @noindex X-Robots-Tag "noindex, nofollow"
+	header / Link `<{$PUBLIC_URL}/>; rel="canonical"`
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"

@@ -13,18 +13,20 @@
          CSS. The 500 face of the front page and sign-in titles is requested by App.tsx once the
          visitor turns out to be signed out. -->
     <link rel="preload" as="font" type="font/woff2" crossorigin href="/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-normal.woff2" />
-    <title>BookRaven</title>
-    <meta name="description" content="Your books, on every device. A self-hosted reader for ebooks, PDFs and comics with synced progress." />
+    <title>BookRaven · Self-hosted ebook, PDF and comic reader with synced progress</title>
+    <!-- What Google shows under the title. The robots rules, the sitemap and the canonical address
+         come from infra/Caddyfile; LandingPage.tsx adds the structured data. -->
+    <meta name="description" content="BookRaven is a free, self-hosted reader for EPUB, MOBI, PDF and comics (CBZ, CBR). Read in the browser, on Android or on KOReader, with progress, highlights and bookmarks synced across devices." />
     <!-- Link preview when the address is pasted in a chat. Paths are root-relative; chat crawlers resolve them against the page URL. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="BookRaven" />
-    <meta property="og:title" content="BookRaven" />
+    <meta property="og:title" content="BookRaven · Self-hosted ebook, PDF and comic reader" />
     <meta property="og:description" content="Your books, on every device. A self-hosted reader for ebooks, PDFs and comics with synced progress." />
     <meta property="og:image" content="/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="BookRaven" />
+    <meta name="twitter:title" content="BookRaven · Self-hosted ebook, PDF and comic reader" />
     <meta name="twitter:description" content="Your books, on every device." />
     <meta name="twitter:image" content="/og-image.png" />
   </head>

@@ -32,9 +32,16 @@ export function LandingPage() {
 
   useEffect(() => {
     const previous = document.title;
-    document.title = "BookRaven · Every book holds a world";
+    document.title = "BookRaven · Self-hosted ebook, PDF and comic reader with synced progress";
+    // Structured data for search engines (Google reads it after running the page's scripts): the
+    // site's name, and what BookRaven is. It isn't a script that runs, so the CSP doesn't apply.
+    const data = document.createElement("script");
+    data.type = "application/ld+json";
+    data.textContent = JSON.stringify(structuredData(window.location.origin));
+    document.head.append(data);
     return () => {
       document.title = previous;
+      data.remove();
     };
   }, []);
 
@@ -63,6 +70,28 @@ export function LandingPage() {
       <Colophon signupOpen={signupOpen} />
     </div>
   );
+}
+
+/** schema.org description of the site and the app, for the landing page's JSON-LD. */
+function structuredData(origin: string) {
+  const url = `${origin}/`;
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebSite", name: "BookRaven", url },
+      {
+        "@type": "WebApplication",
+        name: "BookRaven",
+        url,
+        image: `${origin}/og-image.png`,
+        applicationCategory: "BookReader",
+        operatingSystem: "Web, Android",
+        description:
+          "A self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT), with reading progress, highlights and bookmarks synced across the browser, the Android app and KOReader.",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      },
+    ],
+  };
 }
 
 /** Marks each `.lit-reveal` element once it scrolls into view, so it fades up (see literary.css). */
