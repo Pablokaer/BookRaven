@@ -11,8 +11,9 @@ COPY patches patches
 COPY apps/web/package.json apps/web/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter web...
 COPY apps/web apps/web
-# CI already typechecks (pnpm build), so only Vite runs here. Then .br/.gz copies for Caddy.
-RUN pnpm --filter web exec vite build && node apps/web/scripts/precompress.mjs apps/web/dist
+# CI already typechecks (pnpm build), so only Vite runs here, then the prerendered landing page
+# and .br/.gz copies for Caddy.
+RUN pnpm --filter web exec vite build && node apps/web/scripts/prerender.mjs apps/web/dist   && node apps/web/scripts/precompress.mjs apps/web/dist
 
 FROM caddy:2-alpine
 COPY infra/Caddyfile /etc/caddy/Caddyfile

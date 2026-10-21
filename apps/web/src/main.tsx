@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { createRoot, hydrateRoot } from "react-dom/client";
+import { App, prerenderedLanding } from "./App";
 import { isNative, loadToken } from "./lib/api";
 import "@fontsource-variable/inter";
 import "./displayFont.css";
@@ -13,9 +13,13 @@ if (import.meta.env.PROD && !isNative && "serviceWorker" in navigator) {
 
 // The native app keeps its bearer token in secure preferences; load it before rendering.
 loadToken().finally(() => {
-  createRoot(document.getElementById("root")!).render(
+  const root = document.getElementById("root")!;
+  const app = (
     <StrictMode>
       <App />
-    </StrictMode>,
+    </StrictMode>
   );
+  // The landing page already in the HTML (landing.html) is taken over rather than drawn again.
+  if (prerenderedLanding) hydrateRoot(root, app);
+  else createRoot(root).render(app);
 });

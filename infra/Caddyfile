@@ -66,6 +66,15 @@
 	# Static frontend (SPA)
 	handle {
 		root * /srv
+		# A visitor without a session cookie gets the landing page already rendered
+		# (apps/web/scripts/prerender.mjs), for search engines and a faster first view; with one,
+		# the app as usual. The answer depends on the cookie, so caches are told so.
+		@landing {
+			path /
+			not header Cookie *session_token*
+		}
+		rewrite @landing /landing.html
+		header / Vary Cookie
 		try_files {path} /index.html
 		# .br/.gz copies made when the image is built (apps/web/scripts/precompress.mjs)
 		file_server {
