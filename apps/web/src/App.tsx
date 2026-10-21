@@ -53,6 +53,14 @@ const NATIVE_BUILD = import.meta.env.MODE === "native";
 // every live update.
 const LandingPage = NATIVE_BUILD ? () => null : lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
 
+/**
+ * The server sent the landing page already rendered (landing.html, served at "/" without a
+ * session cookie; scripts/prerender.mjs). The service worker may also hand that copy out at
+ * another address, where it isn't used.
+ */
+export const prerenderedLanding =
+  !NATIVE_BUILD && typeof document !== "undefined" && window.location.pathname === "/" && Boolean(document.getElementById("root")?.hasAttribute("data-landing"));
+
 // The reader (pdf.js, foliate-js) is loaded only when a book is opened.
 const ReaderPage = lazy(() => import("./pages/ReaderPage").then((m) => ({ default: m.ReaderPage })));
 
@@ -234,7 +242,9 @@ export function App() {
   // login page with it would unmount the form and lose what was typed.
   if (!isPending) sessionChecked.current = true;
   if (isPending && !sessionChecked.current) {
-    return <AppLoading />;
+    // A prerendered landing page means no session cookie came with the request: keep showing it
+    // (and hydrate it) while the session is checked, instead of the loading screen.
+    return prerenderedLanding ? <SignedOutApp onSignedIn={() => void refetch()} /> : <AppLoading />;
   }
 
   if (!user) {
