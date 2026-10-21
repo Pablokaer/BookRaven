@@ -131,6 +131,18 @@ describe("routing by sign-in state", () => {
     expect(container.querySelector('input[type="password"]')).toBeNull();
   });
 
+  it("describes the site to search engines on the landing page only", async () => {
+    await open("/", signedOut);
+    const ld = () => document.head.querySelector('script[type="application/ld+json"]');
+    expect(document.title).toContain("Self-hosted ebook, PDF and comic reader");
+    const data = JSON.parse(ld()!.textContent!);
+    expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebSite", "WebApplication"]);
+    expect(data["@graph"][0].url).toBe(`${window.location.origin}/`);
+
+    await act(async () => link("Sign in")!.click());
+    expect(ld()).toBeNull();
+  });
+
   it("goes from the landing page to the sign-in and sign-up forms", async () => {
     await open("/", signedOut);
     await act(async () => link("Sign in")!.click());

@@ -69,6 +69,8 @@ services:
     logging: *logging
     environment:
       DOMAIN: ${DOMAIN}
+      # The site's public address, for robots.txt, the sitemap and the canonical link
+      PUBLIC_URL: ${PUBLIC_URL}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32}
     # Behind another web server on the host, set HTTP_PORT/HTTPS_PORT to free local
     # ports in .env (README → Behind an existing web server).
