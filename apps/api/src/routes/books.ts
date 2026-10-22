@@ -3,6 +3,7 @@ import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { aboutFile } from "../lib/bookAbout.js";
+import { bookDto, SELECT_BOOK, toBookDto, type BookDto, type BookRow } from "../lib/bookDto.js";
 import { comicAsCbz, CONVERTED_FORMATS } from "../lib/comicConvert.js";
 import { publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
@@ -31,81 +32,6 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024;
 /** Longest blurb kept (some EPUBs carry a whole chapter in their description). */
 const MAX_DESCRIPTION = 4000;
 
-export type BookRow = {
-  id: string;
-  user_id: string;
-  title: string;
-  author: string | null;
-  format: string;
-  original_filename: string;
-  mime_type: string;
-  size_bytes: string;
-  sha256: string;
-  has_cover: boolean;
-  folder_id: string | null;
-  tags: string[];
-  favorite: boolean;
-  shared_by_name: string | null;
-  shared_at: Date | null;
-  is_shared: boolean;
-  is_public: boolean;
-  published_at: Date | null;
-  language: string | null;
-  description: string | null;
-  created_at: Date;
-  p_locator: string | null;
-  p_percentage: number | null;
-  p_label: string | null;
-  p_device_id: string | null;
-  p_device_name: string | null;
-  p_updated_at: Date | null;
-};
-
-export const SELECT_BOOK = `
-  SELECT b.*, EXISTS (SELECT 1 FROM book_share s WHERE s.book_id = b.id) AS is_shared,
-         p.locator AS p_locator, p.percentage AS p_percentage, p.label AS p_label,
-         p.device_id AS p_device_id, p.device_name AS p_device_name, p.updated_at AS p_updated_at
-  FROM book b
-  LEFT JOIN reading_progress p ON p.book_id = b.id AND p.user_id = b.user_id`;
-
-/**
- * A book as lists and live events carry it. The description (up to 4000 characters) is left
- * out: only the book's page shows it, and it gets it from `/api/books/:id` or `/about`.
- */
-export function toBookDto(r: BookRow) {
-  return {
-    id: r.id,
-    title: r.title,
-    author: r.author,
-    format: r.format,
-    filename: r.original_filename,
-    sizeBytes: Number(r.size_bytes),
-    hasCover: r.has_cover,
-    folderId: r.folder_id,
-    tags: r.tags,
-    favorite: r.favorite,
-    /** This book has an active share link. */
-    isShared: r.is_shared,
-    /** Set when the book was added from someone else's share link. */
-    sharedBy: r.shared_by_name,
-    sharedAt: r.shared_at?.toISOString() ?? null,
-    /** Published in the public library. */
-    isPublic: r.is_public,
-    language: r.language,
-    createdAt: r.created_at.toISOString(),
-    progress: r.p_locator
-      ? {
-          locator: r.p_locator,
-          percentage: r.p_percentage ?? 0,
-          label: r.p_label,
-          deviceId: r.p_device_id,
-          deviceName: r.p_device_name,
-          updatedAt: r.p_updated_at!.toISOString(),
-        }
-      : null,
-  };
-}
-
 /** Trims, collapses spaces and drops case-insensitive duplicates, keeping the first spelling. */
 function normalizeTags(tags: string[]) {
   const seen = new Set<string>();
@@ -122,12 +48,6 @@ function normalizeTags(tags: string[]) {
 
 export const loadOwnedBook = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>
   findOr404<BookRow>(reply, UUID_RE.test(request.params.id), `${SELECT_BOOK} WHERE b.id = $1 AND b.user_id = $2`, [request.params.id, request.user.id]);
-
-/** A book as the app sees it, read again (after a change). */
-export async function bookDto(id: string) {
-  const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = $1`, [id]);
-  return toBookDto(rows[0]!);
-}
 
 /**
  * Serves a stored object with HTTP Range support: the readers fetch books in pieces
@@ -353,11 +273,11 @@ export async function bookRoutes(app: FastifyInstance) {
       const book = await loadOwnedBook(request, reply);
       if (!book) return;
       const { title, author, folderId, tags, favorite, isPublic } = request.body;
-      let listingChanged: boolean;
+      let told: Map<string, BookDto>;
       try {
-        listingChanged = await catalogTransaction(async (catalog, db) => {
+        ({ books: told } = await catalogTransaction(async (catalog, db) => {
           // First: a blocked file changes nothing (451).
-          const listed = isPublic === undefined ? false : isPublic ? await catalog.publish(book) : await catalog.unpublish(book);
+          if (isPublic !== undefined) await (isPublic ? catalog.publish(book) : catalog.unpublish(book));
           if (folderId) {
             const folder = await db.query("SELECT 1 FROM folder WHERE id = $1 AND user_id = $2", [
               UUID_RE.test(folderId) ? folderId : null,
@@ -386,17 +306,20 @@ export async function bookRoutes(app: FastifyInstance) {
           );
           // A public book's catalog entry changed.
           if (book.is_public && (title !== undefined || author !== undefined || tags !== undefined)) catalog.changed({ bookId: book.id });
-          return listed;
-        });
+          // The owner hears one book.updated, with any listing change, and it is the answer too.
+          catalog.updated(book);
+        }));
       } catch (err) {
         if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
         if (err instanceof UnknownFolderError) return reply.code(400).send({ error: "unknown_folder" });
         throw err;
       }
-      const dto = await bookDto(book.id);
-      // When the book was published or unpublished, the catalog already told its owner.
-      if (!listingChanged) publish(request.user.id, "book.updated", dto);
-      return dto;
+      const dto = told.get(book.id);
+      if (dto) return dto;
+      // The catalog could not read it back to tell the owner: this read answers, and tells.
+      const read = await bookDto(book.id);
+      publish(request.user.id, "book.updated", read);
+      return read;
     },
   );
 

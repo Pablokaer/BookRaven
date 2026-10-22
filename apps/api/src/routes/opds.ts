@@ -6,7 +6,8 @@ import { UUID_RE } from "../lib/http.js";
 import { audit } from "../lib/log.js";
 import { listCatalog } from "../lib/publicCatalog.js";
 import { bookKey } from "../lib/storage.js";
-import { SELECT_BOOK, sendCover, sendFile, type BookRow } from "./books.js";
+import { SELECT_BOOK, type BookRow } from "../lib/bookDto.js";
+import { sendCover, sendFile } from "./books.js";
 
 /**
  * OPDS 1.2 catalog (Atom) for reading apps: KOReader, Moon+ Reader, Thorium, Calibre…

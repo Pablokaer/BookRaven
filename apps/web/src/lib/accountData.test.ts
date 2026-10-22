@@ -28,7 +28,7 @@ vi.mock("./platform", () => ({
   },
 }));
 
-const { forgetAccount, keptForAccount, loadSnapshot, saveSnapshot, sendAccountChanges, STORE_MODULES, isOfflineCopy, withOfflineCopy } = await import(
+const { forgetAccount, keptForAccount, loadSnapshot, openAccount, saveSnapshot, sendAccountChanges, STORE_MODULES, isOfflineCopy, withOfflineCopy } = await import(
   "./accountData"
 );
 const { OFFLINE_CACHE } = await import("./offlineCopies");
@@ -112,10 +112,12 @@ describe("signing out", () => {
 
   it("doesn't keep the library list the closing library saves after signing out, until the next one opens", async () => {
     await forgetAccount();
+    // Something still reading the signed-out account's snapshot (pages fetched when idle) doesn't lift the guard.
+    expect(loadSnapshot("books", "u1")).toBeNull();
     saveSnapshot("books", "u1", []);
     expect(localStorage.getItem("readsync.books.u1")).toBeNull();
 
-    expect(loadSnapshot("books", "u2")).toBeNull(); // the next account's library opens
+    openAccount(); // the next account's library opens
     saveSnapshot("books", "u2", []);
     expect(loadSnapshot("books", "u2")).toEqual([]);
   });

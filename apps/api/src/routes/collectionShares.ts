@@ -7,7 +7,8 @@ import { copyBookToUser } from "../lib/copies.js";
 import { findOr404, TOKEN_RE, UUID_RE } from "../lib/http.js";
 import { BlockedFileError } from "../lib/moderation.js";
 import { QuotaExceededError, quotaBody } from "../lib/quota.js";
-import { SELECT_BOOK, sendCover, toBookDto, type BookRow } from "./books.js";
+import { SELECT_BOOK, toBookDto, type BookRow } from "../lib/bookDto.js";
+import { sendCover } from "./books.js";
 
 type SharedFolder = { id: string; name: string; user_id: string; owner_name: string | null };
 

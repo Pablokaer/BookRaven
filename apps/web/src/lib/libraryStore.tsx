@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { loadSnapshot, saveSnapshot } from "./accountData";
+import { loadSnapshot, openAccount, saveSnapshot } from "./accountData";
 import { ApiError, type Book, type Folder } from "./api";
 import { deleteBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook } from "./books";
 import { forgetDeviceBook, makeRoom, pruneDeviceBooks } from "./deviceStorage";
@@ -108,6 +108,8 @@ function connect(userId: { current: string }) {
       .catch(() => library.dispatch({ type: "folders.loaded" }));
   };
 
+  // The account's library opens: its snapshots are kept again (after a sign-out, lib/accountData).
+  openAccount();
   // Hydrate instantly from the last snapshot kept in localStorage (keyed by user), so a cold
   // start shows real numbers on the first frame; `refresh()` updates them over the network.
   const savedFolders = loadSnapshot("folders", userId.current);
@@ -132,7 +134,11 @@ function connect(userId: { current: string }) {
   const uploads = createUploadQueue({
     uploader: { upload: uploadBook, update: updateBook },
     hooks: {
-      uploaded: (book) => library.dispatch({ type: "book.uploaded", book }),
+      uploaded: (book) => {
+        library.dispatch({ type: "book.uploaded", book });
+        // The public catalog says which books are the viewer's own: without waiting for the live event.
+        forgetPublicBooks();
+      },
       moved: (book) => library.dispatch({ type: "book.replaced", book }),
       settled: refreshMe,
       quotaBytes: () => library.get().me?.quotaBytes,
@@ -254,6 +260,7 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
       removeBook: async (book) => {
         if (!window.confirm(`Delete "${book.title}" from your library on all devices?`)) return;
         await deleteBook(book.id);
+        forgetPublicBooks(); // it may have been the viewer's copy of a public book
         await forgetDeviceBook(book.id);
         library.dispatch({ type: "book.removed", id: book.id });
         refreshMe();

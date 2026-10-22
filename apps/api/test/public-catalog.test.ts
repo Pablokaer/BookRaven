@@ -1,13 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { Readable } from "node:stream";
 import type { FastifyReply } from "fastify";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { query } from "../src/db.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pool, query } from "../src/db.js";
 import { onBroadcast, subscribe } from "../src/lib/events.js";
 import { ensureLibraryAccount, storePublicBook } from "../src/lib/gutenbergImport.js";
 import { BlockedFileError } from "../src/lib/moderation.js";
 import { catalogTransaction, publishBook } from "../src/lib/publicCatalog.js";
-import { streamToTemp } from "../src/lib/storage.js";
+import { bookKey, objectSize, streamToTemp } from "../src/lib/storage.js";
 import { adminSession, api, fakePdf, getApp, signUp, upload, type TestUser } from "./helpers.js";
 
 /** `public.changed` broadcasts, and what one account's live stream receives. */
@@ -236,5 +238,93 @@ describe("public catalog", () => {
     expect(await publicIds(owner)).not.toContain(book.id);
     expect(broadcasts).toHaveLength(0);
     expect(frames).toHaveLength(0);
+  });
+
+  it("publishes with the transaction's own connection, so concurrent publishes can't exhaust the pool", async () => {
+    const owner = await signUp();
+    const max = pool.options.max!;
+    const books: { id: string; sha256: string }[] = [];
+    for (let i = 0; i < max; i++) {
+      const file = fakePdf();
+      books.push({ ...(await upload(owner, `c${i}.pdf`, file, { title: `Concurrent ${i}` })).json(), sha256: sha(file) });
+    }
+    // Every connection of the pool is held by a transaction before any of them publishes.
+    let entered = 0;
+    let allIn!: () => void;
+    const barrier = new Promise<void>((resolve) => (allIn = resolve));
+    const results = await Promise.all(
+      books.map((b) =>
+        catalogTransaction(async (catalog) => {
+          if (++entered === max) allIn();
+          await barrier;
+          return catalog.publish({ id: b.id, user_id: owner.id, sha256: b.sha256 });
+        }),
+      ),
+    );
+    expect(results.map((r) => r.value)).toEqual(books.map(() => true));
+    const ids = await publicIds(owner);
+    for (const b of books) expect(ids).toContain(b.id);
+  });
+
+  it("reads a changed book once, and answers even when telling its owner fails", async () => {
+    const owner = await signUp();
+    const book = (await upload(owner, "f.pdf", fakePdf(), { title: "Told" })).json();
+    const frames = watch(owner);
+    const real = pool.query.bind(pool) as (...args: unknown[]) => unknown;
+    const reads: string[] = [];
+    const spy = vi.spyOn(pool, "query").mockImplementation(((text: unknown, ...rest: unknown[]) => {
+      if (typeof text === "string" && text.includes("reading_progress")) reads.push(text);
+      return real(text, ...rest);
+    }) as never);
+    try {
+      // The owner's own read (loadOwnedBook) and the catalog's after commit: no third for the answer.
+      const res = await api(owner, "PATCH", `/api/books/${book.id}`, { isPublic: true, title: "Told twice" });
+      expect(res.json()).toMatchObject({ isPublic: true, title: "Told twice" });
+      expect(reads).toHaveLength(2);
+      expect(frames.filter((f) => f.event === "book.updated")).toEqual([{ event: "book.updated", data: res.json() }]);
+
+      // The read after commit fails: the change stands, everyone still hears of it, the request answers.
+      spy.mockImplementation(((text: unknown, ...rest: unknown[]) =>
+        typeof text === "string" && text.includes("b.id = ANY($1)") ? Promise.reject(new Error("read failed")) : real(text, ...rest)) as never);
+      broadcasts.length = 0;
+      frames.length = 0;
+      const off = await api(owner, "PATCH", `/api/books/${book.id}`, { isPublic: false });
+      expect(off.statusCode).toBe(200);
+      expect(off.json()).toMatchObject({ isPublic: false });
+      expect(broadcasts).toHaveLength(1);
+      expect(frames.find((f) => f.event === "book.updated")!.data).toMatchObject({ id: book.id, isPublic: false });
+      await expect(publishBook({ id: book.id, user_id: owner.id, sha256: (await query("SELECT sha256 FROM book WHERE id = $1", [book.id])).rows[0].sha256 })).resolves.toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await publicIds(owner)).toContain(book.id);
+  });
+
+  it("leaves no files behind when an import is not added", async () => {
+    const owner = await ensureLibraryAccount();
+    const file = await streamToTemp(Readable.from(randomBytes(2048)));
+    await query("INSERT INTO blocked_file (sha256, title, reason) VALUES ($1, 'x', 'test')", [file.sha256]);
+    const covers = path.join(process.env.STORAGE_DIR!, "covers");
+    const coverFiles = () => fs.readdir(covers).catch(() => [] as string[]);
+    const before = await coverFiles();
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(512)]);
+    const get = (async () => new Response(jpeg)) as unknown as typeof fetch;
+    const meta = {
+      source: "gutenberg",
+      sourceId: `t${randomBytes(4).toString("hex")}`,
+      sourceUrl: "https://www.gutenberg.org/ebooks/3",
+      title: "A Failed Import",
+      authors: [],
+      translators: [],
+      language: "en",
+      subjects: [],
+      themes: [],
+      tags: [],
+      description: null,
+      popularity: 1,
+    };
+    await expect(storePublicBook(owner, file, meta, ["https://example.com/cover.jpg"], get)).rejects.toBeInstanceOf(BlockedFileError);
+    expect(await coverFiles()).toEqual(before);
+    expect(await objectSize(bookKey(file.sha256))).toBeNull();
   });
 });

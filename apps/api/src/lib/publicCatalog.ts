@@ -1,7 +1,8 @@
 import type pg from "pg";
 import { query, withTransaction } from "../db.js";
-import { SELECT_BOOK, toBookDto, type BookRow } from "../routes/books.js";
+import { SELECT_BOOK, toBookDto, type BookDto, type BookRow } from "./bookDto.js";
 import { broadcast, onBroadcast, publish } from "./events.js";
+import { log } from "./log.js";
 import { BlockedFileError, isFileBlocked } from "./moderation.js";
 
 /**
@@ -11,7 +12,7 @@ import { BlockedFileError, isFileBlocked } from "./moderation.js";
  * - `published_at` is the first publication, kept while the book stays listed and cleared when it
  *   leaves (the catalog shows a file once, as its earliest publication);
  * - the owner hears `book.updated` and everyone hears `public.changed`, which also drops the
- *   listing kept in memory here, after the change is committed.
+ *   listing kept in memory here (and the views made of it), after the change is committed.
  *
  * Changes that must commit together with other writes run in `catalogTransaction`.
  */
@@ -29,20 +30,28 @@ export type CatalogChanges = {
   unpublishFile(sha256: string): Promise<boolean>;
   /** A listed book's catalog entry changed or it was deleted: `public.changed` with `data`. */
   changed(data: unknown): void;
+  /** The book changed otherwise too: its owner hears it in the same `book.updated`, and the result carries it. */
+  updated(book: Pick<BookRow, "id">): void;
 };
+
+/** What a catalog transaction committed: `fn`'s value, and the books whose owners were told (as they told them). */
+export type CatalogResult<T> = { value: T; books: Map<string, BookDto> };
 
 /**
  * Runs `fn` in one database transaction. Its catalog changes commit together with the other
  * writes `fn` makes on `db`, and owners and everyone hear about them only once it committed: one
- * `book.updated` per book whose listing changed, and at most one `public.changed` (with the last
- * data given).
+ * `book.updated` per book whose listing changed (or that `updated` named), and at most one
+ * `public.changed` (with the last data given). Telling them can't fail the change: it committed.
+ *
+ * Inside `fn`, read and write on `db` only: a query on the pool would wait for a second
+ * connection while this one is held, and enough concurrent transactions would wait for ever.
  */
-export async function catalogTransaction<T>(fn: (catalog: CatalogChanges, db: pg.PoolClient) => Promise<T>): Promise<T> {
+export async function catalogTransaction<T>(fn: (catalog: CatalogChanges, db: pg.PoolClient) => Promise<T>): Promise<CatalogResult<T>> {
   const changedBooks = new Set<string>();
   let broadcastData: { data: unknown } | null = null;
   const catalogChanges = (db: pg.PoolClient): CatalogChanges => ({
     async publish(book) {
-      if (await isFileBlocked(book.sha256)) throw new BlockedFileError();
+      if (await isFileBlocked(book.sha256, db)) throw new BlockedFileError();
       const { rows } = await db.query<{ id: string }>(
         "UPDATE book SET is_public = true, published_at = COALESCE(published_at, now()) WHERE id = $1 AND NOT is_public RETURNING id",
         [book.id],
@@ -75,25 +84,38 @@ export async function catalogTransaction<T>(fn: (catalog: CatalogChanges, db: pg
     changed(data) {
       broadcastData = { data };
     },
+    updated(book) {
+      changedBooks.add(book.id);
+    },
   });
 
-  const result = await withTransaction((db) => fn(catalogChanges(db), db));
+  const value = await withTransaction((db) => fn(catalogChanges(db), db));
+  const books = new Map<string, BookDto>();
   if (changedBooks.size) {
-    const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = ANY($1)`, [[...changedBooks]]);
-    for (const b of rows) publish(b.user_id, "book.updated", toBookDto(b));
+    try {
+      const { rows } = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = ANY($1)`, [[...changedBooks]]);
+      for (const b of rows) {
+        const dto = toBookDto(b);
+        books.set(b.id, dto);
+        publish(b.user_id, "book.updated", dto);
+      }
+    } catch (err) {
+      // The owners' apps catch up when they next load the library.
+      log.warn({ err }, "could not tell owners about their changed books");
+    }
   }
   if (broadcastData) broadcast("public.changed", (broadcastData as { data: unknown }).data);
-  return result;
+  return { value, books };
 }
 
 /** Lists one book in the public library (see `CatalogChanges.publish`). */
-export const publishBook = (book: Listable) => catalogTransaction((catalog) => catalog.publish(book));
+export const publishBook = (book: Listable) => catalogTransaction((catalog) => catalog.publish(book)).then((r) => r.value);
 
 /** Takes one book out of the public library (see `CatalogChanges.unpublish`). */
-export const unpublishBook = (book: Pick<BookRow, "id">) => catalogTransaction((catalog) => catalog.unpublish(book));
+export const unpublishBook = (book: Pick<BookRow, "id">) => catalogTransaction((catalog) => catalog.unpublish(book)).then((r) => r.value);
 
 /** Takes every publication of a file out of the public library (see `CatalogChanges.unpublishFile`). */
-export const unpublishFile = (sha256: string) => catalogTransaction((catalog) => catalog.unpublishFile(sha256));
+export const unpublishFile = (sha256: string) => catalogTransaction((catalog) => catalog.unpublishFile(sha256)).then((r) => r.value);
 
 /** A listed book's catalog entry changed or it was deleted, outside of a catalog transaction. */
 export function catalogChanged(data: unknown) {
@@ -174,4 +196,18 @@ function firstBooks() {
 export async function listCatalog({ offset = 0, limit = CATALOG_SIZE }: { offset?: number; limit?: number } = {}) {
   if (offset + limit <= CATALOG_SIZE) return (await firstBooks()).slice(offset, offset + limit);
   return readCatalog(offset, limit);
+}
+
+/**
+ * `build` over the first `CATALOG_SIZE` books, made once per read of them and kept as long as
+ * they are: e.g. the web catalog's finished entries, so a request only adds what depends on the viewer.
+ */
+export function catalogView<V>(build: (rows: CatalogRow[]) => V): () => Promise<V> {
+  const views = new WeakMap<Promise<CatalogRow[]>, Promise<V>>();
+  return () => {
+    const rows = firstBooks();
+    let view = views.get(rows);
+    if (!view) views.set(rows, (view = rows.then(build)));
+    return view;
+  };
 }

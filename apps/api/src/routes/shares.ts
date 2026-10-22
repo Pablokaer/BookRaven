@@ -5,7 +5,8 @@ import { query } from "../db.js";
 import { publish } from "../lib/events.js";
 import { addCopyAndReply } from "../lib/copies.js";
 import { findOr404, TOKEN_RE } from "../lib/http.js";
-import { loadOwnedBook, SELECT_BOOK, sendCover, toBookDto, type BookRow } from "./books.js";
+import { SELECT_BOOK, toBookDto, type BookRow } from "../lib/bookDto.js";
+import { loadOwnedBook, sendCover } from "./books.js";
 
 /** Tells the owner's devices that the book's `isShared` flag changed. */
 async function publishBook(userId: string, bookId: string) {

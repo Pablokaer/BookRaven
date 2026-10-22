@@ -89,6 +89,27 @@ describe("saving positions", () => {
     expect(lib.openingLocator("b1", null)).toBeNull(); // sent: nothing waits any more
   });
 
+  it("keeps sending other books' positions while one book's keeps failing", async () => {
+    const lib = await start();
+    // Every attempt at b1's position answers 503; b2's go through.
+    vi.mocked(fetch).mockImplementation(async (url, init = {}) => {
+      const bookId = String(url).split("/")[3]!;
+      const body = JSON.parse(String(init.body));
+      sent.push({ bookId, locator: body.locator, clientUpdatedAt: body.clientUpdatedAt, deviceId: body.deviceId, keepalive: !!init.keepalive });
+      return new Response(bookId === "b1" ? null : "{}", { status: bookId === "b1" ? 503 : 200 });
+    });
+    lib.savePosition("b1", pos("page:1"));
+    await vi.advanceTimersByTimeAsync(1_500);
+    for (const page of [1, 2, 3]) {
+      lib.savePosition("b2", pos(`page:${page}`));
+      await vi.advanceTimersByTimeAsync(1_500);
+    }
+    expect(sent.filter((s) => s.bookId === "b2").map((s) => s.locator)).toEqual(["page:1", "page:2", "page:3"]);
+    expect(sent.filter((s) => s.bookId === "b1").length).toBeGreaterThan(1); // still tried again
+    expect(lib.openingLocator("b1", null)).toBe("page:1"); // and still waiting
+    expect(lib.openingLocator("b2", null)).toBeNull();
+  });
+
   it("drops a position the server refuses for good", async () => {
     const lib = await start();
     respond = () => new Response(null, { status: 400 });

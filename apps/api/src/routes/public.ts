@@ -7,11 +7,12 @@ import { addCopyAndReply } from "../lib/copies.js";
 import { publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { SOURCE_NAMES } from "../lib/otherSources.js";
-import { listCatalog, unpublishBook } from "../lib/publicCatalog.js";
+import { catalogView, unpublishBook } from "../lib/publicCatalog.js";
 import { themesFor } from "../lib/themes.js";
 import { bookKey } from "../lib/storage.js";
 import { adminUserIds } from "./admin.js";
-import { sendCover, sendFile, type BookRow } from "./books.js";
+import type { BookRow } from "../lib/bookDto.js";
+import { sendCover, sendFile } from "./books.js";
 
 type PublicRow = BookRow & {
   owner_name: string | null;
@@ -50,6 +51,9 @@ const catalogEntry = (r: CatalogEntryRow) => ({
   publishedAt: (r.published_at ?? r.created_at).toISOString(),
 });
 
+/** The catalog's finished entries, made once per read of the listing (they are the same for every viewer). */
+const catalogEntries = catalogView((rows) => rows.map((r) => ({ entry: catalogEntry(r), sha256: r.sha256, publisherId: r.user_id })));
+
 /** What depends on who is looking. */
 const viewerPart = (publisherId: string, ownBookId: string | null, viewer: { id: string; email: string }) => ({
   /** The viewer's own copy of this file, if they have one. */
@@ -78,7 +82,7 @@ export async function publicRoutes(app: FastifyInstance) {
 
   app.get("/api/public", async (request) => {
     const [books, own] = await Promise.all([
-      listCatalog(),
+      catalogEntries(),
       // The viewer's copies of published files (at most one per file).
       query<{ sha256: string; id: string }>(
         "SELECT m.sha256, m.id FROM book m WHERE m.user_id = $1 AND EXISTS (SELECT 1 FROM book p WHERE p.sha256 = m.sha256 AND p.is_public)",
@@ -86,7 +90,7 @@ export async function publicRoutes(app: FastifyInstance) {
       ),
     ]);
     const ownBook = new Map(own.rows.map((r) => [r.sha256, r.id]));
-    return books.map((b) => ({ ...catalogEntry(b), ...viewerPart(b.user_id, ownBook.get(b.sha256) ?? null, request.user) }));
+    return books.map((b) => ({ ...b.entry, ...viewerPart(b.publisherId, ownBook.get(b.sha256) ?? null, request.user) }));
   });
 
   /** One public book, for its page: also how many people have it and its catalog subjects. */

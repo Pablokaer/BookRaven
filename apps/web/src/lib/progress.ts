@@ -36,6 +36,8 @@ const outbox = createOutbox<Pending>({
     convert: (old) => Object.values(old as Record<string, Pending>).sort((a, b) => a.clientUpdatedAt - b.clientUpdatedAt),
   }),
   key: (p) => p.bookId,
+  // A book whose position the server keeps failing doesn't hold back the other books'.
+  independentKeys: true,
   delay: DEBOUNCE_MS,
   send: ([p]) =>
     apiFetch(`/api/books/${p!.bookId}/progress`, {

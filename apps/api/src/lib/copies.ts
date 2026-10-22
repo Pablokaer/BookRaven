@@ -1,7 +1,7 @@
 import type { FastifyReply } from "fastify";
 import type { SessionUser } from "../auth.js";
 import { query } from "../db.js";
-import { bookDto } from "../routes/books.js";
+import { bookDto } from "./bookDto.js";
 import { publish } from "./events.js";
 import { BlockedFileError, isFileBlocked } from "./moderation.js";
 import { QuotaExceededError, quotaBody, withQuota } from "./quota.js";

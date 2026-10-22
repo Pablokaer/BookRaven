@@ -6,7 +6,8 @@ import { copyOrReply } from "../lib/copies.js";
 import { forgetClubMembership, memberIds, notifyMembers } from "../lib/clubs.js";
 import { publish } from "../lib/events.js";
 import { findOr404, obj, TOKEN_RE, UUID_RE } from "../lib/http.js";
-import { sendCover, type BookRow } from "./books.js";
+import type { BookRow } from "../lib/bookDto.js";
+import { sendCover } from "./books.js";
 const newToken = () => randomBytes(15).toString("base64url");
 
 type ClubRow = {

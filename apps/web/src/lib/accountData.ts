@@ -1,7 +1,7 @@
 import type { Book, Folder, Me } from "./api";
 import { KEPT_COVER, OFFLINE_CACHE, OFFLINE_COPIES, OFFLINE_COPY_HEADER } from "./offlineCopies";
 import { isNative } from "./platform";
-import { readJson, removeKey, writeJson } from "./storage";
+import { readJson, removeKeysWithPrefix, writeJson } from "./storage";
 
 /**
  * The account's data on this device: everything kept here for the signed-in account, so it can
@@ -75,15 +75,22 @@ const SNAPSHOT_KEYS: Record<keyof Snapshots, string> = { books: "readsync.books"
 const snapshotKey = (kind: keyof Snapshots, userId: string) => `${SNAPSHOT_KEYS[kind]}.${userId}`;
 
 /**
- * Set by signing out until the next account's library opens (it loads its snapshots first): the
- * library closing behind the sign-out saves its list once more, and that write must not bring the
- * signed-out account's books back.
+ * Set by signing out until an account's library opens again (`openAccount`): the library closing
+ * behind the sign-out saves its list once more, and that write must not bring the signed-out
+ * account's books back. Reading a snapshot meanwhile doesn't lift it.
  */
 let forgotten = false;
 
+/**
+ * An account's library opens (signing in, or signing out didn't happen and the account is still
+ * signed in): its snapshots are kept again.
+ */
+export function openAccount() {
+  forgotten = false;
+}
+
 /** The account's last-known `kind`, or null (lists that aren't lists count as missing). */
 export function loadSnapshot<K extends keyof Snapshots>(kind: K, userId: string): Snapshots[K] | null {
-  forgotten = false;
   const value = readJson<unknown>(snapshotKey(kind, userId), null);
   if (kind !== "me" && !Array.isArray(value)) return null;
   return value as Snapshots[K] | null;
@@ -97,15 +104,7 @@ export function saveSnapshot<K extends keyof Snapshots>(kind: K, userId: string,
 keptForAccount({
   forget() {
     forgotten = true;
-    const prefixes = Object.values(SNAPSHOT_KEYS).map((base) => `${base}.`);
-    try {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (k && prefixes.some((p) => k.startsWith(p))) removeKey(k);
-      }
-    } catch {
-      /* unavailable: nothing stored */
-    }
+    removeKeysWithPrefix(...Object.values(SNAPSHOT_KEYS).map((base) => `${base}.`));
   },
 });
 

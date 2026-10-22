@@ -17,8 +17,9 @@ export function getPublicBook(id: string) {
  * library's `publicVersion`), a book added to or removed from the viewer's library (which public
  * books are their own, `ownBookId`), and a reconnection (events were missed). This app's own
  * publish, unpublish, add and remove forget it too, at once: the page reloads before the event
- * arrives. Signing in as someone else forgets it (lib/libraryStore). The age limit covers
- * changes no event reports.
+ * arrives, and so do uploading or deleting one of the viewer's books (lib/libraryStore), as the
+ * live connection may be down or late. Signing in as someone else forgets it (lib/libraryStore).
+ * The age limit covers changes no event reports.
  */
 let catalog: { at: number; books: Promise<PublicBook[]> } | null = null;
 const CATALOG_MAX_AGE = 5 * 60_000;

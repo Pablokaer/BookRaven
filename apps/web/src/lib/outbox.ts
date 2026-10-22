@@ -7,10 +7,12 @@ import { readJson, removeKey, writeJson } from "./storage";
  *  - With a `delay`, a change waits a moment before it is sent, so quick changes to the same key
  *    go as one request (reading positions while turning pages); `flush()` sends without waiting.
  *  - Changes are sent in order; a failure stops the queue until the next attempt, so a later
- *    change never overtakes an earlier one.
+ *    change never overtakes an earlier one. With `independentKeys`, each key has its own queue:
+ *    a failing change holds back only the changes with its key.
  *  - Network errors, 401, 408, 429 and 5xx are tried again after a growing delay (429 waits
- *    as long as the server's Retry-After asks). Other refusals (400, 403, 409, 413…) can never
- *    succeed, so the change is dropped and `onRejected` lets the app show the server's state again.
+ *    as long as the server's Retry-After asks), or at once on `flush()`. Other refusals (400,
+ *    403, 409, 413…) can never succeed, so the change is dropped and `onRejected` lets the app
+ *    show the server's state again.
  */
 
 export type Outcome = "done" | "retry" | "rejected";
@@ -134,7 +136,7 @@ export type Outbox<T> = {
   push(item: T): Queued<T>;
   /** Changes not yet accepted by the server, oldest first. */
   pending(): Queued<T>[];
-  /** Sends what is waiting, without the `delay`; resolves when the queue is empty or must wait. */
+  /** Sends what is waiting, without the `delay` or the wait before a retry; resolves when the queue is empty or must wait. */
   flush(): Promise<void>;
   /** Resolves once the changes stored by earlier sessions are loaded. */
   ready: Promise<void>;
@@ -152,6 +154,11 @@ export function createOutbox<T>(options: {
   key?(item: T): string;
   /** A waiting change being replaced: what to keep of it (default: just the newer one). */
   combine?(older: T, newer: T): T;
+  /**
+   * Changes with different keys go independently: one waiting to be tried again holds back only
+   * the changes with its key (positions of different books). Default: one queue, in order.
+   */
+  independentKeys?: boolean;
   /** How long (ms) a change waits before it is sent, so a newer one with the same key can replace it (default 0). */
   delay?: number;
   /** The server refused these changes for good (they are already out of the queue). */
@@ -190,37 +197,57 @@ export function createOutbox<T>(options: {
 
   let flushing: Promise<void> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** The timer waits for a change's delay (not a retry). */
-  let waiting = false;
-  let attempt = 0;
+  /** The last round left changes waiting (for their delay or a retry). */
+  let held = false;
+  /** Which queue a change is in: one for all, or one per key (`independentKeys`). */
+  const lane = (item: T) => (options.independentKeys && options.key ? options.key(item) : "");
+  /** Retries planned, per queue: how many so far, and not before when. */
+  const retries = new Map<string, { attempt: number; at: number }>();
 
-  /** Sends again in `ms` (one timer: a retry, or the end of a change's delay). */
+  /** Sends again in `ms` (one timer: the soonest retry or end of a change's delay). */
   const runIn = (ms: number) => {
     clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      waiting = false;
       void run();
     }, ms);
   };
 
-  const retryLater = (retryAfter?: string | null) => {
-    attempt++;
-    waiting = false;
-    runIn(retryDelay(attempt, retryAfter));
-  };
+  /** The changes to send next (from the front of the first queue free to go), or how long until one is. */
+  function next(): { items: Queued<T>[]; wait: 0 } | { items: null; wait: number } {
+    const now = Date.now();
+    const seen = new Set<string>();
+    let wait = Infinity;
+    for (const front of queue) {
+      const l = lane(front);
+      if (seen.has(l)) continue;
+      seen.add(l);
+      const due = front.seq > flushedThrough ? (dueAt.get(front.seq) ?? 0) : 0;
+      const until = Math.max(due, retries.get(l)?.at ?? 0) - now;
+      if (until > 0) {
+        wait = Math.min(wait, until);
+        continue;
+      }
+      const own = options.independentKeys ? queue.filter((q) => lane(q) === l) : queue;
+      return { items: own.slice(0, Math.max(1, Math.min(own.length, options.batch?.(own) ?? 1))), wait: 0 };
+    }
+    return { items: null, wait };
+  }
 
   async function sendAll() {
     await ready;
-    while (queue.length) {
-      const front = queue[0]!;
-      const wait = front.seq > flushedThrough ? (dueAt.get(front.seq) ?? 0) - Date.now() : 0;
-      if (wait > 0) {
-        waiting = true;
-        return runIn(wait);
+    for (;;) {
+      const { items, wait } = next();
+      if (!items) {
+        held = wait < Infinity;
+        if (held) runIn(wait);
+        else {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+        return;
       }
-      const n = Math.max(1, Math.min(queue.length, options.batch?.(queue) ?? 1));
-      const items = queue.slice(0, n);
+      const l = lane(items[0]!);
       items.forEach((i) => sending.add(i.seq));
       let res: Response | null = null;
       try {
@@ -231,8 +258,13 @@ export function createOutbox<T>(options: {
         items.forEach((i) => sending.delete(i.seq));
       }
       const outcome = res ? settle(res.status) : "retry";
-      if (outcome === "retry") return retryLater(res?.headers.get("Retry-After"));
-      attempt = 0;
+      if (outcome === "retry") {
+        // This queue waits; the others (`independentKeys`) go on.
+        const attempt = (retries.get(l)?.attempt ?? 0) + 1;
+        retries.set(l, { attempt, at: Date.now() + retryDelay(attempt, res?.headers.get("Retry-After")) });
+        continue;
+      }
+      retries.delete(l);
       queue = queue.filter((q) => !items.includes(q));
       items.forEach((i) => dueAt.delete(i.seq));
       await options.store.remove(items);
@@ -253,9 +285,11 @@ export function createOutbox<T>(options: {
 
   async function flush() {
     flushedThrough = lastSeq;
+    // Planned retries are tried now too (back online, page hidden).
+    retries.forEach((r) => (r.at = 0));
     await run();
-    // The round had stopped at a change still in its delay before this was asked: send it now.
-    if (waiting && queue.some((q) => q.seq <= flushedThrough)) await run();
+    // The round had passed over a change still waiting before this was asked: send it now.
+    if (held && queue.some((q) => q.seq <= flushedThrough && !(retries.get(lane(q))?.at ?? 0))) await run();
   }
 
   return {
@@ -274,8 +308,8 @@ export function createOutbox<T>(options: {
       await ready;
       clearTimeout(timer);
       timer = undefined;
-      waiting = false;
-      attempt = 0;
+      held = false;
+      retries.clear();
       queue = [];
       dueAt.clear();
       await options.store.clear();

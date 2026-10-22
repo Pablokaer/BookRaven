@@ -8,7 +8,7 @@ import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { sendMailInBackground } from "../lib/mailer.js";
 import { BlockedFileError } from "../lib/moderation.js";
 import { publishBook } from "../lib/publicCatalog.js";
-import { SELECT_BOOK, type BookRow } from "./books.js";
+import { SELECT_BOOK, type BookRow } from "../lib/bookDto.js";
 
 type RequestRow = {
   id: string;

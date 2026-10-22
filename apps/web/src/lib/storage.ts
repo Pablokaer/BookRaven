@@ -37,3 +37,15 @@ export function removeKey(key: string) {
     /* unavailable: nothing stored */
   }
 }
+
+/** Removes every key starting with one of `prefixes`. */
+export function removeKeysWithPrefix(...prefixes: string[]) {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && prefixes.some((p) => k.startsWith(p))) localStorage.removeItem(k);
+    }
+  } catch {
+    /* unavailable: nothing stored */
+  }
+}

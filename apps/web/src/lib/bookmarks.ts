@@ -1,7 +1,7 @@
 import { keptForAccount } from "./accountData";
 import { apiFetch, apiJson, type Bookmark } from "./api";
 import { createOutbox, localStorageStore, type Queued } from "./outbox";
-import { readJson, writeJson } from "./storage";
+import { readJson, removeKeysWithPrefix, writeJson } from "./storage";
 
 /**
  * Bookmarked pages ("save this page", like a Kindle bookmark).
@@ -110,11 +110,7 @@ export const flushBookmarks = () => outbox.flush();
 /** Forgets unsent changes and the offline copies (sign-out). */
 export async function clearBookmarks() {
   await outbox.clear();
-  try {
-    for (const k of Object.keys(localStorage)) if (k.startsWith(cacheKey(""))) localStorage.removeItem(k);
-  } catch {
-    /* unavailable: nothing stored */
-  }
+  removeKeysWithPrefix(cacheKey(""));
 }
 
 keptForAccount({ flush: flushBookmarks, forget: clearBookmarks });
