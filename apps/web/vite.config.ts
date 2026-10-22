@@ -5,6 +5,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig } from "vite";
 import { nativeVersion } from "./scripts/native-version.mjs";
+import { OFFLINE_COPIES_SCRIPT, offlineCopiesScript } from "./src/lib/offlineCopies.js";
 
 export default defineConfig(({ mode }) => {
   // The Android build is tagged so the app knows which live updates it can take (src/lib/appUpdate.ts).
@@ -21,6 +22,14 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      // The service worker (public/sw.js, not bundled) loads the list of reads that keep an
+      // offline copy from this file, so it and the Android app follow the same list.
+      {
+        name: "offline-copies",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: OFFLINE_COPIES_SCRIPT, source: offlineCopiesScript() });
+        },
+      },
       // The Android app never shows the link-preview image: keep it out of the APK and live
       // updates (App.tsx leaves out the landing page and its plates the same way).
       native && {
@@ -43,6 +52,13 @@ export default defineConfig(({ mode }) => {
       target: "es2022",
       chunkSizeWarningLimit: 2000,
       rolldownOptions: {
+        // lib/accountData.ts loads every module that keeps the account's data before signing out,
+        // most of them already loaded with the first screen: those imports are meant to change
+        // nothing in the chunks.
+        onLog(level, log, handler) {
+          if (log.code === "INEFFECTIVE_DYNAMIC_IMPORT" && log.message.includes("src/lib/accountData.ts")) return;
+          handler(level, log);
+        },
         output: {
           codeSplitting: {
             groups: [

@@ -1,3 +1,4 @@
+import { keptForAccount } from "./accountData";
 import { apiFetch, apiJson, type Progress } from "./api";
 import { deviceId, deviceName } from "./device";
 import { retryDelay, settle } from "./outbox";
@@ -100,6 +101,8 @@ export function clearProgress() {
   lastLocal.clear();
   removeKey(OUTBOX_KEY);
 }
+
+keptForAccount({ flush: () => flushProgress(), forget: clearProgress });
 
 export function fetchProgress(bookId: string) {
   return apiJson<Progress | null>(`/api/books/${bookId}/progress`);

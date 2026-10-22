@@ -1,18 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { apiFetch, isNative, openApiCache } from "../lib/api";
+import { withOfflineCopy } from "../lib/accountData";
+import { apiFetch } from "../lib/api";
 import { ObjectUrlCache } from "../lib/objectUrls";
 
-/** A book's own cover never changes: the Android app keeps it for offline use, as the service worker does on the web. */
-const OWN_COVER = /^\/api\/books\/[^/]+\/cover$/;
-
+/** A cover's image; the Android app keeps a book's own cover for offline use, as the service worker does on the web. */
 async function load(path: string) {
-  const cache = isNative && OWN_COVER.test(path) ? await openApiCache() : null;
-  const kept = await cache?.match(path).catch(() => undefined);
-  if (kept) return kept.blob();
-  const res = await apiFetch(path);
-  if (!res.ok) return null;
-  if (cache) void cache.put(path, res.clone()).catch(() => {});
-  return res.blob();
+  const res = await withOfflineCopy(path, () => apiFetch(path));
+  return res.ok ? res.blob() : null;
 }
 
 /**

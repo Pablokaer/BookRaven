@@ -9,23 +9,17 @@
  * - book files are not handled here: the app keeps the books you open in its own cache.
  */
 const APP = "readsync-app-v1";
-const API = "readsync-api-v1";
 /** The shell of the version before the cached one, kept so its pages' files are not pruned. */
 const PREVIOUS_SHELL = "/?shell=previous";
 /** How long a navigation waits for the network before opening the cached shell. */
 const SHELL_TIMEOUT = 4000;
 
-const API_CACHED = [
-  /^\/api\/config$/,
-  /^\/api\/me$/,
-  /^\/api\/settings$/,
-  /^\/api\/folders$/,
-  /^\/api\/books$/,
-  /^\/api\/books\/[^/]+$/,
-  /^\/api\/books\/[^/]+\/(about|highlights|progress)$/,
-  /^\/api\/auth\/get-session$/,
-];
-const COVER = /^\/api\/books\/[^/]+\/cover$/;
+// Which library reads keep an offline copy, the cache they live in and the header marking a
+// copy: one list shared with the Android app (src/lib/offlineCopies.ts), which the build writes
+// next to this file. Imported scripts are kept with the worker, so this works offline too.
+importScripts("/offline-copies.js");
+const { cache: API, header: OFFLINE_COPY, cover: COVER } = self.OFFLINE_COPIES;
+const API_CACHED = self.OFFLINE_COPIES.copies.map((c) => c.path);
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -59,10 +53,10 @@ async function networkFirst(event, cacheName) {
   }
 }
 
-/** Marks an answer taken from the cache, so the app can tell it from the server's (src/lib/api.ts). */
+/** Marks an answer taken from the cache, so the app can tell it from the server's (src/lib/accountData.ts). */
 function offlineCopy(response) {
   const headers = new Headers(response.headers);
-  headers.set("X-Offline-Copy", "1");
+  headers.set(OFFLINE_COPY, "1");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -140,7 +134,7 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-// Signing out drops the cached library data.
+// Signing out drops the cached library data (src/lib/accountData.ts).
 self.addEventListener("message", (event) => {
   if (event.data === "signed-out") event.waitUntil(caches.delete(API));
 });

@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { loadSnapshot, saveSnapshot } from "./accountData";
 import { ApiError, type Book, type Folder, type Me, type Progress } from "./api";
 import { deleteBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
 import { deviceId } from "./device";
 import { forgetDeviceBook, makeRoom, pruneDeviceBooks } from "./deviceStorage";
 import { eventsConnected, onServerEvent, RECONNECTED } from "./events";
 import { afterIdle } from "./idle";
-import { loadCachedBooks, loadCachedFolders, loadCachedMe, saveCachedBooks, saveCachedFolders, saveCachedMe } from "./libraryCache";
 import { percent } from "./format";
 import { fileSize } from "./format";
 import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } from "./library";
@@ -130,13 +130,13 @@ const PROGRESS_INTERVAL = 100;
 export function LibraryProvider({ children, userId }: { children: ReactNode; userId: string }) {
   // Hydrate instantly from the last snapshot kept in localStorage (keyed by user), so a cold
   // start shows real numbers on the first frame; `refresh()` below updates them over the network.
-  const [books, setBooks] = useState<Book[] | null>(() => loadCachedBooks(userId));
-  const [savedFolders] = useState(() => loadCachedFolders(userId));
+  const [books, setBooks] = useState<Book[] | null>(() => loadSnapshot("books", userId));
+  const [savedFolders] = useState(() => loadSnapshot("folders", userId));
   const [folders, setFolders] = useState<Folder[]>(savedFolders ?? []);
   const foldersRef = useRef(folders);
   foldersRef.current = folders;
   const [foldersReady, setFoldersReady] = useState(savedFolders !== null);
-  const [me, setMe] = useState<Me | null>(() => loadCachedMe(userId));
+  const [me, setMe] = useState<Me | null>(() => loadSnapshot("me", userId));
   const [publicVersion, setPublicVersion] = useState(0);
   const [requestsVersion, setRequestsVersion] = useState(0);
   const [clubsVersion, setClubsVersion] = useState(0);
@@ -161,36 +161,37 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
   // Keep the localStorage snapshot in step with every change (network refresh, live events,
   // optimistic edits), so the next cold start hydrates from the latest known state. `books`
   // changes on every reading position (this device's own too), so the snapshot is written at
-  // most every 2 s, and right away when the page is hidden or closed and on sign-out.
+  // most every 2 s, and right away when the page is hidden or closed and when the library closes
+  // (after signing out it is not kept: lib/accountData.ts).
   const snapshot = useRef<{ userId: string; books: Book[] } | null>(null);
   const snapshotTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const saveSnapshot = useCallback(() => {
+  const saveBooksSnapshot = useCallback(() => {
     clearTimeout(snapshotTimer.current);
     snapshotTimer.current = undefined;
-    if (snapshot.current) saveCachedBooks(snapshot.current.userId, snapshot.current.books);
+    if (snapshot.current) saveSnapshot("books", snapshot.current.userId, snapshot.current.books);
     snapshot.current = null;
   }, []);
   useEffect(() => {
     if (!books) return;
-    if (snapshot.current && snapshot.current.userId !== userId) saveSnapshot();
+    if (snapshot.current && snapshot.current.userId !== userId) saveBooksSnapshot();
     snapshot.current = { userId, books };
-    snapshotTimer.current ??= setTimeout(saveSnapshot, 2000);
-  }, [books, userId, saveSnapshot]);
+    snapshotTimer.current ??= setTimeout(saveBooksSnapshot, 2000);
+  }, [books, userId, saveBooksSnapshot]);
   useEffect(() => {
-    const onHidden = () => document.visibilityState === "hidden" && saveSnapshot();
-    window.addEventListener("pagehide", saveSnapshot);
+    const onHidden = () => document.visibilityState === "hidden" && saveBooksSnapshot();
+    window.addEventListener("pagehide", saveBooksSnapshot);
     document.addEventListener("visibilitychange", onHidden);
     return () => {
-      window.removeEventListener("pagehide", saveSnapshot);
+      window.removeEventListener("pagehide", saveBooksSnapshot);
       document.removeEventListener("visibilitychange", onHidden);
-      saveSnapshot();
+      saveBooksSnapshot();
     };
-  }, [saveSnapshot]);
+  }, [saveBooksSnapshot]);
   useEffect(() => {
-    if (me) saveCachedMe(userId, me);
+    if (me) saveSnapshot("me", userId, me);
   }, [me, userId]);
   useEffect(() => {
-    if (foldersReady) saveCachedFolders(userId, folders);
+    if (foldersReady) saveSnapshot("folders", userId, folders);
   }, [folders, foldersReady, userId]);
 
   // A book's pieces found no room on the device: books read least recently make some.

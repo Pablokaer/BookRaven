@@ -1,3 +1,4 @@
+import { keptForAccount } from "./accountData";
 import { apiFetch, apiJson, type Bookmark } from "./api";
 import { createOutbox, localStorageStore, type Queued } from "./outbox";
 import { readJson, writeJson } from "./storage";
@@ -115,3 +116,5 @@ export async function clearBookmarks() {
     /* unavailable: nothing stored */
   }
 }
+
+keptForAccount({ flush: flushBookmarks, forget: clearBookmarks });

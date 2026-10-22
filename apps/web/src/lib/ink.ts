@@ -1,3 +1,4 @@
+import { keptForAccount } from "./accountData";
 import { apiFetch, apiJson } from "./api";
 import { deviceId } from "./device";
 import { afterIdle } from "./idle";
@@ -170,6 +171,8 @@ export async function clearInk() {
   await outbox.clear();
   if (typeof caches !== "undefined") await caches.delete(STORE).catch(() => {});
 }
+
+keptForAccount({ flush: flushInk, forget: clearInk });
 
 // ---------- Offline copy, one entry per page ----------
 
