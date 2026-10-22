@@ -65,6 +65,10 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # Written into the prerendered landing page (structured data, canonical address, sign-up)
+      args:
+        PUBLIC_URL: ${PUBLIC_URL}
+        ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
     restart: unless-stopped
     logging: *logging
     environment:
