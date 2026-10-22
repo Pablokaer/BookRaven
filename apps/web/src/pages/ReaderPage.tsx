@@ -189,10 +189,9 @@ export function ReaderPage() {
       .then((list) => !cancelled && setHighlights(sortHighlights(list)))
       .catch(() => {});
     const off = onServerEvent((event, data) => {
-      if (data?.bookId !== book.id) return;
-      if (event === "highlight.saved") {
-        setHighlights((prev) => sortHighlights([...prev.filter((h) => h.id !== data.id), data as Highlight]));
-      } else if (event === "highlight.deleted") {
+      if (event === "highlight.saved" && data.bookId === book.id) {
+        setHighlights((prev) => sortHighlights([...prev.filter((h) => h.id !== data.id), data]));
+      } else if (event === "highlight.deleted" && data.bookId === book.id) {
         setHighlights((prev) => prev.filter((h) => h.id !== data.id));
       }
     });
