@@ -3,12 +3,10 @@ import { useEffect, useState } from "react";
 import type { Bookmark, Highlight } from "../lib/api";
 import { percent } from "../lib/format";
 import { HIGHLIGHT_COLORS } from "../lib/highlights";
+import type { AnnotatedInkPage } from "../lib/inkSession";
 import { PanelShell } from "./PanelShell";
 
 export type NotebookTab = "highlights" | "bookmarks" | "ink";
-
-/** A page with handwriting: its number of strokes, and a signature that changes with any stroke (lib/ink). */
-export type InkPageSummary = { page: number; strokes: number; signature: string };
 
 /** The reader's notebook: highlights (books with text), bookmarked pages (every format) and handwritten PDF pages. */
 export function NotebookPanel({
@@ -39,7 +37,7 @@ export function NotebookPanel({
   onRenameBookmark: (b: Bookmark, title: string | null) => void;
   onDeleteBookmark: (b: Bookmark) => void;
   /** PDFs: the pages with handwriting and their number of strokes. */
-  inkPages?: InkPageSummary[];
+  inkPages?: AnnotatedInkPage[];
   thumbnail: (page: number) => Promise<string | null>;
   onSelectInkPage: (page: number) => void;
   onClose: () => void;
@@ -157,7 +155,7 @@ function InkPageList({
   thumbnail,
   onSelect,
 }: {
-  pages: InkPageSummary[];
+  pages: AnnotatedInkPage[];
   thumbnail: (page: number) => Promise<string | null>;
   onSelect: (page: number) => void;
 }) {

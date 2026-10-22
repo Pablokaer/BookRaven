@@ -71,7 +71,7 @@ describe("signing out", () => {
   it("leaves nothing the account kept on the device, only the device's own preferences", async () => {
     const { savePosition, openingLocator, worthOffering } = await import("./progress");
     const { putBookmark, rememberBookmarks, withPending } = await import("./bookmarks");
-    const { recordInk, rememberInkPage, withPendingInk } = await import("./ink");
+    const { inkServer } = await import("./ink");
     const { keepOnDevice } = await import("./deviceStorage");
     const { BOOK_CACHE } = await import("./rangeFile");
     const stroke = { id: "s1", tool: "pen" as const, color: "#111827", width: 0.002, points: [0, 0, 0.5] };
@@ -84,8 +84,8 @@ describe("signing out", () => {
     savePosition("b1", { locator: "page:3", percentage: 0.1, label: null });
     putBookmark("b1", { locator: "page:3", percentage: 0.1, label: null });
     rememberBookmarks("b1", []);
-    recordInk("b1", 1, { add: [stroke], remove: [] });
-    rememberInkPage("b1", 1, [stroke], 1);
+    inkServer.send("b1", 1, { add: [stroke], remove: [] });
+    inkServer.remember("b1", 1, [stroke], 1);
     keepOnDevice("b1");
     await env.open(BOOK_CACHE).put("/books/b1", new Response("book"));
     await env.open(OFFLINE_CACHE).put("/api/books", new Response("[]"));
@@ -107,7 +107,7 @@ describe("signing out", () => {
     expect(openingLocator("b1", null)).toBeNull();
     expect(worthOffering("b1", { locator: "page:1", updatedAt: new Date(1).toISOString() }, null)).toBe(true);
     expect(withPending("b1", [])).toEqual([]);
-    expect(withPendingInk("b1", 1, [])).toEqual([]);
+    expect(inkServer.unsent("b1")).toEqual([]);
   });
 
   it("doesn't keep the library list the closing library saves after signing out, until the next one opens", async () => {
