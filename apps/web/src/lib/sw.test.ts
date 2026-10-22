@@ -3,11 +3,10 @@ import source from "../../public/sw.js?raw";
 
 // The service worker is a plain script in public/: run it with a stand-in `self` and take out
 // its pruning logic.
-const unreachableAssets = new Function("self", `${source}\nreturn unreachableAssets;`)({ addEventListener() {} }) as (
-  roots: string[],
-  names: string[],
-  readText: (name: string) => Promise<string>,
-) => Promise<string[]>;
+const { unreachableAssets, isLandingPage } = new Function("self", `${source}\nreturn { unreachableAssets, isLandingPage };`)({ addEventListener() {} }) as {
+  unreachableAssets: (roots: string[], names: string[], readText: (name: string) => Promise<string>) => Promise<string[]>;
+  isLandingPage: (html: string) => boolean;
+};
 
 const shell = (entry: string, css: string) =>
   `<!doctype html><html><head><script type="module" crossorigin src="/assets/${entry}"></script><link rel="stylesheet" crossorigin href="/assets/${css}"></head></html>`;
@@ -51,5 +50,13 @@ describe("service worker pruning", () => {
   it("deletes nothing when a file can't be read", async () => {
     const failing = async (name: string) => (name === "SearchPage-NEW00002.js" ? Promise.reject(new Error("gone")) : files[name]!);
     await expect(unreachableAssets([shell("index-NEW00001.js", "index-NEW0000c.css")], names, failing)).rejects.toThrow("gone");
+  });
+});
+
+describe("service worker shell", () => {
+  it("doesn't take the prerendered landing page for the app's shell", () => {
+    expect(isLandingPage('<body><div id="root" data-landing><!--$--><div class="lit">')).toBe(true);
+    expect(isLandingPage('<body><div id="root" data-landing="signup-closed"><!--$-->')).toBe(true);
+    expect(isLandingPage('<body><div id="root"></div><script type="module" src="/assets/index.js"></script>')).toBe(false);
   });
 });

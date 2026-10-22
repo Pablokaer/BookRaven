@@ -78,12 +78,21 @@ async function cacheFirst(event, cacheName) {
   return response;
 }
 
+/**
+ * The prerendered landing page (landing.html, what "/" answers without a session cookie) is not
+ * the app's shell: kept as one, it would open in place of the app offline, and, differing from
+ * index.html, push the previous version's shell out (and with it the files that version needs).
+ */
+const isLandingPage = (html) => /<div id="root" data-landing/.test(html);
+
 /** Keeps a new shell, and the one it replaces when that was another version. */
 async function saveShell(response) {
+  const after = await response.clone().text();
+  if (isLandingPage(after)) return;
   const cache = await caches.open(APP);
   const current = await cache.match("/");
   if (current) {
-    const [before, after] = await Promise.all([current.clone().text(), response.clone().text()]);
+    const before = await current.clone().text();
     if (before !== after) await cache.put(PREVIOUS_SHELL, current);
   }
   await cache.put("/", response);

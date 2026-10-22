@@ -58,8 +58,11 @@ const LandingPage = NATIVE_BUILD ? () => null : lazy(() => import("./pages/Landi
  * session cookie; scripts/prerender.mjs). The service worker may also hand that copy out at
  * another address, where it isn't used.
  */
-export const prerenderedLanding =
-  !NATIVE_BUILD && typeof document !== "undefined" && window.location.pathname === "/" && Boolean(document.getElementById("root")?.hasAttribute("data-landing"));
+const landingMark =
+  !NATIVE_BUILD && typeof document !== "undefined" && window.location.pathname === "/" ? document.getElementById("root")?.getAttribute("data-landing") : null;
+export const prerenderedLanding = landingMark != null;
+/** Whether the prerendered page offered sign-up (ALLOW_SIGNUP when it was built), so hydration draws it the same. */
+const prerenderedSignup = landingMark !== "signup-closed";
 
 // The reader (pdf.js, foliate-js) is loaded only when a book is opened.
 const ReaderPage = lazy(() => import("./pages/ReaderPage").then((m) => ({ default: m.ReaderPage })));
@@ -170,7 +173,7 @@ function SignedOutApp({ onSignedIn }: { onSignedIn: () => void }) {
               <LoginPage onSignedIn={onSignedIn} />
             ) : (
               <Suspense fallback={<AppLoading />}>
-                <LandingPage />
+                <LandingPage signupDefault={prerenderedSignup} />
               </Suspense>
             )
           }
