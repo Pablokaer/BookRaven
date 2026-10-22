@@ -4,9 +4,10 @@ import { query } from "../db.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { aboutFile } from "../lib/bookAbout.js";
 import { comicAsCbz, CONVERTED_FORMATS } from "../lib/comicConvert.js";
-import { broadcast, publish } from "../lib/events.js";
+import { publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
-import { isFileBlocked } from "../lib/moderation.js";
+import { BlockedFileError, isFileBlocked } from "../lib/moderation.js";
+import { catalogChanged, catalogTransaction } from "../lib/publicCatalog.js";
 import { QuotaExceededError, quotaBody, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
 import { DETECT_BYTES, detectFormat, imageMime, MIME_TYPES } from "../lib/formats.js";
 import {
@@ -23,6 +24,8 @@ import {
   streamToTemp,
   type TempFile,
 } from "../lib/storage.js";
+
+class UnknownFolderError extends Error {}
 
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
 /** Longest blurb kept (some EPUBs carry a whole chapter in their description). */
@@ -350,43 +353,49 @@ export async function bookRoutes(app: FastifyInstance) {
       const book = await loadOwnedBook(request, reply);
       if (!book) return;
       const { title, author, folderId, tags, favorite, isPublic } = request.body;
-      if (isPublic && (await isFileBlocked(book.sha256))) return reply.code(451).send({ error: "blocked_content" });
-      if (folderId) {
-        const folder = await query("SELECT 1 FROM folder WHERE id = $1 AND user_id = $2", [
-          UUID_RE.test(folderId) ? folderId : null,
-          request.user.id,
-        ]);
-        if (folder.rowCount === 0) return reply.code(400).send({ error: "unknown_folder" });
+      let listingChanged: boolean;
+      try {
+        listingChanged = await catalogTransaction(async (catalog, db) => {
+          // First: a blocked file changes nothing (451).
+          const listed = isPublic === undefined ? false : isPublic ? await catalog.publish(book) : await catalog.unpublish(book);
+          if (folderId) {
+            const folder = await db.query("SELECT 1 FROM folder WHERE id = $1 AND user_id = $2", [
+              UUID_RE.test(folderId) ? folderId : null,
+              request.user.id,
+            ]);
+            if (folder.rowCount === 0) throw new UnknownFolderError();
+          }
+          await db.query(
+            `UPDATE book SET title = COALESCE($1, title),
+                             author = CASE WHEN $3 THEN $2 ELSE author END,
+                             folder_id = CASE WHEN $5 THEN $4::uuid ELSE folder_id END,
+                             tags = COALESCE($6, tags),
+                             favorite = COALESCE($8, favorite),
+                             updated_at = now()
+             WHERE id = $7`,
+            [
+              title ?? null,
+              author ?? null,
+              author !== undefined,
+              folderId ?? null,
+              folderId !== undefined,
+              tags ? normalizeTags(tags) : null,
+              book.id,
+              favorite ?? null,
+            ],
+          );
+          // A public book's catalog entry changed.
+          if (book.is_public && (title !== undefined || author !== undefined || tags !== undefined)) catalog.changed({ bookId: book.id });
+          return listed;
+        });
+      } catch (err) {
+        if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
+        if (err instanceof UnknownFolderError) return reply.code(400).send({ error: "unknown_folder" });
+        throw err;
       }
-      await query(
-        `UPDATE book SET title = COALESCE($1, title),
-                         author = CASE WHEN $3 THEN $2 ELSE author END,
-                         folder_id = CASE WHEN $5 THEN $4::uuid ELSE folder_id END,
-                         tags = COALESCE($6, tags),
-                         favorite = COALESCE($8, favorite),
-                         is_public = COALESCE($9, is_public),
-                         published_at = CASE WHEN $9 IS NULL THEN published_at WHEN $9 THEN COALESCE(published_at, now()) ELSE NULL END,
-                         updated_at = now()
-         WHERE id = $7`,
-        [
-          title ?? null,
-          author ?? null,
-          author !== undefined,
-          folderId ?? null,
-          folderId !== undefined,
-          tags ? normalizeTags(tags) : null,
-          book.id,
-          favorite ?? null,
-          isPublic ?? null,
-        ],
-      );
       const dto = await bookDto(book.id);
-      publish(request.user.id, "book.updated", dto);
-      // Published, unpublished, or a public book's catalog entry changed.
-      const listed = isPublic !== undefined && isPublic !== book.is_public;
-      if (listed || (book.is_public && (title !== undefined || author !== undefined || tags !== undefined))) {
-        broadcast("public.changed", { bookId: book.id });
-      }
+      // When the book was published or unpublished, the catalog already told its owner.
+      if (!listingChanged) publish(request.user.id, "book.updated", dto);
       return dto;
     },
   );
@@ -399,7 +408,7 @@ export async function bookRoutes(app: FastifyInstance) {
     const others = await query("SELECT 1 FROM book WHERE sha256 = $1 LIMIT 1", [book.sha256]);
     if (others.rowCount === 0) await removeBookFile(book.sha256);
     publish(request.user.id, "book.deleted", { id: book.id });
-    if (book.is_public) broadcast("public.changed", { bookId: book.id });
+    if (book.is_public) catalogChanged({ bookId: book.id });
     return reply.code(204).send();
   });
 

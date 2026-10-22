@@ -64,7 +64,8 @@ apps/
   api/                Fastify API
     src/auth.ts       Better Auth config + requireUser
     src/routes/       auth, books (upload/file/cover), progress, settings, events (SSE)
-    src/lib/          storage, format detection (magic bytes), SSE hub, CBZ copies of comics
+    src/lib/          storage, format detection (magic bytes), SSE hub, CBZ copies of comics,
+                      public catalog (every publish/unpublish and the listing, publicCatalog.ts)
     src/migrations/   SQL migrations (run automatically on start)
     scripts/          Docker image helper (drops unused optional peer dependencies)
   web/                React app (also the Capacitor Android app)
@@ -334,7 +335,7 @@ CI (`.github/workflows/ci.yml`) builds both apps on every push (the build typech
 
 ## API overview
 
-JSON answers to `GET /api/...` carry a weak `ETag` with `Cache-Control: private, no-cache`, so browsers revalidate their copy and a matching `If-None-Match` gets an empty 304 (not Better Auth's routes, the event stream, files or OPDS feeds). `/api/config` may be cached for 5 minutes and complete dictionary answers for a day. The server keeps the public catalog in memory until the public library changes; books added by `pnpm import:public-domain` (a separate process) appear within 5 minutes. Caddy compresses JSON but not the event stream (`/api/events`).
+JSON answers to `GET /api/...` carry a weak `ETag` with `Cache-Control: private, no-cache`, so browsers revalidate their copy and a matching `If-None-Match` gets an empty 304 (not Better Auth's routes, the event stream, files or OPDS feeds). `/api/config` may be cached for 5 minutes and complete dictionary answers for a day. The server keeps the public catalog (the first 1000 books, for the web app and the first OPDS pages) in memory until the public library changes; books added by `pnpm import:public-domain` (a separate process) appear within 5 minutes. Caddy compresses JSON but not the event stream (`/api/events`).
 
 | Method | Path | Notes |
 |---|---|---|

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { query } from "../db.js";
-import { broadcast } from "./events.js";
+import { catalogTransaction } from "./publicCatalog.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
 import { partialMd5OfFile } from "./koreader.js";
 import { isFileBlocked } from "./moderation.js";
@@ -23,7 +23,7 @@ import {
   type Person,
 } from "./publicDomain.js";
 import { IMPORT_PLAN, themesFor, type ImportStep, type Theme } from "./themes.js";
-import { commitBookFile, commitCover, ensureStorageDirs, streamToTemp, type TempFile } from "./storage.js";
+import { commitBookFile, commitCover, ensureStorageDirs, removeTemp, streamToTemp, type TempFile } from "./storage.js";
 
 /**
  * Imports popular public-domain books from Project Gutenberg into the public library.
@@ -117,48 +117,63 @@ export async function storePublicBook(
   const title = cleanTitle(b.title).slice(0, 500);
   const author = b.authors.map((a) => displayName(a.name)).join(", ").slice(0, 500) || null;
   const filename = `${title.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120).trim() || `${b.source}-${b.sourceId}`}.epub`;
-  let bookId = (await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [ownerId, file.sha256])).rows[0]?.id;
-  if (!bookId) {
+  const existingId = (await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [ownerId, file.sha256])).rows[0]?.id;
+  let added: { koreaderMd5: string; cover: TempFile | null } | null = null;
+  if (!existingId) {
     const koreaderMd5 = await partialMd5OfFile(file.tmpPath, file.size);
     await commitBookFile(file);
-    const { rows } = await query<{ id: string }>(
-      `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
-                         koreader_md5, is_public, published_at, language, tags, themes, description)
-       VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, true, now(), $9, $10, $11, $12) RETURNING id`,
-      [ownerId, title, author, filename, MIME_TYPES.epub, file.size, file.sha256, koreaderMd5, b.language, b.tags.slice(0, 5), b.themes, b.description],
-    );
-    bookId = rows[0]!.id;
-    const cover = coverUrls.length ? await downloadFirst(get, coverUrls, 16) : null;
-    if (cover && ((cover.head[0] === 0xff && cover.head[1] === 0xd8) || (pngCovers && cover.head[0] === 0x89))) {
-      await commitCover(cover.tmpPath, bookId);
-      await query("UPDATE book SET has_cover = true WHERE id = $1", [bookId]);
-    } else if (cover) {
+    let cover = coverUrls.length ? await downloadFirst(get, coverUrls, 16) : null;
+    if (cover && !((cover.head[0] === 0xff && cover.head[1] === 0xd8) || (pngCovers && cover.head[0] === 0x89))) {
       await fs.rm(cover.tmpPath, { force: true });
+      cover = null;
     }
+    added = { koreaderMd5, cover };
   }
-  await query(
-    `INSERT INTO catalog_book (source, source_id, title, authors, translators, language, subjects, bookshelves, themes, download_count, source_url, book_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-     ON CONFLICT (source, source_id) DO UPDATE SET book_id = EXCLUDED.book_id, download_count = EXCLUDED.download_count,
-       bookshelves = EXCLUDED.bookshelves, themes = EXCLUDED.themes`,
-    [
-      b.source,
-      b.sourceId,
-      title,
-      JSON.stringify(b.authors),
-      JSON.stringify(b.translators),
-      b.language,
-      b.subjects.slice(0, 20),
-      (b.bookshelves ?? []).slice(0, 20),
-      b.themes,
-      b.popularity,
-      b.sourceUrl,
-      bookId,
-    ],
-  );
-  // Reaches the API's catalog cache when the import runs inside it. The import script is a process
-  // of its own, with no one to tell: there the API's copy expires within 5 minutes.
-  broadcast("public.changed", {});
+  // A new book and its catalog entry are listed together. An existing one keeps its listing (an
+  // administrator may have taken it out).
+  await catalogTransaction(async (catalog, db) => {
+    let bookId = existingId;
+    if (added) {
+      const { rows } = await db.query<{ id: string }>(
+        `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
+                           koreader_md5, language, tags, themes, description)
+         VALUES ($1, $2, $3, 'epub', $4, $5, $6, $7, false, $8, $9, $10, $11, $12) RETURNING id`,
+        [ownerId, title, author, filename, MIME_TYPES.epub, file.size, file.sha256, added.koreaderMd5, b.language, b.tags.slice(0, 5), b.themes, b.description],
+      );
+      bookId = rows[0]!.id;
+      if (added.cover) {
+        await commitCover(added.cover.tmpPath, bookId);
+        await db.query("UPDATE book SET has_cover = true WHERE id = $1", [bookId]);
+      }
+      await catalog.publish({ id: bookId, user_id: ownerId, sha256: file.sha256 });
+    }
+    await db.query(
+      `INSERT INTO catalog_book (source, source_id, title, authors, translators, language, subjects, bookshelves, themes, download_count, source_url, book_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       ON CONFLICT (source, source_id) DO UPDATE SET book_id = EXCLUDED.book_id, download_count = EXCLUDED.download_count,
+         bookshelves = EXCLUDED.bookshelves, themes = EXCLUDED.themes`,
+      [
+        b.source,
+        b.sourceId,
+        title,
+        JSON.stringify(b.authors),
+        JSON.stringify(b.translators),
+        b.language,
+        b.subjects.slice(0, 20),
+        (b.bookshelves ?? []).slice(0, 20),
+        b.themes,
+        b.popularity,
+        b.sourceUrl,
+        bookId,
+      ],
+    );
+    // Reaches the API's catalog cache when the import runs inside it. The import script is a process
+    // of its own, with no one to tell: there the API's copy expires within 5 minutes.
+    catalog.changed({});
+  }).catch(async (err) => {
+    await removeTemp(added?.cover?.tmpPath);
+    throw err;
+  });
   return title;
 }
 
