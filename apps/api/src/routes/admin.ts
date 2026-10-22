@@ -5,12 +5,12 @@ import { forgetSessions, requireUser } from "../auth.js";
 import { config, isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { forgetAppPasswords } from "../lib/devices.js";
-import { broadcast, publish } from "../lib/events.js";
+import { publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { audit, log } from "../lib/log.js";
 import { quotaOf } from "../lib/quota.js";
 import { removeBookFile, removeCover } from "../lib/storage.js";
-import { SELECT_BOOK, toBookDto, type BookRow } from "./books.js";
+import { catalogChanged, unpublishFile } from "../lib/publicCatalog.js";
 
 async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
@@ -21,15 +21,6 @@ export async function adminUserIds() {
   if (!config.adminEmails.length) return [];
   const { rows } = await query<{ id: string }>(`SELECT id FROM "user" WHERE lower(email) = ANY($1)`, [config.adminEmails]);
   return rows.map((r) => r.id);
-}
-
-/** Takes every publication of a file out of the public library and tells the owners. */
-async function unpublishFile(sha256: string) {
-  const { rows } = await query<{ id: string }>("UPDATE book SET is_public = false, published_at = NULL WHERE sha256 = $1 AND is_public RETURNING id", [sha256]);
-  if (!rows.length) return;
-  const books = await query<BookRow>(`${SELECT_BOOK} WHERE b.id = ANY($1)`, [rows.map((r) => r.id)]);
-  for (const b of books.rows) publish(b.user_id, "book.updated", toBookDto(b));
-  broadcast("public.changed", { sha256 });
 }
 
 /** Deletes the given books and any stored file no other book uses any more. */
@@ -202,7 +193,7 @@ export async function adminRoutes(app: FastifyInstance) {
       forgetSessions(target.id);
       forgetAppPasswords(target.id);
     });
-    if (books.some((b) => b.is_public)) broadcast("public.changed", {});
+    if (books.some((b) => b.is_public)) catalogChanged({});
     return reply.code(204).send();
   });
 

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { Progress } from "../lib/api";
-import { deviceId } from "../lib/device";
-import { eventsLiveSince, onServerEvent } from "../lib/events";
-import { fetchProgress, lastLocalUpdate, type Position } from "../lib/progress";
+import { eventsLiveSince } from "../lib/events";
+import { fetchProgress, onPositionChange, worthOffering, type Position } from "../lib/progress";
 import { useDocumentEvent } from "../lib/useLatest";
 
 export type Remote = Pick<Progress, "locator" | "percentage" | "label" | "deviceName" | "updatedAt">;
@@ -16,10 +15,7 @@ export function useRemoteProgress(id: string, positionRef: RefObject<Position | 
 
   const offerRemote = useCallback(
     (p: Remote & { deviceId?: string | null }) => {
-      if (p.deviceId === deviceId) return;
-      if (new Date(p.updatedAt).getTime() <= lastLocalUpdate(id)) return;
-      if (positionRef.current?.locator === p.locator) return;
-      setRemote(p);
+      if (worthOffering(id, p, positionRef.current)) setRemote(p);
     },
     [id, positionRef],
   );
@@ -27,8 +23,8 @@ export function useRemoteProgress(id: string, positionRef: RefObject<Position | 
   // Another device moved forward: offer to jump there (live, via SSE).
   useEffect(
     () =>
-      onServerEvent((event, data) => {
-        if (event === "progress.updated" && data.bookId === id) offerRemote(data);
+      onPositionChange((p) => {
+        if (p.bookId === id) offerRemote(p);
       }),
     [id, offerRemote],
   );

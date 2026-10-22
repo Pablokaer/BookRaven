@@ -1,10 +1,17 @@
+import { comicPageLocator, fractionLocator, pageOf } from "@bookraven/locator";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { comicIndexFromLocator, comicLocator, comicToc, getComicArchive, type ComicArchive } from "../lib/comics";
+import { comicToc, getComicArchive, type ComicArchive } from "../lib/comics";
 import { attachLens } from "../lib/lens";
 import { pinchController, scrollSurface, type PinchController } from "../lib/pinchZoom";
 import { THEMES } from "../lib/settings";
 import { useLatest } from "../lib/useLatest";
 import { freeZone, USER_NAV_WINDOW_MS, type ReaderHandle, type ReaderProps } from "./types";
+
+/**
+ * The page index a locator points at (a comic page, or a percentage once `pageCount` is known,
+ * 0 before), in a comic of `pageCount` pages; the first page when it names none.
+ */
+const indexOf = (locator: string | null, pageCount: number) => (pageOf(locator, pageCount || undefined) ?? 1) - 1;
 
 /** Pages further than this from the current one give their image back (they keep their size). */
 const KEEP_AROUND = 10;
@@ -148,15 +155,17 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
   const columnRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef<PinchController | null>(null);
   const [archive, setArchive] = useState<ComicArchive | null>(null);
-  const [startIndex] = useState(() => comicIndexFromLocator(props.initialLocator));
-  const current = useRef(startIndex);
+  const [startLocator] = useState(props.initialLocator);
   const lastInteraction = useRef(0);
   const ready = useRef(false);
   const propsRef = useLatest(props);
   const count = archive?.pages.length ?? 0;
+  // Before the archive is open a percentage has no page yet: the strip starts loading at the top.
+  const [firstGuess] = useState(() => indexOf(startLocator, 0));
+  const current = useRef(firstGuess);
   const reportRef = useRef<(index: number) => void>(() => {});
   const [pages] = useState(
-    () => new StripPages(() => stageRef.current, (i) => i !== current.current && reportRef.current(i), startIndex),
+    () => new StripPages(() => stageRef.current, (i) => i !== current.current && reportRef.current(i), firstGuess),
   );
   useEffect(() => () => pages.disconnect(), [pages]);
 
@@ -180,7 +189,7 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
       pages.setCurrent(index);
       const byUser = ready.current && Date.now() - lastInteraction.current < USER_NAV_WINDOW_MS;
       propsRef.current.onRelocate(
-        { locator: comicLocator(index), percentage: count > 1 ? index / (count - 1) : 1, label: `Page ${index + 1} of ${count}` },
+        { locator: comicPageLocator(index), percentage: count > 1 ? index / (count - 1) : 1, label: `Page ${index + 1} of ${count}` },
         byUser,
       );
     },
@@ -192,16 +201,16 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
     prev: () => scrollPage(-1),
     goToFraction: (f) => {
       mark();
-      scrollToPage(Math.round(f * Math.max(0, count - 1)));
+      scrollToPage(indexOf(fractionLocator(f), count));
     },
     goToHref: (href) => {
       mark();
       const byName = archive?.pages.findIndex((p) => p.name === href) ?? -1;
-      scrollToPage(byName >= 0 ? byName : comicIndexFromLocator(href));
+      scrollToPage(byName >= 0 ? byName : indexOf(href, count));
     },
     restore: (locator) => {
       lastInteraction.current = 0;
-      scrollToPage(comicIndexFromLocator(locator));
+      scrollToPage(indexOf(locator, count));
     },
   }));
 
@@ -223,11 +232,12 @@ export const ComicScroller = forwardRef<ReaderHandle, ReaderProps>(function Comi
   // Jump to the saved page once the strip exists, then start reporting the position.
   useEffect(() => {
     if (!archive) return;
-    scrollToPage(Math.min(startIndex, archive.pages.length - 1));
-    report(Math.min(startIndex, archive.pages.length - 1));
+    const start = indexOf(startLocator, archive.pages.length);
+    scrollToPage(start);
+    report(start);
     const t = setTimeout(() => (ready.current = true), 300);
     return () => clearTimeout(t);
-  }, [archive, startIndex, scrollToPage, report]);
+  }, [archive, startLocator, scrollToPage, report]);
 
   // The page crossing the middle of the screen is the current one (StripPages watches for it).
   reportRef.current = report;

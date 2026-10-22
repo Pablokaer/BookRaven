@@ -6,8 +6,9 @@ import { bookRequestEmail } from "../lib/emails.js";
 import { broadcast, publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { sendMailInBackground } from "../lib/mailer.js";
-import { isFileBlocked } from "../lib/moderation.js";
-import { bookDto, SELECT_BOOK, type BookRow } from "./books.js";
+import { BlockedFileError } from "../lib/moderation.js";
+import { publishBook } from "../lib/publicCatalog.js";
+import { SELECT_BOOK, type BookRow } from "../lib/bookDto.js";
 
 type RequestRow = {
   id: string;
@@ -135,12 +136,11 @@ export async function requestRoutes(app: FastifyInstance) {
       ]);
       const book = rows[0];
       if (!book) return reply.code(404).send({ error: "book_not_found" });
-      if (await isFileBlocked(book.sha256)) return reply.code(451).send({ error: "blocked_content" });
-
-      if (!book.is_public) {
-        await query("UPDATE book SET is_public = true, published_at = COALESCE(published_at, now()) WHERE id = $1", [book.id]);
-        publish(request.user.id, "book.updated", await bookDto(book.id));
-        broadcast("public.changed", { bookId: book.id });
+      try {
+        await publishBook(book); // a no-op if it already is public
+      } catch (err) {
+        if (err instanceof BlockedFileError) return reply.code(451).send({ error: "blocked_content" });
+        throw err;
       }
       await query(
         "UPDATE book_request SET status = 'fulfilled', fulfilled_book_id = $2, fulfilled_by = $3, updated_at = now() WHERE id = $1",

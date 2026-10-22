@@ -5,7 +5,6 @@ import {
   inverseChange,
   liveChangeAction,
   mergeChanges,
-  withPendingInk,
   type InkChange,
   type Stroke,
 } from "./ink";
@@ -67,16 +66,6 @@ describe("ink changes", () => {
     expect(inkSignature(erasedAndDrawn)).not.toBe(inkSignature(page));
     expect(inkSignature([stroke("a"), stroke("b")])).toBe(inkSignature(page));
   });
-
-  it("puts this device's unsent changes of a page on top of the server's copy", () => {
-    const pending = [
-      { seq: 1, bookId: "bk", page: 2, add: [], remove: ["b"] },
-      { seq: 2, bookId: "bk", page: 2, add: [stroke("c")], remove: [] },
-      { seq: 3, bookId: "bk", page: 3, add: [stroke("d")], remove: [] },
-      { seq: 4, bookId: "other", page: 2, add: [], remove: ["a"] },
-    ];
-    expect(ids(withPendingInk("bk", 2, [stroke("a"), stroke("b")], pending))).toEqual(["a", "c"]);
-  });
 });
 
 describe("ink geometry", () => {
@@ -117,7 +106,7 @@ describe("ink geometry", () => {
   });
 });
 
-describe("ink sync", () => {
+describe("ink server", () => {
   /** A fresh copy of the module (its outbox lives in memory), with the server answering `respond`. */
   async function fresh(respond: (method: string, url: string, body: unknown) => Response | Promise<Response>) {
     const posts: [string, InkChange][] = [];
@@ -132,7 +121,9 @@ describe("ink sync", () => {
       }),
     );
     vi.resetModules();
-    return { lib: await import("./ink"), posts };
+    const { inkServer } = await import("./ink");
+    const { sendAccountChanges } = await import("./accountData");
+    return { server: inkServer, posts, flush: sendAccountChanges };
   }
 
   beforeEach(() => vi.useFakeTimers());
@@ -141,46 +132,51 @@ describe("ink sync", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps strokes while offline, shows them over the server's copy, then sends a page's strokes together", async () => {
+  it("keeps strokes while offline, loads the server's pages, then sends a page's strokes together", async () => {
     let online = false;
-    const { lib, posts } = await fresh((method, url) => {
+    const { server, posts, flush } = await fresh((method, url) => {
       if (!online) throw new TypeError("offline");
       if (method === "GET" && url.includes("summary=1")) return new Response(JSON.stringify([{ page: 1, version: 3, count: 1 }]), { status: 200 });
       if (method === "GET") return new Response(JSON.stringify([{ page: 1, version: 3, strokes: [stroke("server")] }]), { status: 200 });
       return new Response("{}", { status: 200 });
     });
-    lib.recordInk("bk", 1, { add: [stroke("x")], remove: [] });
-    lib.recordInk("bk", 1, { add: [], remove: ["server"] });
-    lib.recordInk("bk", 1, { add: [stroke("y")], remove: [] });
-    lib.recordInk("bk", 2, { add: [stroke("z")], remove: [] });
-    await lib.flushInk();
+    server.send("bk", 1, { add: [stroke("x")], remove: [] });
+    server.send("bk", 1, { add: [], remove: ["server"] });
+    server.send("bk", 1, { add: [stroke("y")], remove: [] });
+    server.send("bk", 2, { add: [stroke("z")], remove: [] });
+    server.send("other", 2, { add: [stroke("w")], remove: [] });
+    await flush();
     expect(posts).toEqual([]);
+    expect(server.unsent("bk").map((c) => c.page)).toEqual([1, 1, 1, 2]);
 
     online = true;
-    // Opening the book: the summary, then the pages around the one being read.
-    expect(await lib.loadInkSummary("bk")).toEqual({ 1: { count: 1, version: 3 } });
-    expect(lib.pendingInkPages("bk").sort()).toEqual([1, 2]);
-    const loaded = await lib.loadInkPages("bk", [1, 2]);
-    expect(loaded[1]!.version).toBe(3);
-    expect(loaded[2]).toEqual({ strokes: [], version: 0 });
-    // The server's strokes with the unsent changes on top.
-    expect(ids(lib.withPendingInk("bk", 1, loaded[1]!.strokes))).toEqual(["x", "y"]);
-    expect(ids(lib.withPendingInk("bk", 2, loaded[2]!.strokes))).toEqual(["z"]);
+    expect(await server.summary("bk")).toEqual({ 1: { count: 1, version: 3 } });
+    const loaded = await server.pages("bk", [1, 2]);
+    expect(loaded).toEqual({ 1: { strokes: [stroke("server")], version: 3 }, 2: { strokes: [], version: 0 } });
 
-    await lib.flushInk();
+    await flush();
     expect(posts).toEqual([
       ["/api/books/bk/ink/1", { add: [stroke("x"), stroke("y")], remove: ["server"] }],
       ["/api/books/bk/ink/2", { add: [stroke("z")], remove: [] }],
+      ["/api/books/other/ink/2", { add: [stroke("w")], remove: [] }],
     ]);
+    expect(server.unsent("bk")).toEqual([]);
   });
 
-  it("tells the reader when the server refuses a page's change for good", async () => {
-    const { lib } = await fresh(() => new Response(null, { status: 413 }));
-    const rejected: unknown[] = [];
-    window.addEventListener("readsync:ink-rejected", (e) => rejected.push((e as CustomEvent).detail));
-    lib.recordInk("bk", 4, { add: [stroke("big")], remove: [] });
-    await lib.flushInk();
-    expect(rejected).toEqual([{ bookId: "bk", page: 4, status: 413 }]);
-    expect(lib.withPendingInk("bk", 4, [])).toEqual([]);
+  it("tells the book's listeners when the server refuses a page's change for good", async () => {
+    const { server, flush } = await fresh(() => new Response(null, { status: 413 }));
+    const rejected: [number, number][] = [];
+    const off = server.onRejected("bk", (page, status) => rejected.push([page, status]));
+    server.onRejected("other", () => rejected.push([-1, -1]));
+    server.send("bk", 4, { add: [stroke("big")], remove: [] });
+    server.send("bk", 4, { add: [stroke("big2")], remove: [] });
+    await flush();
+    expect(rejected).toEqual([[4, 413]]); // once per page
+    expect(server.unsent("bk")).toEqual([]);
+
+    off();
+    server.send("bk", 5, { add: [stroke("big")], remove: [] });
+    await flush();
+    expect(rejected).toEqual([[4, 413]]);
   });
 });

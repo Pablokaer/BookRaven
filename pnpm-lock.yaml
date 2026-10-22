@@ -21,6 +21,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: 3.700.0
         version: 3.700.0
+      '@bookraven/locator':
+        specifier: workspace:*
+        version: link:../../packages/locator
       '@fastify/cors':
         specifier: ^11.0.0
         version: 11.3.1
@@ -73,6 +76,9 @@ importers:
       7z-wasm:
         specifier: 1.2.0
         version: 1.2.0
+      '@bookraven/locator':
+        specifier: workspace:*
+        version: link:../../packages/locator
       '@capacitor/android':
         specifier: ^8.5.3
         version: 8.5.3(@capacitor/core@8.5.3)
@@ -167,6 +173,15 @@ importers:
       vite:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
+      vitest:
+        specifier: 3.2.4
+        version: 3.2.4(@types/node@22.20.5)(happy-dom@18.0.1)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15)
+
+  packages/locator:
+    devDependencies:
+      typescript:
+        specifier: ~5.9.0
+        version: 5.9.3
       vitest:
         specifier: 3.2.4
         version: 3.2.4(@types/node@22.20.5)(happy-dom@18.0.1)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15)

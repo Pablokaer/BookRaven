@@ -111,6 +111,60 @@ describe("outbox", () => {
     expect(sent).toEqual([["other"], ["second"]]);
   });
 
+  it("with a delay, waits before sending so a newer change on the same key replaces it; flush doesn't wait", async () => {
+    const { box, sent } = setup([], { key: (i) => i.key ?? i.name, delay: 1_000 });
+    box.push({ name: "a1", key: "a" });
+    await vi.advanceTimersByTimeAsync(600);
+    box.push({ name: "a2", key: "a" });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(sent).toEqual([["a2"]]);
+    box.push({ name: "b" });
+    await box.flush();
+    expect(sent).toEqual([["a2"], ["b"]]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("with independent keys, a change waiting to be tried again holds back only its own key", async () => {
+    const sent: string[] = [];
+    let failing = true;
+    const box = createOutbox<Item>({
+      store: memoryStore(),
+      key: (i) => i.key ?? i.name,
+      independentKeys: true,
+      send: async ([item]) => {
+        sent.push(item!.name);
+        return new Response(null, { status: item!.key === "a" && failing ? 503 : 200 });
+      },
+    });
+    box.push({ name: "a1", key: "a" });
+    box.push({ name: "b1", key: "b" });
+    await box.flush();
+    expect(sent).toEqual(["a1", "b1"]);
+    box.push({ name: "b2", key: "b" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toEqual(["a1", "b1", "b2"]); // "a" still waits for its retry
+    await vi.advanceTimersByTimeAsync(2_000); // 2nd try of "a": 503 again
+    expect(sent).toEqual(["a1", "b1", "b2", "a1"]);
+    failing = false;
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(sent).toEqual(["a1", "b1", "b2", "a1", "a1"]);
+    expect(box.pending()).toEqual([]);
+  });
+
+  it("tries a planned retry at once when flushed", async () => {
+    const { box, sent } = setup(["offline"]);
+    box.push({ name: "a" });
+    await box.flush();
+    box.push({ name: "b" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toEqual([]); // waits for the retry, in order
+    await box.flush(); // back online
+    expect(sent).toEqual([["a"], ["b"]]);
+  });
+
   it("sends changes stored by an earlier session first; a newer change on the same key wins", async () => {
     const store = memoryStore<Item>();
     await store.add({ name: "stored-1", seq: 1 } as Queued<Item>);

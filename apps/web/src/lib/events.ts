@@ -1,4 +1,48 @@
-import { apiUrl, authHeaders } from "./api";
+import { apiUrl, authHeaders, type Book, type Bookmark, type Folder, type Highlight, type Progress } from "./api";
+import type { Stroke } from "./ink";
+import type { ReaderSettings } from "./settings";
+
+/**
+ * The live events the web app listens to, by name, with what each carries. They mirror the API's
+ * `publish` (to one account) and `broadcast` (to everyone) calls in apps/api/src; anything else
+ * the server sends is ignored by every subscriber.
+ */
+export type ServerEvents = {
+  /** Not from the server: the connection is back after a drop, events sent meanwhile were missed. */
+  reconnected: Record<string, never>;
+  "book.created": Book;
+  "book.updated": Book;
+  "book.deleted": { id: string };
+  "folder.created": Folder;
+  "folder.updated": Folder;
+  "folder.deleted": { id: string };
+  /** A reading position saved (on any of the account's devices). */
+  "progress.updated": Progress & { bookId: string };
+  "bookmark.saved": Bookmark;
+  "bookmark.deleted": { bookId: string; locator: string };
+  "highlight.saved": Highlight;
+  "highlight.deleted": { id: string; bookId: string };
+  "ink.updated": { bookId: string; page: number; version: number; updatedAt: string; add: Stroke[]; remove: string[]; deviceId: string | null };
+  "settings.updated": { settings: Partial<ReaderSettings>; updatedAt: string; deviceId: string | null };
+  /** Broadcast: the public library's catalog changed (a book published, unpublished, edited, removed, imported). */
+  "public.changed": { bookId?: string; sha256?: string };
+  /** Broadcast: book requests changed. */
+  "requests.changed": Record<string, never>;
+  /** One of the account's book requests was answered with a public book. */
+  "request.fulfilled": { requestId: string; title: string; bookId: string };
+  /** A message in one of the account's clubs (`author`, `clubName` and `fromId` for a new one, not a deletion). */
+  "club.message": { clubId: string; clubName?: string; author?: string; fromId?: string };
+  "club.progress": { clubId: string };
+  "club.member": { clubId: string; name?: string };
+  "club.deleted": { clubId: string };
+  /** To administrators: a public book was reported. */
+  "admin.report": { title: string };
+};
+
+export type ServerEventName = keyof ServerEvents;
+
+/** One live event, as `{ type, data }` (what lib/libraryState's reducer takes). */
+export type ServerEvent = { [K in ServerEventName]: { type: K; data: ServerEvents[K] } }[ServerEventName];
 
 /**
  * Server-Sent Events client built on fetch (instead of EventSource) so it can send the
@@ -6,10 +50,10 @@ import { apiUrl, authHeaders } from "./api";
  * comes back online or the app back to the screen. Events sent while it was disconnected are
  * lost: after a reconnection subscribers get a "reconnected" event and reload what they show.
  */
-type Handler = (event: string, data: any) => void;
+type Handler = (...args: { [K in ServerEventName]: [event: K, data: ServerEvents[K]] }[ServerEventName]) => void;
 
 /** Sent to subscribers (with `{}`) when the connection is back after a drop or a failed first try. */
-export const RECONNECTED = "reconnected";
+export const RECONNECTED = "reconnected" satisfies ServerEventName;
 
 const handlers = new Set<Handler>();
 let controller: AbortController | null = null;
@@ -170,7 +214,8 @@ async function readStream(body: ReadableStream<Uint8Array>) {
       } catch {
         continue;
       }
-      handlers.forEach((h) => h(event, parsed));
+      // Trusted to match the table above (the server is ours); unknown names are ignored by subscribers.
+      handlers.forEach((h) => (h as (event: string, data: unknown) => void)(event, parsed));
     }
   }
 }

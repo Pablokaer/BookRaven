@@ -1,4 +1,5 @@
 import { apiDelete, apiJson, type Book, type Me, type PublicBook, type PublicBookDetails } from "./api";
+import { onServerEvent, RECONNECTED, type ServerEventName } from "./events";
 import { saveFile } from "./library";
 
 export function getMe() {
@@ -11,10 +12,14 @@ export function getPublicBook(id: string) {
 
 /**
  * The catalog (up to 1000 books) is shared by the pages that show it (public library, search,
- * book pages, imports) instead of downloaded on each visit. The library forgets it whenever it
- * may have changed: a `public.changed` event (when it bumps `publicVersion`, so the pages on
- * screen reload), a book added to or removed from the viewer's library (`ownBookId`), and this
- * app's own publish, unpublish, add and remove. The age limit covers changes no event reports.
+ * book pages, imports) instead of downloaded on each visit. It is forgotten whenever it may have
+ * changed, by the live events that say so: `public.changed` (pages on screen reload on the
+ * library's `publicVersion`), a book added to or removed from the viewer's library (which public
+ * books are their own, `ownBookId`), and a reconnection (events were missed). This app's own
+ * publish, unpublish, add and remove forget it too, at once: the page reloads before the event
+ * arrives, and so do uploading or deleting one of the viewer's books (lib/libraryStore), as the
+ * live connection may be down or late. Signing in as someone else forgets it (lib/libraryStore).
+ * The age limit covers changes no event reports.
  */
 let catalog: { at: number; books: Promise<PublicBook[]> } | null = null;
 const CATALOG_MAX_AGE = 5 * 60_000;
@@ -36,6 +41,12 @@ export function listPublicBooks() {
 export function forgetPublicBooks() {
   catalog = null;
 }
+
+/** The live events after which the catalog may be out of date. */
+const CATALOG_CHANGES = new Set<ServerEventName>(["public.changed", "book.created", "book.deleted", RECONNECTED]);
+onServerEvent((event, _data) => {
+  if (CATALOG_CHANGES.has(event)) forgetPublicBooks();
+});
 
 /** Adds a copy to the caller's library; fails with 413 "quota_exceeded" when full. */
 export function addPublicBook(id: string) {

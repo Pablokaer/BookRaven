@@ -1,13 +1,12 @@
 import { App as CapApp } from "@capacitor/app";
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
+import { loadSnapshot } from "./lib/accountData";
 import { isNative, offlineUser, rememberUser, sessionUnreachable } from "./lib/api";
 import { startAppUpdates } from "./lib/appUpdate";
 import { authClient, flushChanges } from "./lib/auth";
 import { retryEvents, startEvents, stopEvents } from "./lib/events";
-import { loadCachedBooks } from "./lib/libraryCache";
 import { saveData } from "./lib/network";
-import { flushProgress } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
 import { WhatsNew } from "./components/WhatsNew";
 import { AppShell } from "./components/shell/AppShell";
@@ -92,7 +91,7 @@ function prefetchPages(userId: string) {
   const run = () => {
     const pages = pageLoaders.map((load) => load().catch(() => {}));
     if (isNative || saveData()) return;
-    const readers = loadCachedBooks(userId)?.some((b) => b.format === "pdf") ? [...readerLoaders, loadPdfEngine] : readerLoaders;
+    const readers = loadSnapshot("books", userId)?.some((b) => b.format === "pdf") ? [...readerLoaders, loadPdfEngine] : readerLoaders;
     void Promise.all(pages).then(() => readers.forEach((load) => void load().catch(() => {})));
   };
   let handle: number | undefined;
@@ -107,13 +106,11 @@ function prefetchPages(userId: string) {
 }
 
 let flushersInstalled = false;
-/** Changes waiting for the server go now and whenever the device is back online; positions also when the page is hidden. */
+/** Changes waiting for the server go now and whenever the device is back online (positions also go when the page is hidden, lib/progress). */
 function installSyncFlushers() {
   if (flushersInstalled) return;
   flushersInstalled = true;
   window.addEventListener("online", () => void flushChanges());
-  window.addEventListener("pagehide", () => flushProgress(true));
-  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushProgress(true));
   // Handwriting from an earlier session too goes as soon as possible.
   void flushChanges();
 }

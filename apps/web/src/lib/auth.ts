@@ -1,9 +1,6 @@
 import { createAuthClient } from "better-auth/react";
-import { API_BASE, API_CACHE, getToken, isNative, rememberUser, setToken } from "./api";
-import { clearBookmarks, flushBookmarks } from "./bookmarks";
-import { clearDeviceBooks } from "./deviceStorage";
-import { forgetCachedFolders } from "./libraryCache";
-import { clearProgress, flushProgress } from "./progress";
+import { forgetAccount, openAccount, sendAccountChanges } from "./accountData";
+import { API_BASE, getToken, isNative, setToken } from "./api";
 
 export const authClient = createAuthClient({
   baseURL: API_BASE || window.location.origin,
@@ -23,39 +20,31 @@ export const authClient = createAuthClient({
   },
 });
 
-/** Handwriting is a reader module: it loads apart from the first screen. */
-const ink = () => import("./ink");
-
 /** Sends the changes made on this device that wait for the server (positions, bookmarks, handwriting). */
-export const flushChanges = () => Promise.allSettled([flushProgress(), flushBookmarks(), ink().then((m) => m.flushInk())]);
+export const flushChanges = sendAccountChanges;
 
 export async function signOut() {
   // Changes made on this device still get a moment to reach the server while the session works.
   await Promise.race([flushChanges(), new Promise((r) => setTimeout(r, 3000))]);
+  let signedOut = false;
   try {
-    await authClient.signOut();
+    signedOut = !(await authClient.signOut()).error;
+  } catch {
+    /* offline */
   } finally {
     await setToken(null);
-    await forgetAccountData();
+    // Everything this device keeps for the account (lib/accountData.ts), so the next account on
+    // a shared device never sees or sends it.
+    await forgetAccount();
   }
-}
-
-/**
- * Forgets what this device keeps for the signed-out account: the library data and covers kept
- * for offline use (and the Android app's copy of the session), the collections, the downloaded
- * books, and changes not yet sent (positions, bookmarks, handwriting), so the next account on
- * this device never sees or sends them.
- */
-export async function forgetAccountData() {
-  navigator.serviceWorker?.controller?.postMessage("signed-out");
-  clearProgress();
-  forgetCachedFolders();
-  await Promise.allSettled([
-    clearBookmarks(),
-    ink().then((m) => m.clearInk()),
-    clearDeviceBooks(),
-    rememberUser(null),
-    // The Android app keeps it without a service worker (lib/api.ts).
-    "caches" in window ? caches.delete(API_CACHE) : null,
-  ]);
+  if (signedOut) return;
+  // The server didn't end the session (offline, server error). Still signed in (the web's cookie
+  // still works): the library stays open and keeps its snapshots again. Otherwise (the Android
+  // app's token is gone, or the server can't be reached) the app checks the session and closes it.
+  const user = await authClient.getSession().then(
+    (r) => r.data?.user,
+    () => null,
+  );
+  if (user) openAccount();
+  else authClient.$store.notify("$sessionSignal");
 }

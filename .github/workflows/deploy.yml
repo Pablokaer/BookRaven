@@ -94,15 +94,16 @@ jobs:
           if [ -z "$PUBLIC_URL" ]; then echo "::error::PUBLIC_URL not found"; exit 1; fi
           echo "VITE_API_URL=$PUBLIC_URL" >> "$GITHUB_ENV"
 
-      # Fingerprint of everything the app is built from (the web app without its tests, the
-      # dependencies, this workflow, the server URL), stored in android.json as "inputs". When the
-      # published release has the same one, there is nothing new to build. "Run workflow" always builds.
+      # Fingerprint of everything the app is built from (the web app and the workspace packages
+      # without their tests, the dependencies, this workflow, the server URL), stored in android.json
+      # as "inputs". When the published release has the same one, there is nothing new to build.
+      # "Run workflow" always builds.
       - name: Changes
         id: changes
         if: steps.key.outputs.enabled
         run: |
           inputs=$(
-            { git ls-files -s -- apps/web package.json pnpm-lock.yaml pnpm-workspace.yaml patches .github/workflows/deploy.yml infra/publish-android.sh \
+            { git ls-files -s -- apps/web packages package.json pnpm-lock.yaml pnpm-workspace.yaml patches .github/workflows/deploy.yml infra/publish-android.sh \
                 ':!*.test.ts' ':!*.test.tsx' ':!apps/web/vitest.config.ts' ':!apps/web/Dockerfile' ':!apps/web/scripts/precompress.mjs'
               echo "$VITE_API_URL"; } | sha256sum | cut -c1-16
           )

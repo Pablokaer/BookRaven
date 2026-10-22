@@ -165,17 +165,6 @@ export function getComicArchive(book: Book): Promise<ComicArchive> {
   return current.archive;
 }
 
-/**
- * Position of page `index` in the same format foliate-js uses for comic pages
- * ("epubcfi(/6/<2·(index+1)>)"), so paged and scrolling modes share progress.
- */
-export const comicLocator = (index: number) => `epubcfi(/6/${(index + 1) * 2})`;
-
-export function comicIndexFromLocator(locator: string | null) {
-  const m = locator ? /^epubcfi\(\/6\/(\d+)/.exec(locator) : null;
-  return m ? Math.max(0, Number(m[1]) / 2 - 1) : 0;
-}
-
 /** Width and height from an image file's header (PNG, JPEG, GIF, WebP), without decoding it. */
 export async function imageSize(blob: Blob): Promise<{ width: number; height: number } | null> {
   const buf = new Uint8Array(await blob.slice(0, 256 * 1024).arrayBuffer());

@@ -29,10 +29,9 @@ export function useBookmarks(book: Book | null, position: Position | null) {
         .catch(() => {});
     void load();
     const off = onServerEvent((event, data) => {
-      if (data?.bookId !== book.id) return;
-      if (event === "bookmark.saved") {
-        setBookmarks((prev) => sortBookmarks([...prev.filter((b) => b.locator !== data.locator), data as Bookmark]));
-      } else if (event === "bookmark.deleted") {
+      if (event === "bookmark.saved" && data.bookId === book.id) {
+        setBookmarks((prev) => sortBookmarks([...prev.filter((b) => b.locator !== data.locator), data]));
+      } else if (event === "bookmark.deleted" && data.bookId === book.id) {
         setBookmarks((prev) => prev.filter((b) => b.locator !== data.locator));
       }
     });

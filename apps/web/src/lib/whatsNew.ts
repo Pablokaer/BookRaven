@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-22-privacy-and-positions",
+    date: "2026-10-22",
+    title: "Fixes",
+    items: [
+      "Signing out now also removes your library list from this device.",
+      "Books imported as already read, and PDFs or comics last read in KOReader, now open on the right page.",
+    ],
+  },
+  {
     id: "2026-10-17-offline-and-storage",
     date: "2026-10-17",
     title: "Better offline, lighter on your device",

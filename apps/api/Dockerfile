@@ -8,8 +8,11 @@ RUN corepack enable && corepack install
 ENV npm_config_store_dir=/pnpm/store
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY patches patches
+# The app and the workspace package it uses (the locator codec, plain JavaScript: no build step)
 COPY apps/api/package.json apps/api/
+COPY packages/locator/package.json packages/locator/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --filter api...
+COPY packages/locator packages/locator
 COPY apps/api apps/api
 # Build (what `pnpm --filter api build` does, minus the type check that CI already ran: same output,
 # about half the time; --isolatedModules too, or tsc still checks every file to elide imports),

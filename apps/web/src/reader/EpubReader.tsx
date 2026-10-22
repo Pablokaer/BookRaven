@@ -1,3 +1,4 @@
+import { parseLocator } from "@bookraven/locator";
 import type { FoliateView, RelocateDetail } from "foliate-js/view.js";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Overlayer } from "foliate-js/overlayer.js";
@@ -12,10 +13,10 @@ import { THEMES, type ReaderSettings } from "../lib/settings";
 import { useLatest } from "../lib/useLatest";
 import { freeZone, selectionReporter, USER_NAV_WINDOW_MS, type ReaderHandle, type ReaderProps } from "./types";
 
-/** Percentage positions ("fraction:0.42") reported by other apps such as KOReader. */
+/** Percentage positions ("fraction:0.42"), from KOReader and books imported as read. */
 function fractionOf(locator: string | null) {
-  const m = locator ? /^fraction:([\d.]+)$/.exec(locator) : null;
-  return m ? Math.min(1, Math.max(0, Number(m[1]))) : null;
+  const l = parseLocator(locator);
+  return l?.kind === "fraction" ? l.fraction : null;
 }
 
 /** A range's box in the app's viewport (ranges live inside the book's iframes). */

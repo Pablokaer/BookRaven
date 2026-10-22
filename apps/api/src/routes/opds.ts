@@ -4,8 +4,10 @@ import { query } from "../db.js";
 import { verifyAppPassword } from "../lib/devices.js";
 import { UUID_RE } from "../lib/http.js";
 import { audit } from "../lib/log.js";
+import { listCatalog } from "../lib/publicCatalog.js";
 import { bookKey } from "../lib/storage.js";
-import { SELECT_BOOK, sendCover, sendFile, type BookRow } from "./books.js";
+import { SELECT_BOOK, type BookRow } from "../lib/bookDto.js";
+import { sendCover, sendFile } from "./books.js";
 
 /**
  * OPDS 1.2 catalog (Atom) for reading apps: KOReader, Moon+ Reader, Thorium, Calibre…
@@ -57,7 +59,12 @@ const navEntry = (id: string, title: string, href: string, content: string) =>
   `<entry><id>${esc(id)}</id><title>${esc(title)}</title><updated>${new Date().toISOString()}</updated>` +
   `<content type="text">${esc(content)}</content><link rel="subsection" href="${esc(href)}" type="${ACQ}"/></entry>`;
 
-function bookEntry(b: BookRow & { owner_name?: string | null }, base: "books" | "public") {
+type EntryRow = Pick<
+  BookRow,
+  "id" | "title" | "author" | "language" | "tags" | "published_at" | "created_at" | "mime_type" | "size_bytes" | "has_cover"
+> & { owner_name?: string | null };
+
+function bookEntry(b: EntryRow, base: "books" | "public") {
   const updated = (b.published_at ?? b.created_at).toISOString();
   return `<entry>
     <id>urn:uuid:${b.id}</id>
@@ -154,17 +161,7 @@ export async function opdsRoutes(app: FastifyInstance) {
 
   app.get("/opds/public", async (request, reply) => {
     const page = pageOf(request);
-    const { rows } = await query<BookRow & { owner_name: string | null }>(
-      // Same listing as /api/public: dedup and paging by id first, full rows for this page only.
-      `WITH pick AS (
-         SELECT id, published_at FROM (
-           SELECT DISTINCT ON (sha256) id, published_at FROM book WHERE is_public ORDER BY sha256, published_at
-         ) d ORDER BY published_at DESC LIMIT ${PAGE_SIZE + 1} OFFSET ${(page - 1) * PAGE_SIZE}
-       )
-       SELECT b.*, u.name AS owner_name, false AS is_shared
-       FROM pick JOIN book b ON b.id = pick.id JOIN "user" u ON u.id = b.user_id
-       ORDER BY pick.published_at DESC`,
-    );
+    const rows = await listCatalog({ offset: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE + 1 });
     const next = rows.length > PAGE_SIZE ? `/opds/public?page=${page + 1}` : null;
     return reply.type(ACQ).send(feed({ id: "readsync:public", title: "Public Library", self: "/opds/public", kind: ACQ, next, entries: rows.slice(0, PAGE_SIZE).map((b) => bookEntry(b, "public")) }));
   });

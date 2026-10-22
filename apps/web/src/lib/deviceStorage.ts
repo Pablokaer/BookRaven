@@ -1,3 +1,4 @@
+import { keptForAccount } from "./accountData";
 import { afterIdle } from "./idle";
 import { BOOK_CACHE, forgetOpenedFile, forgetSaved } from "./rangeFile";
 import { readJson, removeKey, writeJson } from "./storage";
@@ -126,3 +127,5 @@ export async function clearDeviceBooks() {
   removeKey(KEY);
   if ("caches" in window) await caches.delete(BOOK_CACHE);
 }
+
+keptForAccount({ forget: clearDeviceBooks });

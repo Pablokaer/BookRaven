@@ -1,39 +1,46 @@
-import { describe, expect, it, vi } from "vitest";
-import { forgetAccountData } from "./auth";
-import { putBookmark, withPending } from "./bookmarks";
-import { getLocalPending, lastLocalUpdate, saveProgress } from "./progress";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Better Auth's client, answering as the test says.
+const client = vi.hoisted(() => ({
+  signOut: vi.fn(async (): Promise<{ error: unknown }> => ({ error: null })),
+  getSession: vi.fn(async (): Promise<{ data: { user: { id: string } } | null }> => ({ data: null })),
+  $store: { notify: vi.fn() },
+}));
+vi.mock("better-auth/react", () => ({ createAuthClient: () => client }));
+
+const { signOut } = await import("./auth");
+const { loadSnapshot, openAccount, saveSnapshot } = await import("./accountData");
+
+beforeEach(() => {
+  localStorage.clear();
+  vi.clearAllMocks();
+  vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 200 })));
+  openAccount();
+});
 
 describe("signing out", () => {
-  it("forgets the account's unsent changes and offline copies, not the device's preferences", async () => {
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline")));
-    saveProgress("b1", { locator: "page:3", percentage: 0.1, label: null });
-    putBookmark("b1", { locator: "page:3", percentage: 0.1, label: null });
-    expect(withPending("b1", [])).toHaveLength(1);
-    localStorage.setItem("readsync.bookmarks.b1", "[]");
-    localStorage.setItem("readsync.settings", "{}");
-
-    await forgetAccountData();
-
-    expect(getLocalPending("b1")).toBeNull();
-    expect(lastLocalUpdate("b1")).toBe(0);
-    expect(withPending("b1", [])).toEqual([]);
-    expect(localStorage.getItem("readsync.bookmarkQueue")).toBeNull();
-    expect(localStorage.getItem("readsync.bookmarks.b1")).toBeNull();
-    expect(localStorage.getItem("readsync.settings")).toBe("{}");
-    vi.unstubAllGlobals();
+  it("doesn't keep the closing library's list once signed out", async () => {
+    await signOut();
+    saveSnapshot("books", "u1", []);
+    expect(loadSnapshot("books", "u1")).toBeNull();
+    expect(client.getSession).not.toHaveBeenCalled();
   });
 
-  it("forgets the downloaded books, the library data kept for offline use and the collections", async () => {
-    const deleted: string[] = [];
-    vi.stubGlobal("caches", { delete: async (name: string) => (deleted.push(name), true) });
-    localStorage.setItem("readsync.folders.u1", "[]");
-    localStorage.setItem("readsync.deviceBooks", JSON.stringify({ b1: { openedAt: 1, kept: true } }));
+  it("keeps the library's snapshots when the server didn't sign out and the account is still signed in", async () => {
+    client.signOut.mockResolvedValueOnce({ error: { status: 503 } });
+    client.getSession.mockResolvedValueOnce({ data: { user: { id: "u1" } } });
+    await signOut();
+    saveSnapshot("books", "u1", []);
+    expect(loadSnapshot("books", "u1")).toEqual([]);
+    expect(client.$store.notify).not.toHaveBeenCalled();
+  });
 
-    await forgetAccountData();
-
-    expect(deleted).toEqual(expect.arrayContaining(["readsync-books-v1", "readsync-api-v1"]));
-    expect(localStorage.getItem("readsync.folders.u1")).toBeNull();
-    expect(localStorage.getItem("readsync.deviceBooks")).toBeNull();
-    vi.unstubAllGlobals();
+  it("offline, forgets the account and has the app check the session again", async () => {
+    client.signOut.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    client.getSession.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await signOut();
+    saveSnapshot("books", "u1", []);
+    expect(loadSnapshot("books", "u1")).toBeNull();
+    expect(client.$store.notify).toHaveBeenCalledWith("$sessionSignal");
   });
 });

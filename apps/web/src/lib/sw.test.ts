@@ -1,11 +1,25 @@
 import { describe, expect, it } from "vitest";
 import source from "../../public/sw.js?raw";
+import { OFFLINE_CACHE, OFFLINE_COPIES, OFFLINE_COPIES_SCRIPT, OFFLINE_COPY_HEADER, offlineCopiesScript } from "./offlineCopies";
 
-// The service worker is a plain script in public/: run it with a stand-in `self` and take out
-// its pruning logic.
-const { unreachableAssets, isLandingPage } = new Function("self", `${source}\nreturn { unreachableAssets, isLandingPage };`)({ addEventListener() {} }) as {
+// The service worker is a plain script in public/: run it with a stand-in `self` (and the list of
+// offline copies the build writes next to it) and take out its logic.
+const self = { addEventListener() {} };
+const importScripts = (url: string) => {
+  expect(url).toBe(`/${OFFLINE_COPIES_SCRIPT}`);
+  new Function("self", offlineCopiesScript())(self);
+};
+const { unreachableAssets, isLandingPage, API, API_CACHED, OFFLINE_COPY } = new Function(
+  "self",
+  "importScripts",
+  `${source}
+return { unreachableAssets, isLandingPage, API, API_CACHED, OFFLINE_COPY };`,
+)(self, importScripts) as {
   unreachableAssets: (roots: string[], names: string[], readText: (name: string) => Promise<string>) => Promise<string[]>;
   isLandingPage: (html: string) => boolean;
+  API: string;
+  API_CACHED: RegExp[];
+  OFFLINE_COPY: string;
 };
 
 const shell = (entry: string, css: string) =>
@@ -58,5 +72,14 @@ describe("service worker shell", () => {
     expect(isLandingPage('<body><div id="root" data-landing><!--$--><div class="lit">')).toBe(true);
     expect(isLandingPage('<body><div id="root" data-landing="signup-closed"><!--$-->')).toBe(true);
     expect(isLandingPage('<body><div id="root"></div><script type="module" src="/assets/index.js"></script>')).toBe(false);
+  });
+});
+
+describe("service worker offline copies", () => {
+  it("follows the app's list, cache and marker (src/lib/offlineCopies.ts)", () => {
+    expect(API).toBe(OFFLINE_CACHE);
+    expect(OFFLINE_COPY).toBe(OFFLINE_COPY_HEADER);
+    expect(API_CACHED.map(String)).toEqual(OFFLINE_COPIES.map((c) => String(c.path)));
+    expect(API_CACHED.some((re) => re.test("/api/auth/get-session"))).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+import { fractionLocator, pageLocator, pageOf, parseLocator, pdfRangeLocator, pdfSearchLocator } from "@bookraven/locator";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { Highlight } from "../lib/api";
 import { openBookFile } from "../lib/books";
@@ -38,19 +39,12 @@ async function readRange(file: RangeFile, begin: number, end: number, closed: ()
   return null;
 }
 
-function parsePage(locator: string | null) {
-  const m = locator ? /^(?:page|pdf|pdfsearch):(\d+)/.exec(locator) : null;
-  return m ? Number(m[1]) : 1;
-}
-
 /**
- * Text positions on a page are character offsets into the page's text layer, so a
- * highlight is "pdf:<page>:<start>-<end>" and does not depend on zoom or screen size.
+ * The page to show for a locator (a page, a highlight or search match on it, or a percentage), in
+ * a PDF of `numPages` pages; the first page when it names none. Before the PDF is open
+ * (`numPages` 0) a percentage has no page yet.
  */
-function parseRange(locator: string) {
-  const m = /^pdf:(\d+):(\d+)-(\d+)$/.exec(locator);
-  return m ? { page: Number(m[1]), start: Number(m[2]), end: Number(m[3]) } : null;
-}
+const pageFor = (locator: string | null | undefined, numPages: number) => pageOf(locator, numPages || undefined) ?? 1;
 
 type TextNodes = { node: Text; start: number }[];
 
@@ -317,7 +311,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
   /** The pen stroke (or eraser pass) in progress. */
   const drawing = useRef<{ id: number; rect: DOMRect; stroke: Stroke | null; removed: Set<string> } | null>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
-  const [page, setPage] = useState(() => parsePage(props.initialLocator));
+  const [page, setPage] = useState(() => pageFor(props.initialLocator, 0));
   const [size, setSize] = useState({ w: 0, h: 0 });
   /** Bumped after each page render, so overlays are redrawn. */
   const [rendered, setRendered] = useState(0);
@@ -416,13 +410,13 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
   useImperativeHandle(ref, () => ({
     next: () => go(page + 1, true),
     prev: () => go(page - 1, true),
-    goToFraction: (f) => go(Math.round(f * (numPages - 1)) + 1, true),
+    goToFraction: (f) => go(pageFor(fractionLocator(f), numPages), true),
     goToHref: (href) => {
-      const m = /^pdfsearch:(\d+):(\d+):(.*)$/s.exec(href);
-      setSearchHit(m ? { page: Number(m[1]), nth: Number(m[2]), query: m[3]! } : null);
-      go(parsePage(href), true);
+      const l = parseLocator(href);
+      setSearchHit(l?.kind === "pdfSearch" ? { page: l.page, nth: l.nth, query: l.query } : null);
+      go(pageFor(href, numPages), true);
     },
-    restore: (locator) => go(parsePage(locator), false),
+    restore: (locator) => go(pageFor(locator, numPages), false),
     clearSelection: () => {
       window.getSelection()?.removeAllRanges();
       selections.cleared();
@@ -471,7 +465,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         if (signal.aborted) break;
         let nth = 0;
         for (let at = folded.indexOf(q); at !== -1; at = folded.indexOf(q, at + q.length)) {
-          const r: SearchResult = { locator: `pdfsearch:${p}:${nth++}:${query.trim()}`, label: `Page ${p}`, excerpt: excerpt(text, at, q.length) };
+          const r: SearchResult = { locator: pdfSearchLocator(p, nth++, query.trim()), label: `Page ${p}`, excerpt: excerpt(text, at, q.length) };
           onResult(r);
         }
       }
@@ -510,7 +504,8 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
         pageTexts.current.clear();
         for (const key of [...prepared.current.keys()]) drop(key);
         setDoc(d);
-        setPage((p) => Math.min(Math.max(1, p), d.numPages));
+        // Now a percentage (KOReader, a book imported as read) has a page too.
+        setPage(pageFor(propsRef.current.initialLocator, d.numPages));
         const meta = await d.getMetadata().catch(() => null);
         const lang = (meta?.info as { Language?: string } | undefined)?.Language ?? null;
         propsRef.current.onReady({ language: lang });
@@ -540,7 +535,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     userNav.current = false;
     propsRef.current.onRelocate(
       {
-        locator: `page:${page}`,
+        locator: pageLocator(page),
         percentage: numPages > 1 ? (page - 1) / (numPages - 1) : 1,
         label: `Page ${page} of ${numPages}`,
       },
@@ -753,8 +748,9 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
 
     const texts = textNodes(layer);
     for (const h of props.highlights ?? []) {
-      const pos = parseRange(h.cfi);
-      if (!pos || pos.page !== page) continue;
+      // Character offsets into the page's text layer: they don't depend on zoom or screen size.
+      const pos = parseLocator(h.cfi);
+      if (pos?.kind !== "pdfRange" || pos.page !== page) continue;
       const range = rangeFor(texts.nodes, pos.start, pos.end);
       if (range) hlRects.current.push({ h, rects: draw(range, "pdf-hl", HIGHLIGHT_COLORS[h.color].fill) });
     }
@@ -951,7 +947,7 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
       const start = offsetOf(nodes, range.startContainer, range.startOffset);
       const end = offsetOf(nodes, range.endContainer, range.endOffset);
       if (end <= start) return undefined; // leave the menu as it is
-      return { cfi: `pdf:${pageRef.current}:${start}-${end}`, text, rect: range.getBoundingClientRect() };
+      return { cfi: pdfRangeLocator(pageRef.current, start, end), text, rect: range.getBoundingClientRect() };
     });
     document.addEventListener("selectionchange", onChange);
     return () => {
