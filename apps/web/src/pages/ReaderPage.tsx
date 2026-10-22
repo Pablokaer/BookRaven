@@ -31,7 +31,7 @@ import { onServerEvent } from "../lib/events";
 import { percent, timeAgo } from "../lib/format";
 import { createHighlight, deleteHighlight, downloadText, highlightsToMarkdown, listHighlights, updateHighlight } from "../lib/highlights";
 import { afterIdle } from "../lib/idle";
-import { flushProgress, getLocalPending, saveProgress, type Position } from "../lib/progress";
+import { flushPositions, openingLocator, savePosition, type Position } from "../lib/progress";
 import { THEMES, useSettings } from "../lib/settings";
 import { useDocumentEvent, useLatest } from "../lib/useLatest";
 import { DiscussDialog } from "../reader/DiscussDialog";
@@ -122,14 +122,6 @@ function BarButton({ icon: Icon, iconClass, className, children, ...props }: Rea
 /** A single word (or a short hyphenated one): what the dictionary can look up. */
 const isWord = (text: string) => /^[\p{L}\p{M}'’-]{1,40}$/u.test(text.trim());
 
-/** Picks the newest of the server position and a not-yet-synced local one. */
-function initialLocator(book: Book): string | null {
-  const local = getLocalPending(book.id);
-  const server = book.progress;
-  if (local && (!server || local.clientUpdatedAt > new Date(server.updatedAt).getTime())) return local.locator;
-  return server?.locator ?? null;
-}
-
 export function ReaderPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -189,23 +181,23 @@ export function ReaderPage() {
     // The library already has the book: open it right away (also offline) and check the server meanwhile.
     const known = libraryBook(id) ?? null;
     if (known) {
-      setStartLocator(initialLocator(known));
+      setStartLocator(openingLocator(id, known.progress));
       setBook(known);
     }
     getBook(id)
       .then((b) => {
         if (cancelled) return;
         if (!known) {
-          setStartLocator(initialLocator(b));
+          setStartLocator(openingLocator(id, b.progress));
           setBook(b);
-        } else if (b.progress && b.progress.updatedAt !== known.progress?.updatedAt) {
+        } else if (b.progress) {
           offerRemote(b.progress); // the library's copy may be older
         }
       })
       .catch(() => !cancelled && !known && setError("Book not found"));
     return () => {
       cancelled = true;
-      flushProgress();
+      void flushPositions();
     };
   }, [id, libraryBook, offerRemote]);
 
@@ -568,7 +560,7 @@ export function ReaderPage() {
       setActiveHighlight(null);
       if (byUser) {
         reader.current?.clearSelection?.();
-        saveProgress(id, pos);
+        savePosition(id, pos);
         setRemote(null);
       }
     },

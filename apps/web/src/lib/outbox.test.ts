@@ -111,6 +111,22 @@ describe("outbox", () => {
     expect(sent).toEqual([["other"], ["second"]]);
   });
 
+  it("with a delay, waits before sending so a newer change on the same key replaces it; flush doesn't wait", async () => {
+    const { box, sent } = setup([], { key: (i) => i.key ?? i.name, delay: 1_000 });
+    box.push({ name: "a1", key: "a" });
+    await vi.advanceTimersByTimeAsync(600);
+    box.push({ name: "a2", key: "a" });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(sent).toEqual([["a2"]]);
+    box.push({ name: "b" });
+    await box.flush();
+    expect(sent).toEqual([["a2"], ["b"]]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(sent).toHaveLength(2);
+  });
+
   it("sends changes stored by an earlier session first; a newer change on the same key wins", async () => {
     const store = memoryStore<Item>();
     await store.add({ name: "stored-1", seq: 1 } as Queued<Item>);

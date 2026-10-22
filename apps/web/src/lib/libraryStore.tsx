@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { loadSnapshot, saveSnapshot } from "./accountData";
 import { ApiError, type Book, type Folder, type Me, type Progress } from "./api";
 import { deleteBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook, type Meta } from "./books";
-import { deviceId } from "./device";
 import { forgetDeviceBook, makeRoom, pruneDeviceBooks } from "./deviceStorage";
 import { eventsConnected, onServerEvent, RECONNECTED } from "./events";
 import { afterIdle } from "./idle";
@@ -10,6 +9,7 @@ import { percent } from "./format";
 import { fileSize } from "./format";
 import { createFolder, deleteFolder, listFolders, renameFolder, updateBook } from "./library";
 import { forgetPublicBooks, getMe } from "./publicLibrary";
+import { onPositionChange } from "./progress";
 import { STORAGE_FULL } from "./rangeFile";
 import { matchesText } from "./search";
 
@@ -308,19 +308,19 @@ export function LibraryProvider({ children, userId }: { children: ReactNode; use
           setBooks((prev) => prev?.filter((b) => b.id !== data.id) ?? prev);
           void forgetDeviceBook(data.id).catch(() => {});
           return;
-        case "progress.updated": {
-          const p = data as Progress;
-          if (p.deviceId && p.deviceId !== deviceId) {
-            const title = booksRef.current?.find((b) => b.id === p.bookId)?.title;
-            if (title) log(`Reached ${percent(p.percentage)} of “${title}” on ${p.deviceName ?? "another device"}`, p.bookId);
-          }
-          setBooks((prev) => (prev ? sortBooks(prev.map((b) => (b.id === p.bookId ? { ...b, progress: p } : b))) : prev));
-          return;
-        }
       }
+    });
+    // A book's position changed (on any device): the list shows it, and says so when it was elsewhere.
+    const offPositions = onPositionChange((p, elsewhere) => {
+      if (elsewhere) {
+        const title = booksRef.current?.find((b) => b.id === p.bookId)?.title;
+        if (title) log(`Reached ${percent(p.percentage)} of “${title}” on ${p.deviceName ?? "another device"}`, p.bookId);
+      }
+      setBooks((prev) => (prev ? sortBooks(prev.map((b) => (b.id === p.bookId ? { ...b, progress: p } : b))) : prev));
     });
     return () => {
       off();
+      offPositions();
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh, refreshMe, loadMe, log]);

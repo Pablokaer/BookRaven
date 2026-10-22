@@ -7,7 +7,6 @@ import { startAppUpdates } from "./lib/appUpdate";
 import { authClient, flushChanges } from "./lib/auth";
 import { retryEvents, startEvents, stopEvents } from "./lib/events";
 import { saveData } from "./lib/network";
-import { flushProgress } from "./lib/progress";
 import { AppLoading } from "./components/AppLoading";
 import { WhatsNew } from "./components/WhatsNew";
 import { AppShell } from "./components/shell/AppShell";
@@ -107,13 +106,11 @@ function prefetchPages(userId: string) {
 }
 
 let flushersInstalled = false;
-/** Changes waiting for the server go now and whenever the device is back online; positions also when the page is hidden. */
+/** Changes waiting for the server go now and whenever the device is back online (positions also go when the page is hidden, lib/progress). */
 function installSyncFlushers() {
   if (flushersInstalled) return;
   flushersInstalled = true;
   window.addEventListener("online", () => void flushChanges());
-  window.addEventListener("pagehide", () => flushProgress(true));
-  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushProgress(true));
   // Handwriting from an earlier session too goes as soon as possible.
   void flushChanges();
 }

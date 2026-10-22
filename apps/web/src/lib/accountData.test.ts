@@ -69,7 +69,7 @@ describe("library snapshots", () => {
 
 describe("signing out", () => {
   it("leaves nothing the account kept on the device, only the device's own preferences", async () => {
-    const { saveProgress, getLocalPending, lastLocalUpdate } = await import("./progress");
+    const { savePosition, openingLocator, worthOffering } = await import("./progress");
     const { putBookmark, rememberBookmarks, withPending } = await import("./bookmarks");
     const { recordInk, rememberInkPage, withPendingInk } = await import("./ink");
     const { keepOnDevice } = await import("./deviceStorage");
@@ -81,7 +81,7 @@ describe("signing out", () => {
     const devicePreferences = new Set(Object.keys(localStorage)); // the device id too
 
     env.online = false; // nothing reaches the server: every change still waits
-    saveProgress("b1", { locator: "page:3", percentage: 0.1, label: null });
+    savePosition("b1", { locator: "page:3", percentage: 0.1, label: null });
     putBookmark("b1", { locator: "page:3", percentage: 0.1, label: null });
     rememberBookmarks("b1", []);
     recordInk("b1", 1, { add: [stroke], remove: [] });
@@ -104,8 +104,8 @@ describe("signing out", () => {
     expect(localStorage.getItem("readsync.settings")).toBe("{}");
     const kept = [...env.named].filter(([, entries]) => entries.size).map(([name]) => name);
     expect(kept).toEqual([]);
-    expect(getLocalPending("b1")).toBeNull();
-    expect(lastLocalUpdate("b1")).toBe(0);
+    expect(openingLocator("b1", null)).toBeNull();
+    expect(worthOffering("b1", { locator: "page:1", updatedAt: new Date(1).toISOString() }, null)).toBe(true);
     expect(withPending("b1", [])).toEqual([]);
     expect(withPendingInk("b1", 1, [])).toEqual([]);
   });
