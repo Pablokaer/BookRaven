@@ -88,5 +88,10 @@ describe("KOReader sync", () => {
     await new Promise((r) => setTimeout(r, 1100));
     await api(u, "PUT", `/api/books/${book.id}/progress`, { locator: "page:9", percentage: 0.45, deviceId: "web", deviceName: "Firefox", clientUpdatedAt: Date.now() });
     expect((await ko("GET", `/kosync/syncs/progress/${doc}`)).json()).toMatchObject({ progress: "9", percentage: 0.45, device: "Firefox" });
+
+    // A percentage (the book marked as read by an import) names no page here: KOReader keeps its own.
+    await new Promise((r) => setTimeout(r, 1100));
+    await api(u, "PUT", `/api/books/${book.id}/progress`, { locator: "fraction:1", percentage: 1, deviceId: "import", deviceName: "Import", clientUpdatedAt: Date.now() });
+    expect((await ko("GET", `/kosync/syncs/progress/${doc}`)).json()).toMatchObject({ progress: "5", device: "Kobo Libra" });
   });
 });

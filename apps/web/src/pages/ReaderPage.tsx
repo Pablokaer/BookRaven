@@ -1,3 +1,4 @@
+import { pageLocator, pageOf, parseLocator } from "@bookraven/locator";
 import { compare as compareCfi, parse as parseCfi, type ParsedCfi } from "foliate-js/epubcfi.js";
 import type { TocItem } from "foliate-js/view.js";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -53,10 +54,10 @@ const ComicScroller = lazy(() => import("../reader/ComicScroller").then((m) => (
 
 type Panel = "settings" | "toc" | "notebook" | "search";
 
-/** PDF highlight positions: "pdf:<page>:<start>-<end>". */
+/** A PDF highlight's page and first character ("pdf:<page>:<start>-<end>"). */
 const pdfPos = (cfi: string) => {
-  const m = /^pdf:(\d+):(\d+)-/.exec(cfi);
-  return m ? [Number(m[1]), Number(m[2])] : null;
+  const l = parseLocator(cfi);
+  return l?.kind === "pdfRange" ? [l.page, l.start] : null;
 };
 
 /**
@@ -374,7 +375,7 @@ export function ReaderPage() {
   }, [book, reloadInkPage]);
 
   // Strokes of the page being read and its neighbours (and pages with unsent changes) are loaded.
-  const pdfPageNow = book?.format === "pdf" && position ? Number(/^page:(\d+)/.exec(position.locator)?.[1] ?? 0) : 0;
+  const pdfPageNow = book?.format === "pdf" && position ? (pageOf(position.locator) ?? 0) : 0;
   useEffect(() => {
     if (!book || inkLoadedFor !== book.id || !pdfPageNow) return;
     void ensureInkPages([pdfPageNow - 1, pdfPageNow, pdfPageNow + 1, pdfPageNow + 2, ...pendingInkPages(book.id)]);
@@ -448,7 +449,7 @@ export function ReaderPage() {
       setInkHistorySize({ undo: h.undo.length, redo: h.redo.length });
       applyInk(step.page, step.change);
       // Show the page that changed.
-      if (positionRef.current?.locator !== `page:${step.page}`) reader.current?.goToHref?.(`page:${step.page}`);
+      if (positionRef.current?.locator !== pageLocator(step.page)) reader.current?.goToHref?.(pageLocator(step.page));
     },
     [applyInk, inkRef],
   );
@@ -917,7 +918,7 @@ export function ReaderPage() {
           onDeleteBookmark={removeBookmark}
           inkPages={isPdf ? inkPageList : undefined}
           thumbnail={inkThumbnail}
-          onSelectInkPage={(page) => goAndClose(`page:${page}`)}
+          onSelectInkPage={(page) => goAndClose(pageLocator(page))}
         />
       )}
       {panel === "settings" && <SettingsPanel kind={isPdf ? "pdf" : isComic ? "comic" : "text"} onClose={() => setPanel(null)} />}

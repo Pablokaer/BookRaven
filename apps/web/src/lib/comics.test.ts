@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { comicFormatOfName, comicIndexFromLocator, comicLocator, imageSize, isComicFormat } from "./comics";
+import { comicFormatOfName, imageSize, isComicFormat } from "./comics";
 
-describe("comic positions", () => {
-  it("uses foliate's page locator format both ways", () => {
-    expect(comicLocator(0)).toBe("epubcfi(/6/2)");
-    expect(comicLocator(9)).toBe("epubcfi(/6/20)");
-    expect(comicIndexFromLocator("epubcfi(/6/20)")).toBe(9);
-    expect(comicIndexFromLocator("epubcfi(/6/8!/4/2)")).toBe(3); // positions inside a page
-    expect(comicIndexFromLocator(null)).toBe(0);
-  });
-
+describe("comic formats", () => {
   it("recognises comic formats and file names", () => {
     expect(isComicFormat("cbr")).toBe(true);
     expect(isComicFormat("epub")).toBe(false);

@@ -1,3 +1,4 @@
+import { fractionLocator } from "@bookraven/locator";
 import { keptForAccount } from "./accountData";
 import { apiFetch, apiJson, type Progress } from "./api";
 import { deviceId, deviceName } from "./device";
@@ -109,12 +110,13 @@ export function fetchProgress(bookId: string) {
 }
 
 /**
- * Marks a book as finished at `at` (an import from another app). The server keeps the newest
- * position, so a book read since then keeps its real place.
+ * Marks a book as finished at `at` (an import from another app): at 100%, which every reader
+ * opens on the last page. The server keeps the newest position, so a book read since then keeps
+ * its real place.
  */
 export function markFinished(bookId: string, at: Date) {
   return apiJson<{ applied: boolean }>(`/api/books/${bookId}/progress`, {
     method: "PUT",
-    body: JSON.stringify({ locator: "fraction:1", percentage: 1, label: null, deviceId, deviceName: "Import", clientUpdatedAt: Math.min(at.getTime(), Date.now()) }),
+    body: JSON.stringify({ locator: fractionLocator(1), percentage: 1, label: null, deviceId, deviceName: "Import", clientUpdatedAt: Math.min(at.getTime(), Date.now()) }),
   });
 }

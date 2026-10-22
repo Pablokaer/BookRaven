@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { comicPageLocator, fractionLocator, pageLocator, pageOf } from "@bookraven/locator";
 import { query } from "../db.js";
 import { verifyAppPassword } from "../lib/devices.js";
 import { audit } from "../lib/log.js";
@@ -92,7 +93,7 @@ export async function kosyncRoutes(app: FastifyInstance) {
           const { id, format } = book.rows[0];
           const page = /^\d+$/.test(b.progress) ? Number(b.progress) : null;
           const locator =
-            format === "pdf" && page ? `page:${page}` : COMIC.has(format) && page ? `epubcfi(/6/${page * 2})` : `fraction:${b.percentage}`;
+            format === "pdf" && page ? pageLocator(page) : COMIC.has(format) && page ? comicPageLocator(page - 1) : fractionLocator(b.percentage);
           await saveReadingProgress(request.user.id, id, {
             locator,
             percentage: b.percentage,
@@ -120,10 +121,10 @@ export async function kosyncRoutes(app: FastifyInstance) {
       );
       const r = ours.rows[0];
       if (r && (!ko || r.updated_at > ko.updated_at)) {
-        const page =
-          r.format === "pdf" ? /^page:(\d+)$/.exec(r.locator)?.[1] : COMIC.has(r.format) ? String(Number(/^epubcfi\(\/6\/(\d+)/.exec(r.locator)?.[1]) / 2) : null;
-        if (page && page !== "NaN") {
-          return { document, progress: page, percentage: r.percentage, device: r.device_name ?? "BookRaven", device_id: "readsync", timestamp: Math.floor(r.updated_at.getTime() / 1000) };
+        // A percentage (an ebook, or a book imported as read) has no page without the page count.
+        const page = r.format === "pdf" || COMIC.has(r.format) ? pageOf(r.locator) : null;
+        if (page !== null) {
+          return { document, progress: String(page), percentage: r.percentage, device: r.device_name ?? "BookRaven", device_id: "readsync", timestamp: Math.floor(r.updated_at.getTime() / 1000) };
         }
       }
       if (!ko) return {};

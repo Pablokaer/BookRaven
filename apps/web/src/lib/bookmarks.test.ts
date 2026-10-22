@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { comicPageLocator } from "@bookraven/locator";
 import type { Bookmark } from "./api";
 import { bookmarkLocator, isOnPage, pageMatcher } from "./bookmarkPages";
-import { comicLocator } from "./comics";
 
 const mark = (locator: string, percentage: number, extra: Partial<Bookmark> = {}): Bookmark => ({
   id: `id-${locator}`,
@@ -21,8 +21,8 @@ describe("which page a bookmark is on", () => {
   });
 
   it("comics: by page index, whatever the CFI says inside the page", () => {
-    expect(isOnPage(comicLocator(2), "epubcfi(/6/6!/4/2,/1:0,/1:0)", "comic")).toBe(true);
-    expect(isOnPage(comicLocator(2), comicLocator(3), "comic")).toBe(false);
+    expect(isOnPage(comicPageLocator(2), "epubcfi(/6/6!/4/2,/1:0,/1:0)", "comic")).toBe(true);
+    expect(isOnPage(comicPageLocator(2), comicPageLocator(3), "comic")).toBe(false);
   });
 
   it("ebooks: the bookmark lies inside the visible range, so it survives font changes", () => {

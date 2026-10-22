@@ -39,6 +39,10 @@ jobs:
       # for `pnpm typecheck` and runs first to fail fast.
       - name: Typecheck and build
         run: pnpm build
+      # The locator codec shared by both apps (packages/locator): plain JavaScript checked against
+      # its .d.ts, so it has no build of its own.
+      - name: Locator codec (types and tests)
+        run: pnpm --filter @bookraven/locator typecheck && pnpm --filter @bookraven/locator test
       - name: API tests (against the Postgres service)
         run: pnpm --filter api test
       - name: Web unit tests
