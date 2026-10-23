@@ -97,7 +97,7 @@ describe("Other apps: KOReader setup", () => {
     const link = [...container.querySelectorAll("a")].find((a) => a.textContent?.includes("Download the plugin"))!;
     expect(link.getAttribute("href")).toBe(`${origin}/koreader/bookraven.koplugin.zip`);
     expect(values("Server")).toEqual([origin]);
-    expect(container.textContent).toContain("highlights, notes and bookmarks");
+    expect(container.textContent).toContain("Set up BookRaven account");
     expect(container.textContent).toContain("/mnt/us/koreader/plugins");
   });
 
