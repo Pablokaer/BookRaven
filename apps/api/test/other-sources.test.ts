@@ -1,4 +1,3 @@
-import { crc32, deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { epubPackage, opfPeople, readZipEntry } from "../src/lib/epubInfo.js";
 import {
@@ -9,45 +8,7 @@ import {
   wikisourceEligible,
   wikisourceWorks,
 } from "../src/lib/otherSources.js";
-import { api, signUp } from "./helpers.js";
-
-/** A real ZIP (stored or deflated entries, with a central directory). */
-function zip(entries: [string, string | Buffer, boolean?][]) {
-  const locals: Buffer[] = [];
-  const central: Buffer[] = [];
-  let offset = 0;
-  for (const [name, content, deflate] of entries) {
-    const raw = Buffer.from(content);
-    const data = deflate ? deflateRawSync(raw) : raw;
-    const n = Buffer.from(name);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(deflate ? 8 : 0, 8);
-    local.writeUInt32LE(crc32(raw), 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(raw.length, 22);
-    local.writeUInt16LE(n.length, 26);
-    const dir = Buffer.alloc(46);
-    dir.writeUInt32LE(0x02014b50, 0);
-    dir.writeUInt16LE(deflate ? 8 : 0, 10);
-    dir.writeUInt32LE(crc32(raw), 16);
-    dir.writeUInt32LE(data.length, 20);
-    dir.writeUInt32LE(raw.length, 24);
-    dir.writeUInt16LE(n.length, 28);
-    dir.writeUInt32LE(offset, 42);
-    locals.push(local, n, data);
-    central.push(dir, n);
-    offset += 30 + n.length + data.length;
-  }
-  const cd = Buffer.concat(central);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(cd.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, cd, end]);
-}
+import { api, signUp, zip } from "./helpers.js";
 
 /** An EPUB with this package document, padded to `size` bytes of text. */
 function epub(opf: string, size = 1000) {

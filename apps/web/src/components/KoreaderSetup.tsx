@@ -118,7 +118,7 @@ export function KoreaderSetup({
       </ol>
 
       <p className="mt-5 text-xs leading-relaxed text-muted">
-        PDFs and comics sync page by page both ways. For ebooks, BookRaven offers to jump to KOReader’s percentage.
+        PDFs and comics sync page by page both ways, and EPUBs to the exact spot. For other ebooks, BookRaven offers to jump to KOReader’s percentage.
       </p>
     </div>
   );

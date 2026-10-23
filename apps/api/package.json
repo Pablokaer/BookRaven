@@ -27,13 +27,15 @@
     "nodemailer": "6.9.16",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "sax": "1.6.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/nodemailer": "6.4.17",
     "@types/pg": "^8.11.0",
     "@types/pngjs": "6.0.5",
+    "@types/sax": "1.2.7",
     "fast-xml-parser": "4.4.1",
     "s3rver": "3.7.1",
     "tsx": "^4.19.0",

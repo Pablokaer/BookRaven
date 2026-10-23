@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { comicPageLocator, fractionLocator, pageLocator, pageOf } from "@bookraven/locator";
+import { comicPageLocator, fractionLocator, pageLocator, pageOf, parseLocator } from "@bookraven/locator";
 import { query } from "../db.js";
 import { verifyAppPassword } from "../lib/devices.js";
+import { storedCfiToXpointer, storedXpointerToCfi } from "../lib/epubPositions.js";
 import { audit } from "../lib/log.js";
 import { saveReadingProgress } from "../lib/progress.js";
 
@@ -13,9 +14,10 @@ import { saveReadingProgress } from "../lib/progress.js";
  * then Login with your email and an app password. Use "Binary" document matching.
  *
  * Positions are matched to books by KOReader's partial MD5. PDFs and comics sync both
- * ways by page; for ebooks KOReader positions (XPointers) can't be translated into our
- * CFIs, so BookRaven offers to jump to the same percentage, and KOReader devices keep
- * syncing exact positions among themselves.
+ * ways by page. EPUBs sync exactly both ways: KOReader's positions (XPointers) are turned
+ * into CFIs and back (epubPositions.ts); when that fails (and for other ebook formats)
+ * BookRaven keeps KOReader's percentage and KOReader keeps its own position, which its
+ * devices sync exactly among themselves.
  */
 
 type KosyncRow = { progress: string; percentage: number; device: string; device_id: string; updated_at: Date };
@@ -85,15 +87,20 @@ export async function kosyncRoutes(app: FastifyInstance) {
         );
 
         // Mirror it into BookRaven's own progress for the matching book.
-        const book = await query<{ id: string; format: string }>("SELECT id, format FROM book WHERE user_id = $1 AND koreader_md5 = $2", [
-          request.user.id,
-          b.document,
-        ]);
+        const book = await query<{ id: string; format: string; sha256: string; size_bytes: string }>(
+          "SELECT id, format, sha256, size_bytes FROM book WHERE user_id = $1 AND koreader_md5 = $2",
+          [request.user.id, b.document],
+        );
         if (book.rows[0]) {
-          const { id, format } = book.rows[0];
+          const { id, format, sha256, size_bytes } = book.rows[0];
           const page = /^\d+$/.test(b.progress) ? Number(b.progress) : null;
+          const cfi = format === "epub" && b.progress.startsWith("/") ? await storedXpointerToCfi(sha256, Number(size_bytes), b.progress) : null;
           const locator =
-            format === "pdf" && page ? pageLocator(page) : COMIC.has(format) && page ? comicPageLocator(page - 1) : fractionLocator(b.percentage);
+            format === "pdf" && page
+              ? pageLocator(page)
+              : COMIC.has(format) && page
+                ? comicPageLocator(page - 1)
+                : (cfi ?? fractionLocator(b.percentage));
           await saveReadingProgress(request.user.id, id, {
             locator,
             percentage: b.percentage,
@@ -112,9 +119,17 @@ export async function kosyncRoutes(app: FastifyInstance) {
       const { rows } = await query<KosyncRow>("SELECT * FROM kosync_progress WHERE user_id = $1 AND document = $2", [request.user.id, document]);
       const ko = rows[0];
 
-      // A newer position read in BookRaven is offered back when KOReader can use it (pages).
-      const ours = await query<{ format: string; locator: string; percentage: number; updated_at: Date; device_name: string | null }>(
-        `SELECT b.format, p.locator, p.percentage, p.updated_at, p.device_name
+      // A newer position read in BookRaven is offered back when KOReader can use it (a page, an EPUB's CFI).
+      const ours = await query<{
+        format: string;
+        sha256: string;
+        size_bytes: string;
+        locator: string;
+        percentage: number;
+        updated_at: Date;
+        device_name: string | null;
+      }>(
+        `SELECT b.format, b.sha256, b.size_bytes, p.locator, p.percentage, p.updated_at, p.device_name
          FROM book b JOIN reading_progress p ON p.book_id = b.id AND p.user_id = b.user_id
          WHERE b.user_id = $1 AND b.koreader_md5 = $2 AND p.device_id NOT LIKE 'koreader:%'`,
         [request.user.id, document],
@@ -123,8 +138,11 @@ export async function kosyncRoutes(app: FastifyInstance) {
       if (r && (!ko || r.updated_at > ko.updated_at)) {
         // A percentage (an ebook, or a book imported as read) has no page without the page count.
         const page = r.format === "pdf" || COMIC.has(r.format) ? pageOf(r.locator) : null;
-        if (page !== null) {
-          return { document, progress: String(page), percentage: r.percentage, device: r.device_name ?? "BookRaven", device_id: "readsync", timestamp: Math.floor(r.updated_at.getTime() / 1000) };
+        const xpointer =
+          r.format === "epub" && parseLocator(r.locator)?.kind === "cfi" ? await storedCfiToXpointer(r.sha256, Number(r.size_bytes), r.locator) : null;
+        const progress = page !== null ? String(page) : xpointer;
+        if (progress !== null) {
+          return { document, progress, percentage: r.percentage, device: r.device_name ?? "BookRaven", device_id: "readsync", timestamp: Math.floor(r.updated_at.getTime() / 1000) };
         }
       }
       if (!ko) return {};
