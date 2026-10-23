@@ -20,6 +20,16 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-23-koreader-plugin-home",
+    date: "2026-10-23",
+    title: "A new BookRaven plugin for KOReader",
+    items: [
+      "Your BookRaven library can be KOReader's start screen: continue reading, your shelves and the newest books, with covers.",
+      "The catalog shows books as cards with their covers, and KOReader can take on BookRaven's look.",
+      "Setting up the catalog and progress sync is one step: Settings → BookRaven → Set up BookRaven account. Download the new plugin from Profile → Other apps.",
+    ],
+  },
+  {
     id: "2026-10-23-kindle",
     date: "2026-10-23",
     title: "Better on Kindle and KOReader",

@@ -121,28 +121,31 @@ export function KoreaderSetup({
 
         <Step n={4} title="Install the BookRaven plugin">
           <p className="text-xs leading-relaxed text-muted">
-            It syncs your <b className="text-fg/90">highlights, notes and bookmarks</b> both ways and downloads the books you{" "}
-            <b className="text-fg/90">Send to Kindle</b> from a book’s menu. On a computer:
+            It makes your <b className="text-fg/90">BookRaven library the start screen</b> (continue reading, your shelves, new books), shows the catalog
+            as <b className="text-fg/90">cards with covers</b>, and can dress KOReader in BookRaven’s look. It also sets up steps 2 and 3 for you. On a
+            computer:
           </p>
           <a className="btn-outline py-1.5 text-xs" href={`${origin}${PLUGIN_ZIP}`} download>
             <Download className="h-3.5 w-3.5" /> Download the plugin
           </a>
           <p className="text-xs leading-relaxed text-muted">
             Unzip it and copy the <b className="font-mono text-fg/90">bookraven.koplugin</b> folder into <b className="font-mono text-fg/90">koreader/plugins</b> on
-            the e-reader (connected by USB; on a Kindle that is <span className="font-mono">/mnt/us/koreader/plugins</span>), then restart KOReader. With
-            a book open: <b className="text-fg/90">Tools</b> → <b className="text-fg/90">BookRaven</b> → <b className="text-fg/90">Settings</b>, and enter:
+            the e-reader (connected by USB; on a Kindle that is <span className="font-mono">/mnt/us/koreader/plugins</span>), then restart KOReader. Then{" "}
+            <b className="text-fg/90">Settings</b> (gear) → <b className="text-fg/90">BookRaven</b> → <b className="text-fg/90">Set up BookRaven account</b>, and
+            enter:
           </p>
           <TypeValue label="Server" value={origin} />
           <p className="text-xs leading-relaxed text-muted">
-            with the same username and app password. Highlights sync when you open and close a book, and sent books arrive in a{" "}
-            <b className="text-fg/90">BookRaven</b> folder in KOReader’s home folder when the Wi-Fi comes on.
+            with the same username and app password. It adds the BookRaven catalog and turns on progress sync. Optional, in the same menu:{" "}
+            <b className="text-fg/90">Start with the BookRaven library</b>, <b className="text-fg/90">Theme</b> (BookRaven or Cyberdeck) and{" "}
+            <b className="text-fg/90">Catalog view → Cards</b>.
           </p>
         </Step>
       </ol>
 
       <p className="mt-5 text-xs leading-relaxed text-muted">
         PDFs and comics sync page by page both ways, and EPUBs to the exact spot. For other ebooks, BookRaven offers to jump to KOReader’s percentage.
-        The plugin syncs highlights in EPUBs and PDFs, and bookmarks in EPUBs, PDFs and comics.
+        Books you <b className="text-fg/90">Send to Kindle</b> appear in the catalog’s <b className="text-fg/90">Sent to this device</b> shelf.
       </p>
     </div>
   );

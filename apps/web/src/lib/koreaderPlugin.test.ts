@@ -11,7 +11,7 @@ import { PLUGIN_DIR, PLUGIN_FOLDER, pluginFiles, pluginZip } from "../../scripts
 
 /** Names the plugin may use without declaring them: Lua's and KOReader's globals. */
 const GLOBALS = new Set(
-  "G_reader_settings _G assert error ipairs math next os pairs pcall print rawget rawset require select setmetatable getmetatable string table tonumber tostring type unpack io xpcall".split(" "),
+  "G_reader_settings _G assert debug error ipairs math next os package pairs pcall print rawget rawset require select setmetatable getmetatable string table tonumber tostring type unpack io xpcall".split(" "),
 );
 
 type Node = { type: string; [key: string]: unknown };
@@ -41,7 +41,8 @@ describe("the KOReader plugin's Lua", () => {
   it("has KOReader's plugin layout", () => {
     expect(lua).toEqual(expect.arrayContaining(["_meta.lua", "main.lua"]));
     const meta = readFileSync(join(PLUGIN_DIR, "_meta.lua"), "utf8");
-    expect(meta).toMatch(/name = "bookraven"/);
+    // KOReader 2026.07 takes the plugin's name from its folder and warns about a `name` here.
+    expect(meta).toMatch(/fullname = "BookRaven"/);
     expect(readFileSync(join(PLUGIN_DIR, "main.lua"), "utf8")).toMatch(/registerToMainMenu\(self\)/);
   });
 
