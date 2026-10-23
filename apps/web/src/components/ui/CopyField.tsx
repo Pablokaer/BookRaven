@@ -1,6 +1,17 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
+/** Copies `value`; `copied` is true for 2 s once it is on the clipboard. */
+export function useCopy(value: string) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard?.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }, () => {});
+  return { copied, copy };
+}
+
 /**
  * Read-only text with a copy button that says "Copied" for 2 s once it is on the clipboard.
  * `label` names the text: shown above it with `showLabel`, otherwise for screen readers only.
@@ -19,12 +30,7 @@ export function CopyField({
   withText?: boolean;
   inputClassName?: string;
 }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () =>
-    void navigator.clipboard?.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }, () => {});
+  const { copied, copy } = useCopy(value);
   const icon = copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />;
   // "Invite link" → "Copy invite link"; names like "OPDS catalog" keep their capitals.
   const name = /^.[a-z]/.test(label) ? label[0]!.toLowerCase() + label.slice(1) : label;

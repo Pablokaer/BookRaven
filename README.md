@@ -319,7 +319,9 @@ docker compose run --rm --no-deps api node dist/scripts/import-public-domain.js 
 
 ## Other reading apps (OPDS and KOReader)
 
-Create an **app password** in *Profile → Other apps* for each device; the account password is never accepted by these endpoints.
+Create an **app password** in *Profile → Other apps* for each device; the account password is never accepted by these endpoints. App passwords are six short lowercase words joined by dashes (`otter-pecan-quilt-lunar-robin-tulip`, about 62 bits of entropy, from a 1276-word list based on the EFF short wordlist, CC BY 3.0, in `apps/api/src/lib/appPasswordWords.ts`) so they are easy to type on an e-ink keyboard. Passwords made before that (`kq3m-x8fp-2nwd-rv7a`) keep working. OPDS sign-ins ignore capitals and spaces around the password; KOReader's sync login hashes the password on the device, so there it must be typed exactly (in lowercase).
+
+*Profile → Other apps* also walks you through **setting up KOReader** (Kindle, Kobo, PocketBook): it shows this server's catalog and sync addresses, your email and, right after you create one, the app password, each in large type with a copy button, and the menus to open in KOReader.
 
 - **OPDS catalog:** `https://<your server>/opds` (KOReader, Moon+ Reader, Thorium, Calibre…). Username: your email, password: the app password. Browse your library, collections and the Public Library, search (titles, authors, series, tags), and download.
   - **Sections:** *Reading now* (`/opds/reading`: started and not finished, most recently read first), *My library* (most recently read first), *Recently added*, *Finished* (`/opds/finished`, read to 98% or more), one per collection, and the *Public Library*. Feeds are paged by 50 (`?page=`).

@@ -3,10 +3,16 @@ import SevenZip from "7z-wasm";
 import { XMLValidator } from "fast-xml-parser";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
+import { query } from "../src/db.js";
+import { APP_PASSWORD_WORDS } from "../src/lib/appPasswordWords.js";
 import { partialMd5 } from "../src/lib/koreader.js";
 import { api, fakePdf, getApp, signUp, upload, type TestUser } from "./helpers.js";
 
 const md5 = (s: string) => createHash("md5").update(s).digest("hex");
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/** Six short lowercase words joined by dashes. */
+const WORDS_RE = /^[a-z]{3,5}(-[a-z]{3,5}){5}$/;
 
 async function appPassword(u: TestUser, name = "Kobo") {
   const res = await api(u, "POST", "/api/app-passwords", { name });
@@ -24,7 +30,7 @@ describe("app passwords and OPDS", () => {
     const u = await signUp();
     const book = (await upload(u, "Dune.pdf", fakePdf(), { title: "Dune & Co", author: "Frank Herbert" })).json();
     const { id, password } = await appPassword(u);
-    expect(password).toMatch(/^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/);
+    expect(password).toMatch(WORDS_RE);
 
     expect((await (await getApp()).inject({ method: "GET", url: "/opds" })).statusCode).toBe(401);
     expect((await basic(u, "password123", "/opds")).statusCode).toBe(401); // the account password is not accepted
@@ -48,6 +54,37 @@ describe("app passwords and OPDS", () => {
     expect(list[0].lastUsedAt).toBeTruthy();
     expect((await api(u, "DELETE", `/api/app-passwords/${id}`)).statusCode).toBe(204);
     expect((await basic(u, password, "/opds")).statusCode).toBe(401);
+  });
+});
+
+describe("typeable app passwords", () => {
+  /** KOReader's sync login: the md5 of the password, as KOReader sends it. */
+  async function kosyncLogin(u: TestUser, key: string) {
+    const a = await getApp();
+    return a.inject({ method: "GET", url: "/kosync/users/auth", headers: { "x-auth-user": u.email, "x-auth-key": key, accept: "application/vnd.koreader.v1+json" } });
+  }
+
+  it("are six words from the list, different each time, and sign in to OPDS and KOReader", async () => {
+    const u = await signUp();
+    const { password } = await appPassword(u, "Kindle");
+    expect(password).toMatch(WORDS_RE);
+    for (const word of password.split("-")) expect(APP_PASSWORD_WORDS).toContain(word);
+    expect((await appPassword(u, "Kobo")).password).not.toBe(password);
+
+    expect((await basic(u, password, "/opds")).statusCode).toBe(200);
+    expect((await kosyncLogin(u, md5(password))).statusCode).toBe(200);
+    // Typed on an e-ink keyboard: a stray capital or space is forgiven over OPDS, a wrong word isn't.
+    expect((await basic(u, ` ${password[0]!.toUpperCase()}${password.slice(1)} `, "/opds")).statusCode).toBe(200);
+    expect((await basic(u, password.replace(/^[a-z]+/, "zzzzz"), "/opds")).statusCode).toBe(401);
+  });
+
+  it("keep accepting the older letters-and-digits passwords", async () => {
+    const u = await signUp();
+    const old = "kq3m-x8fp-2nwd-rv7a";
+    await query("INSERT INTO app_password (user_id, name, hash) VALUES ($1, 'Old Kobo', $2)", [u.id, sha256(md5(old))]);
+    expect((await basic(u, old, "/opds")).statusCode).toBe(200);
+    expect((await kosyncLogin(u, md5(old))).statusCode).toBe(200);
+    expect((await kosyncLogin(u, md5(old).toUpperCase())).statusCode).toBe(200);
   });
 });
 
