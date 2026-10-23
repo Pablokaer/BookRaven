@@ -125,11 +125,21 @@ function Covers:store(key, bb)
     return dest
 end
 
---- The cover of a book on the device (for the library home), cached like the catalog's.
-function Covers:forBook(file)
+local function bookKey(file)
     local mtime = lfs.attributes(file, "modification")
-    if not mtime then return nil end
-    local key = "book:" .. file .. ":" .. mtime
+    return mtime and ("book:" .. file .. ":" .. mtime)
+end
+
+--- The cached cover of a book on the device, without extracting it. Path or nil.
+function Covers:cachedBook(file)
+    local key = bookKey(file)
+    return key and self:cached(key)
+end
+
+--- The cover of a book on the device (library home, folder shelves), cached like the catalog's.
+function Covers:forBook(file)
+    local key = bookKey(file)
+    if not key then return nil end
     local cached = self:cached(key)
     if cached then return cached end
     if self.failed[key] then return nil end

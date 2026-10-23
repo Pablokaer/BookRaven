@@ -33,7 +33,7 @@ if Settings.themeName() then
     if not ok then logger.err("BookRaven: could not apply the theme", err) end
 end
 -- Our other modules are only findable while plugins load, so load them now.
-for _, mod in ipairs({ "br_widgets", "br_account", "br_cards", "br_home" }) do
+for _, mod in ipairs({ "br_widgets", "br_account", "br_cards", "br_gallery", "br_home" }) do
     local ok, err = pcall(require, mod)
     if not ok then logger.err("BookRaven: could not load", mod, err) end
 end

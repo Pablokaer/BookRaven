@@ -5,6 +5,7 @@ A KOReader plugin that brings BookRaven to e-ink readers (Kindle, Kobo, PocketBo
 - **Library home** (the start screen, like the Kindle's own home). It shows:
   - *Continue reading*: the last book you opened, with its cover, progress and page. Tap it to open the book.
   - *Shelves*: your BookRaven catalog's shelves as tiles illustrated with Gustave Doré's engravings for *The Raven*. Tap one to open it.
+  - *Folder shelves*: tap **+ Add shelf** (on the Shelves heading, or the + tile) and long-press a folder on the device to choose it. The folder becomes a shelf with its name. Tapping it opens a gallery of its books as cards with their covers, like *My library*. Sub-folders appear as folder cards you can open; tap a book to read it. Long-press a folder shelf to remove it; the folder and its books stay on the device. When the home runs out of room, the last tile opens *All shelves*.
   - *New in your library*: covers from the catalog's recently added shelf, when the screen has room.
 
   The top bar has search, the file browser and KOReader's menu. Shelves and new books are saved on the device, so the home works offline and refreshes when KOReader is online. Turn it on with Settings → BookRaven → *Start with the BookRaven library*, or open it from *BookRaven library* in the file browser's ☰ menu. With that setting on, the home also comes back when you close a book.
@@ -57,6 +58,7 @@ Written and tested against KOReader v2026.07.2, the current stable release, at t
 | `br_style.lua` | The rest of a theme: icons, check boxes, menu tabs, separators, dialogs, file browser rows |
 | `br_widgets.lua` | Drawing pieces shared by the home and the catalog: tiles, labels, progress bars, cover shadows |
 | `br_cards.lua` | Cards and shelf tiles for the OPDS browser |
+| `br_gallery.lua` | Folder shelves: the gallery of a folder's books, and the All shelves page |
 | `br_covers.lua` | Cover download, shrinking and cache (catalog and local books) |
 | `br_account.lua` | Account setup for the OPDS catalog and progress sync |
 | `br_settings.lua` | Plugin settings (`bookraven` in KOReader's settings) |

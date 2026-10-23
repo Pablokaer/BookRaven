@@ -4,7 +4,8 @@ The BookRaven library home: the start screen, like the Kindle's own home.
   * a top bar with the raven mark, search, the file browser and KOReader's menu;
   * a header with an engraving (Doré's "The Raven"), the greeting and the date;
   * "Continue reading": the last book you opened, with its cover and progress (tap to open);
-  * "Shelves": the BookRaven catalog's top-level shelves as illustrated tiles;
+  * "Shelves": the BookRaven catalog's top-level shelves as illustrated tiles, then the folder
+    shelves you added with "+ Add shelf" (see br_gallery);
   * "New in your library": covers from the catalog's recently added shelf, when there is room.
 
 Shelves and new books are kept in the plugin settings, so the home works offline and shows
@@ -19,6 +20,7 @@ local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconButton = require("ui/widget/iconbutton")
 local ImageWidget = require("ui/widget/imagewidget")
+local InfoMessage = require("ui/widget/infomessage")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local OverlapGroup = require("ui/widget/overlapgroup")
@@ -175,10 +177,10 @@ function Home:topBar(sw, m, style, f)
     end
     table.insert(left, TextWidget:new{
         text = style == "hud" and "BOOKRAVEN" or "BookRaven",
-        face = f.get("display", style == "hud" and 19 or 23),
+        face = f.get("display", style == "hud" and 21 or 25),
     })
     if style == "hud" then
-        table.insert(left, TextWidget:new{ text = "  // DECK", face = f.get("mono", 11), fgcolor = W.MUTED })
+        table.insert(left, TextWidget:new{ text = "  // DECK", face = f.get("mono", 13), bold = true, fgcolor = W.MUTED })
     end
 
     local icon = s(24)
@@ -225,24 +227,24 @@ function Home:header(sw, m, style, f)
 
     local texts = VerticalGroup:new{ align = "left" }
     local ink = hud and WHITE or W.INK
-    local muted = hud and Blitbuffer.COLOR_GRAY_B or W.MUTED
+    local muted = hud and Blitbuffer.COLOR_GRAY_D or W.SOFT
     local max_w = math.floor(sw * 0.52)
     if hud then
-        table.insert(texts, TextWidget:new{ text = "WELCOME BACK", face = f.get("display", 26), fgcolor = ink, max_width = max_w })
+        table.insert(texts, TextWidget:new{ text = "WELCOME BACK", face = f.get("display", 30), fgcolor = ink, max_width = max_w })
         table.insert(texts, VerticalSpan:new{ width = s(6) })
         table.insert(texts, TextWidget:new{
-            text = os.date("%Y-%m-%d · %a · %H:%M"):upper(), face = f.get("mono", 11), fgcolor = muted, max_width = max_w,
+            text = os.date("%Y-%m-%d · %a · %H:%M"):upper(), face = f.get("mono", 14), bold = true, fgcolor = muted, max_width = max_w,
         })
         table.insert(texts, VerticalSpan:new{ width = s(4) })
         table.insert(texts, TextWidget:new{
             text = string.format("ACTIVE READS %02d // LINK %s", self.in_progress or 0, self.offline and "OFFLINE" or "ONLINE"),
-            face = f.get("mono", 11), fgcolor = muted, max_width = max_w,
+            face = f.get("mono", 14), bold = true, fgcolor = muted, max_width = max_w,
         })
     else
-        table.insert(texts, TextWidget:new{ text = greeting(), face = f.get("display", 29), fgcolor = ink, max_width = max_w })
+        table.insert(texts, TextWidget:new{ text = greeting(), face = f.get("display", 33), fgcolor = ink, max_width = max_w })
         table.insert(texts, VerticalSpan:new{ width = s(4) })
         table.insert(texts, TextWidget:new{
-            text = W.tracked(os.date("%A %d %B")), face = f.get("label", 9), fgcolor = muted, max_width = max_w,
+            text = W.tracked(os.date("%A %d %B")), face = f.get("label", 12), fgcolor = muted, max_width = max_w,
         })
         table.insert(texts, VerticalSpan:new{ width = s(10) })
         local line
@@ -255,7 +257,7 @@ function Home:header(sw, m, style, f)
         else
             line = _("A quiet shelf, waiting for you")
         end
-        table.insert(texts, TextWidget:new{ text = line, face = f.get("italic", 14), fgcolor = W.MUTED, max_width = max_w })
+        table.insert(texts, TextWidget:new{ text = line, face = f.get("strong", 16), fgcolor = W.SOFT, max_width = max_w })
     end
 
     local group = OverlapGroup:new{ dimen = dimen }
@@ -310,7 +312,7 @@ function Home:continueCard(width, style, f)
         }
     end
     local pad = s(10)
-    local cover_h = s(100)
+    local cover_h = s(104)
     local cover_w = math.floor(cover_h * 2 / 3)
     local cover = self:coverWidget(Covers:forBook(cur.file), cur.title, cur.authors, cover_w, cover_h, style)
     local cs = cover:getSize()
@@ -319,7 +321,7 @@ function Home:continueCard(width, style, f)
     local info = VerticalGroup:new{ align = "left" }
     table.insert(info, TextBoxWidget:new{
         text = hud and W.upper(cur.title) or cur.title,
-        face = f.get("display", hud and 18 or 21),
+        face = f.get("display", hud and 21 or 24),
         width = text_w,
         height = math.floor(cover_h * 0.5),
         height_adjust = true,
@@ -329,8 +331,9 @@ function Home:continueCard(width, style, f)
         table.insert(info, VerticalSpan:new{ width = s(2) })
         table.insert(info, TextWidget:new{
             text = (hud and "// " or "") .. cur.authors,
-            face = f.get(hud and "mono" or "text", hud and 11 or 13),
-            fgcolor = W.MUTED,
+            face = f.get(hud and "mono" or "strong", hud and 14 or 16),
+            bold = hud or nil,
+            fgcolor = W.SOFT,
             max_width = text_w,
         })
     end
@@ -349,7 +352,8 @@ function Home:continueCard(width, style, f)
         end
     end
     table.insert(info, TextWidget:new{
-        text = meta, face = f.get(hud and "mono" or "text", hud and 10 or 11), fgcolor = W.MUTED, max_width = text_w,
+        text = meta, face = f.get(hud and "mono" or "strong", hud and 13 or 14), bold = hud or nil,
+        fgcolor = W.SOFT, max_width = text_w,
     })
 
     local row = HorizontalGroup:new{ align = "center", cover, HorizontalSpan:new{ width = s(16) }, info }
@@ -358,7 +362,7 @@ function Home:continueCard(width, style, f)
     if hud then
         box = W.HudPanel:new{
             width = width, height = h, padding = pad, row,
-            tag = TextWidget:new{ text = "ACTIVE", face = f.get("mono", 9), fgcolor = WHITE },
+            tag = TextWidget:new{ text = "ACTIVE", face = f.get("mono", 11), bold = true, fgcolor = WHITE },
         }
     else
         box = W.card(row, width, h, pad)
@@ -366,56 +370,132 @@ function Home:continueCard(width, style, f)
     return W.Tap:new{ callback = function() self:openBook(cur.file) end, box }
 end
 
-function Home:shelfRows(width, style, f)
-    local rows = {}
-    local entry = self:account()
-    local hud = style == "hud"
+--- Everything the Shelves section can show, in order: the catalog's shelves (or a tile saying
+--- why there are none yet), the folder shelves you added, and "Add a shelf".
+function Home:shelfEntries()
+    local list = {}
+    local hud = W.style() == "hud"
     if not self.ui.opds then
-        table.insert(rows, W.noteTile{
-            style = style, width = width,
-            title = _("Catalog unavailable"),
-            text = _("Enable the OPDS catalog in Tools → More tools → Plugin management."),
-        })
-        return rows
+        table.insert(list, { title = _("Catalog unavailable"), art_key = "library", kind = "noopds",
+            content = _("Enable the OPDS catalog in Tools → More tools → Plugin management.") })
+    elseif not self:account() then
+        table.insert(list, { title = hud and _("Link your account") or _("Connect BookRaven"), art_key = "library",
+            kind = "connect", content = _("Add your account to see your catalog's shelves here.") })
+    elseif #(self.cache.shelves or {}) == 0 then
+        table.insert(list, { title = hud and _("No shelf data") or _("Your catalog"), art_key = "library",
+            kind = "offline", content = _("Its shelves appear once KOReader has been online. Tap to connect.") })
+    else
+        for _, shelf in ipairs(self.cache.shelves) do
+            table.insert(list, { title = shelf.title, text = shelf.title, content = shelf.note, url = shelf.url, kind = "catalog" })
+        end
     end
-    if not entry then
-        table.insert(rows, W.noteTile{
-            style = style, width = width,
-            title = hud and _("Link your account") or _("Connect BookRaven"),
-            text = _("Add your account to see your shelves here. Tap to set it up."),
-            callback = function()
-                require("br_account").showDialog(self.ui, function() self:refresh(true) end)
-            end,
+    local Shelves = require("br_gallery")
+    for _, shelf in ipairs(Shelves.list()) do
+        table.insert(list, {
+            title = shelf.title, text = shelf.title, content = Shelves.note(shelf.path),
+            local_path = shelf.path, kind = "folder",
         })
-        return rows
     end
-    local shelves = self.cache.shelves or {}
-    if #shelves == 0 then
-        table.insert(rows, W.noteTile{
-            style = style, width = width,
-            title = hud and _("No shelf data") or _("Your shelves"),
-            text = _("They appear once KOReader has been online. Tap to connect."),
-            callback = function()
-                require("ui/network/manager"):runWhenOnline(function() self:refresh(true) end)
-            end,
+    table.insert(list, {
+        title = _("Add a shelf"), text = _("Add a shelf"), plus = true, kind = "add",
+        content = _("Pick a folder on this device"),
+    })
+    return list
+end
+
+--- What a tap on a shelf tile does (on the home or on the Shelves page).
+function Home:shelfAction(entry, from_menu)
+    if entry.kind == "add" then
+        self:addShelf(from_menu)
+    elseif entry.kind == "folder" then
+        self:openFolder(entry.local_path, entry.title)
+    elseif entry.kind == "catalog" then
+        self:openShelf(entry.url, entry.title)
+    elseif entry.kind == "all" then
+        UIManager:show(require("br_gallery").ShelfMenu:new{ home = self })
+    elseif entry.kind == "connect" then
+        require("br_account").showDialog(self.ui, function() self:refresh(true) end)
+    elseif entry.kind == "offline" then
+        require("ui/network/manager"):runWhenOnline(function() self:refresh(true) end)
+    end
+end
+
+--- Long-press on a folder shelf: remove it (the folder and its books stay on the device).
+function Home:shelfHold(entry, from_menu)
+    if entry.kind ~= "folder" then return end
+    UIManager:show(require("ui/widget/confirmbox"):new{
+        text = T(_("Remove the shelf \"%1\"?\n\nThe folder and its books stay on the device."), entry.title),
+        ok_text = _("Remove"),
+        ok_callback = function()
+            require("br_gallery").remove(entry.local_path)
+            self:rebuild()
+            if from_menu then from_menu:reload() end
+        end,
+    })
+end
+
+--- "Add a shelf": pick a folder; its name becomes the shelf's name.
+function Home:addShelf(from_menu)
+    local start = G_reader_settings:readSetting("home_dir") or G_reader_settings:readSetting("lastdir") or "/"
+    local PathChooser = require("ui/widget/pathchooser")
+    UIManager:show(PathChooser:new{
+        select_directory = true,
+        select_file = false,
+        show_files = true,
+        path = start,
+        onConfirm = function(path)
+            local Shelves = require("br_gallery")
+            local added, shelf = Shelves.add(path)
+            if not added then
+                UIManager:show(InfoMessage:new{
+                    text = T(_("\"%1\" is already on your shelves."), shelf.title), timeout = 3,
+                })
+                return
+            end
+            self:rebuild()
+            if from_menu then from_menu:reload() end
+        end,
+    })
+end
+
+--- Opens a folder shelf as a gallery of covers.
+function Home:openFolder(path, title)
+    if lfs.attributes(path, "mode") ~= "directory" then
+        UIManager:show(InfoMessage:new{
+            text = T(_("The folder of \"%1\" is not on this device any more. Long-press the shelf to remove it."), title),
         })
-        return rows
+        return
     end
+    UIManager:show(require("br_gallery").Gallery:new{ root = path, title = title, home = self, ui = self.ui })
+end
+
+--- The tiles that fit in `height`: two per row; if there are too many, the last one opens
+--- the Shelves page with all of them. "Add a shelf" (also on the heading) takes the free
+--- half of the last row when there is one, and never a row of its own.
+function Home:shelfRows(width, height, style)
     local cols = 2
     local gap = s(10)
+    local gap_v = s(8)
     local tile_w = math.floor((width - (cols - 1) * gap) / cols)
-    local tile_h = s(66)
-    local max_tiles = 6
-    local list = {}
-    for i, shelf in ipairs(shelves) do
-        if i > max_tiles then break end
-        table.insert(list, shelf)
+    local tile_h = s(74)
+    local entries = self:shelfEntries()
+    local add = table.remove(entries) -- "Add a shelf" is always last
+    local rows_fit = math.max(1, math.floor((height + gap_v) / (tile_h + gap_v)))
+    local slots = rows_fit * cols
+    local shown = entries
+    if #entries > slots then
+        shown = {}
+        for i = 1, slots - 1 do shown[i] = entries[i] end
+        table.insert(shown, {
+            title = _("All shelves"), kind = "all", art_key = "library",
+            content = T(_("See all %1 shelves"), #entries),
+        })
+    elseif #entries % cols ~= 0 then
+        table.insert(shown, add)
     end
-    if #shelves > max_tiles then
-        list[max_tiles] = { title = _("All shelves"), note = T(_("%1 shelves in your catalog"), #shelves), url = entry.url, all = true }
-    end
-    local row
-    for i, shelf in ipairs(list) do
+    local used_art = {}
+    local rows, row = {}, nil
+    for i, entry in ipairs(shown) do
         if (i - 1) % cols == 0 then
             row = HorizontalGroup:new{ align = "top" }
             table.insert(rows, row)
@@ -423,22 +503,24 @@ function Home:shelfRows(width, style, f)
             table.insert(row, HorizontalSpan:new{ width = gap })
         end
         table.insert(row, W.shelfTile{
-            title = shelf.title,
-            note = shelf.note,
+            title = entry.title,
+            note = entry.content,
             width = tile_w,
             height = tile_h,
-            art = W.shelfArt(self.plugin_dir, shelf.all and "library" or shelf.title, i),
+            plus = entry.plus,
+            art = not entry.plus and W.shelfArt(self.plugin_dir, entry.art_key or entry.title, i, used_art) or nil,
             style = style,
             index = i,
-            callback = function() self:openShelf(shelf.url, shelf.title) end,
+            callback = function() self:shelfAction(entry) end,
+            hold_callback = entry.kind == "folder" and function() self:shelfHold(entry) end or nil,
         })
     end
-    return rows
+    return rows, tile_h, gap_v
 end
 
 function Home:recentStrip(width, height, style, f)
     local recent = self.cache.recent or {}
-    local face = f.get(style == "hud" and "mono" or "text", style == "hud" and 9 or 10)
+    local face = f.get(style == "hud" and "mono" or "strong", style == "hud" and 11 or 12)
     local probe = TextWidget:new{ text = "Ag", face = face }
     local text_h = probe:getSize().h
     probe:free()
@@ -466,7 +548,7 @@ function Home:recentStrip(width, height, style, f)
             VerticalSpan:new{ width = s(4) },
             TextWidget:new{
                 text = style == "hud" and W.upper(book.title or "") or (book.title or ""),
-                face = face, fgcolor = W.MUTED, max_width = box_w + s(6),
+                face = face, bold = style == "hud" or nil, fgcolor = W.SOFT, max_width = box_w + s(6),
             },
         }
         if i > 1 then table.insert(row, HorizontalSpan:new{ width = gap }) end
@@ -503,9 +585,10 @@ function Home:build()
     space(s(6))
     add(self:continueCard(inner, style, f), true)
     space(s(12))
-    add(W.label(_("Shelves"), inner, style), true)
+    add(W.label(_("Shelves"), inner, style, { text = _("Add shelf"), callback = function() self:addShelf() end }), true)
     space(s(6))
-    for _, row in ipairs(self:shelfRows(inner, style, f)) do
+    local rows = self:shelfRows(inner, sh - used - s(6), style)
+    for _, row in ipairs(rows) do
         add(row, true)
         space(s(8))
     end
@@ -513,8 +596,8 @@ function Home:build()
     local recent = self.cache.recent or {}
     if #recent > 0 and self.cache.recent_url then
         local label = W.label(_("New in your library"), inner, style)
-        local remain = sh - used - label:getSize().h - s(12)
-        if remain > s(70) then
+        local remain = sh - used - label:getSize().h - s(20)
+        if remain >= s(100) then -- only when the covers can be big enough to read
             space(s(4))
             add(label, true)
             space(s(6))

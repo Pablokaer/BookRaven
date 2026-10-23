@@ -46,7 +46,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local Cards = {}
 
 local function isBook(entry)
-    return entry.acquisitions and entry.acquisitions[1] ~= nil
+    return (entry.acquisitions and entry.acquisitions[1] ~= nil) or entry.local_file ~= nil
 end
 
 local function coverUrl(entry)
@@ -139,7 +139,7 @@ end
 
 local function hudCover(entry, w, h, f)
     local book = isBook(entry)
-    local inner_w = w - 2 * Screen:scaleBySize(10)
+    local inner_w = w - 2 * math.min(Screen:scaleBySize(10), math.floor(w * 0.07))
     local parts = VerticalGroup:new{ align = "center" }
     table.insert(parts, TextBoxWidget:new{
         text = upper(entry.title or entry.text or ""),
@@ -176,13 +176,68 @@ local function hudCover(entry, w, h, f)
     }
 end
 
+--- A folder on the device, in a folder shelf's gallery: its engraving, name and book count.
+local function folderCover(entry, w, h, f)
+    local hud = f.style == "hud"
+    local inner_w = w - 2 * math.min(Screen:scaleBySize(10), math.floor(w * 0.07))
+    local art_size = math.floor(math.min(inner_w, h * 0.55))
+    local parts = VerticalGroup:new{ align = "center" }
+    if entry.art then
+        table.insert(parts, ImageWidget:new{ file = entry.art, width = art_size, height = art_size })
+        table.insert(parts, VerticalSpan:new{ width = Screen:scaleBySize(8) })
+    end
+    table.insert(parts, TextBoxWidget:new{
+        text = hud and upper(entry.title or "") or (entry.title or ""),
+        face = f.cover_title,
+        width = inner_w,
+        alignment = "center",
+        fgcolor = hud and Blitbuffer.COLOR_WHITE or Blitbuffer.COLOR_BLACK,
+        bgcolor = hud and Blitbuffer.COLOR_BLACK or nil,
+        height = math.floor(h * 0.25),
+        height_adjust = true,
+        height_overflow_show_ellipsis = true,
+    })
+    if entry.note then
+        table.insert(parts, VerticalSpan:new{ width = Screen:scaleBySize(4) })
+        table.insert(parts, TextWidget:new{
+            text = entry.note,
+            face = f.cover_author,
+            fgcolor = hud and Blitbuffer.COLOR_GRAY_B or Blitbuffer.COLOR_DARK_GRAY,
+            bgcolor = hud and Blitbuffer.COLOR_BLACK or nil,
+            max_width = inner_w,
+        })
+    end
+    if hud then
+        return HudCover:new{
+            width = w, height = h, parts,
+            label = TextWidget:new{
+                text = "DIR //",
+                face = Font:getFace("BookRavenMono-Regular.ttf", math.max(9, f.cover_author.orig_size - 3)),
+                fgcolor = Blitbuffer.COLOR_GRAY_9,
+                bgcolor = Blitbuffer.COLOR_BLACK,
+                max_width = w - Screen:scaleBySize(12),
+            },
+        }
+    end
+    return FrameContainer:new{
+        width = w, height = h, padding = 0, margin = 0,
+        bordersize = Size.border.thin, color = BORDER, background = Blitbuffer.COLOR_WHITE,
+        radius = Screen:scaleBySize(6),
+        CenterContainer:new{
+            dimen = Geom:new{ w = w - 2 * Size.border.thin, h = h - 2 * Size.border.thin },
+            parts,
+        },
+    }
+end
+
 --- A stand-in cover: dark cloth with a gilt rule (books) or a pale label (sub-catalogs).
 local function fakeCover(entry, w, h, f)
+    if entry.dir then return folderCover(entry, w, h, f) end
     if f.style == "hud" then return hudCover(entry, w, h, f) end
     local book = isBook(entry)
     local bg = book and CLOTH or SHELF
     local fg = book and Blitbuffer.COLOR_WHITE or Blitbuffer.COLOR_BLACK
-    local inner_w = w - 2 * Screen:scaleBySize(10)
+    local inner_w = w - 2 * math.min(Screen:scaleBySize(10), math.floor(w * 0.07))
     local parts = VerticalGroup:new{ align = "center" }
     table.insert(parts, TextBoxWidget:new{
         text = entry.title or entry.text or "",
@@ -222,7 +277,7 @@ local function fakeCover(entry, w, h, f)
         CenterContainer:new{
             dimen = Geom:new{ w = w - 2 * Size.border.thin, h = h - 2 * Size.border.thin },
             FrameContainer:new{ -- inner rule, like a bound edition
-                padding = Screen:scaleBySize(6),
+                padding = math.min(Screen:scaleBySize(6), math.floor(w * 0.04)),
                 margin = 0,
                 bordersize = book and Size.border.thin or 0,
                 color = CLOTH_RULE,
@@ -250,7 +305,7 @@ function CardItem:init()
         HoldSelect = { GestureRange:new{ ges = "hold", range = self.dimen } },
     }
     self.f = faces(self.font_size)
-    self:build(Covers:cached(coverUrl(self.entry)))
+    self:build(self.entry.cover_path or Covers:cached(coverUrl(self.entry)))
 end
 
 function CardItem:build(cover_path)
@@ -419,35 +474,64 @@ local function scheduleCovers(menu, cards)
     menu._br_generation = (menu._br_generation or 0) + 1
     local generation = menu._br_generation
     local queue = {}
+    local remote = false
     for _, card in ipairs(cards) do
-        if not card.cover_path and coverUrl(card.entry) then
+        local entry = card.entry
+        if not card.cover_path and (entry.local_file or coverUrl(entry)) then
             table.insert(queue, card)
+            if not entry.local_file then remote = true end
         end
     end
     -- Then the next page's covers, so turning the page shows them at once.
     local ahead = {}
     local first = menu.page * menu.perpage + 1
     for index = first, math.min(first + menu.perpage - 1, #menu.item_table) do
-        local url = coverUrl(menu.item_table[index])
-        if url and not Covers:cached(url) then table.insert(ahead, url) end
+        local entry = menu.item_table[index]
+        if entry.local_file then
+            if not entry.cover_path and not Covers:cachedBook(entry.local_file) then table.insert(ahead, entry) end
+        else
+            local url = coverUrl(entry)
+            if url and not Covers:cached(url) then
+                table.insert(ahead, entry)
+                remote = true
+            end
+        end
     end
     if #queue == 0 and #ahead == 0 then return end
-    local NetworkMgr = require("ui/network/manager")
-    local ok, online = pcall(NetworkMgr.isConnected, NetworkMgr)
-    if ok and online == false then return end
+    if remote then
+        local NetworkMgr = require("ui/network/manager")
+        local ok, online = pcall(NetworkMgr.isConnected, NetworkMgr)
+        if ok and online == false then
+            -- offline: books on the device still get their covers
+            local keep = {}
+            for _, card in ipairs(queue) do if card.entry.local_file then table.insert(keep, card) end end
+            queue = keep
+            local keep_ahead = {}
+            for _, entry in ipairs(ahead) do if entry.local_file then table.insert(keep_ahead, entry) end end
+            ahead = keep_ahead
+        end
+    end
 
     local user, pass = menu.root_catalog_username, menu.root_catalog_password
+    local function coverOf(entry)
+        if entry.local_file then
+            local path = Covers:forBook(entry.local_file)
+            entry.cover_path = path
+            return path
+        end
+        return Covers:fetch(coverUrl(entry), user, pass)
+    end
     local function step()
         if menu._br_generation ~= generation or menu._br_closed then return end
         local card = table.remove(queue, 1)
         if card then
-            local path = Covers:fetch(coverUrl(card.entry), user, pass)
+            local path = coverOf(card.entry)
             if menu._br_generation ~= generation or menu._br_closed then return end
             if path then card:setCover(path) end
         else
-            local url = table.remove(ahead, 1)
-            if not url then return end
-            Covers:fetch(url, user, pass)
+            local entry = table.remove(ahead, 1)
+            if not entry then return end
+            coverOf(entry)
         end
         if #queue > 0 or #ahead > 0 then
             UIManager:scheduleIn(0.05, step)
@@ -469,7 +553,7 @@ function Cards.updateShelves(menu, select_number)
     if menu.title_bar and not menu.no_title then others = others + menu.title_bar:getHeight() end
     if menu.page_info then others = others + menu.page_info:getSize().h + Size.padding.button end
     local tile_w = math.floor((menu.inner_dimen.w - (cols + 1) * margin) / cols)
-    local tile_h = Screen:scaleBySize(72)
+    local tile_h = Screen:scaleBySize(78)
     local rows = math.max(1, math.floor((menu.inner_dimen.h - others - margin) / (tile_h + margin)))
     menu.perpage = rows * cols
     menu.page_num = math.max(1, math.ceil(#menu.item_table / menu.perpage))
@@ -481,6 +565,7 @@ function Cards.updateShelves(menu, select_number)
     menu.content_group:resetLayout()
 
     local style = W.style()
+    local used_art = {}
     local offset = (menu.page - 1) * menu.perpage
     local row, row_layout
     for i = 1, menu.perpage do
@@ -509,7 +594,8 @@ function Cards.updateShelves(menu, select_number)
             note = note,
             width = tile_w,
             height = tile_h,
-            art = W.shelfArt(Theme.plugin_dir, title, index),
+            plus = entry.plus,
+            art = not entry.plus and (entry.art or W.shelfArt(Theme.plugin_dir, entry.art_key or title, index, used_art)) or nil,
             style = style,
             index = index,
             callback = function() menu:onMenuSelect(entry) end,
