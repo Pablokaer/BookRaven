@@ -54,7 +54,7 @@ async function opdsIds(user: TestUser) {
   const { password } = (await api(user, "POST", "/api/app-passwords", { name: "Kobo" })).json();
   const feed = await (await getApp()).inject({
     method: "GET",
-    url: "/opds/public",
+    url: "/opds/public/recent",
     headers: { authorization: `Basic ${Buffer.from(`${user.email}:${password}`).toString("base64")}` },
   });
   return [...feed.body.matchAll(/urn:uuid:([0-9a-f-]{36})/g)].map((m) => m[1]!);

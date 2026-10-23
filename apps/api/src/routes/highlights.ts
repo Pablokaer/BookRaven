@@ -3,10 +3,11 @@ import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
 import { obj, UUID_RE } from "../lib/http.js";
+import { forgetOnKoreader } from "../lib/koreaderAnnotations.js";
 import { loadOwnedBook } from "./books.js";
 const COLORS = ["yellow", "green", "blue", "pink"];
 
-type HighlightRow = {
+export type HighlightRow = {
   id: string;
   book_id: string;
   cfi: string;
@@ -17,7 +18,7 @@ type HighlightRow = {
   created_at: Date;
 };
 
-const toDto = (r: HighlightRow) => ({
+export const highlightDto = (r: HighlightRow) => ({
   id: r.id,
   bookId: r.book_id,
   cfi: r.cfi,
@@ -37,7 +38,7 @@ export async function highlightRoutes(app: FastifyInstance) {
     const { rows } = await query<HighlightRow>("SELECT * FROM highlight WHERE book_id = $1 ORDER BY created_at", [
       book.id,
     ]);
-    return rows.map(toDto);
+    return rows.map(highlightDto);
   });
 
   app.post<{ Params: { id: string }; Body: { cfi: string; text: string; color: string; label?: string | null; note?: string | null } }>(
@@ -63,11 +64,11 @@ export async function highlightRoutes(app: FastifyInstance) {
       // Highlighting the exact same passage again just updates it.
       const { rows } = await query<HighlightRow>(
         `INSERT INTO highlight (user_id, book_id, cfi, text, color, label, note) VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (book_id, cfi) DO UPDATE SET color = EXCLUDED.color, note = COALESCE(EXCLUDED.note, highlight.note)
+         ON CONFLICT (book_id, cfi) DO UPDATE SET color = EXCLUDED.color, note = COALESCE(EXCLUDED.note, highlight.note), updated_at = now()
          RETURNING *`,
         [request.user.id, book.id, cfi, text, color, label ?? null, note?.trim() || null],
       );
-      const dto = toDto(rows[0]!);
+      const dto = highlightDto(rows[0]!);
       publish(request.user.id, "highlight.saved", dto);
       return reply.code(201).send(dto);
     },
@@ -84,7 +85,7 @@ export async function highlightRoutes(app: FastifyInstance) {
     async (request, reply) => {
       if (!UUID_RE.test(request.params.id)) return reply.code(404).send({ error: "not_found" });
       const { rows } = await query<HighlightRow>(
-        `UPDATE highlight SET color = COALESCE($1, color), note = CASE WHEN $4 THEN $5 ELSE note END
+        `UPDATE highlight SET color = COALESCE($1, color), note = CASE WHEN $4 THEN $5 ELSE note END, updated_at = now()
          WHERE id = $2 AND user_id = $3 RETURNING *`,
         [
           request.body.color ?? null,
@@ -95,7 +96,7 @@ export async function highlightRoutes(app: FastifyInstance) {
         ],
       );
       if (!rows[0]) return reply.code(404).send({ error: "not_found" });
-      const dto = toDto(rows[0]);
+      const dto = highlightDto(rows[0]);
       publish(request.user.id, "highlight.saved", dto);
       return dto;
     },
@@ -108,6 +109,7 @@ export async function highlightRoutes(app: FastifyInstance) {
       [request.params.id, request.user.id],
     );
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
+    await forgetOnKoreader("highlight", request.params.id);
     publish(request.user.id, "highlight.deleted", { id: request.params.id, bookId: rows[0].book_id });
     return reply.code(204).send();
   });

@@ -7,6 +7,7 @@ import { afterIdle } from "../lib/idle";
 import { MAX_STROKE_POINTS, type InkTool, type Stroke } from "../lib/ink";
 import { drawStrokes, strokePoint, touchesStroke } from "../lib/inkDraw";
 import { pdfjs, type PDFDocumentProxy, type PDFPageProxy } from "../lib/pdf";
+import { findPassage } from "../lib/pdfPassage";
 import { canvasPixelRatio, contentBox, fitScale, FULL_PAGE, type PageBox } from "../lib/pdfLayout";
 import { MAX_ZOOM, pinchController, type PinchController } from "../lib/pinchZoom";
 import { CHUNK, type RangeFile } from "../lib/rangeFile";
@@ -750,8 +751,10 @@ export const PdfReader = forwardRef<ReaderHandle, ReaderProps>(function PdfReade
     for (const h of props.highlights ?? []) {
       // Character offsets into the page's text layer: they don't depend on zoom or screen size.
       const pos = parseLocator(h.cfi);
-      if (pos?.kind !== "pdfRange" || pos.page !== page) continue;
-      const range = rangeFor(texts.nodes, pos.start, pos.end);
+      if ((pos?.kind !== "pdfRange" && pos?.kind !== "pdfSearch") || pos.page !== page) continue;
+      // KOReader's highlights have their page and text: they go where the text is (lib/pdfPassage.ts).
+      const span = pos.kind === "pdfRange" ? [pos.start, pos.end] : findPassage(texts.text, h.text);
+      const range = span && rangeFor(texts.nodes, span[0]!, span[1]!);
       if (range) hlRects.current.push({ h, rects: draw(range, "pdf-hl", HIGHLIGHT_COLORS[h.color].fill) });
     }
 

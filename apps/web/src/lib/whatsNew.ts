@@ -20,6 +20,22 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-23-kindle",
+    date: "2026-10-23",
+    title: "Better on Kindle and KOReader",
+    items: [
+      "The KOReader catalog shows what you're reading now and what you've finished, and each book shows how far you are, on which device, and its description.",
+      "Books downloaded from the catalog are saved as \"Author - Title\", with their series and publisher for books you upload from now on.",
+      "Covers in the catalog load faster on e-ink screens: small grayscale thumbnails, with the full cover when you open a book.",
+      "RAR, 7z and TAR comics can be downloaded as CBZ, which KOReader opens best.",
+      "The Public Library in the catalog has sections: most popular, recently added, one per theme, and all books.",
+      "Ebooks read in KOReader and in BookRaven now open at the exact same spot, not just the same percentage, in both directions.",
+      "Setting up KOReader on a Kindle is easier: Profile → Other apps shows every step with the exact values to type, and new app passwords are short words you can type on an e-ink keyboard.",
+      "New BookRaven plugin for KOReader (Profile → Other apps): your highlights, notes and bookmarks now sync between your e-reader and BookRaven, both ways, in EPUBs and PDFs.",
+      "Send to Kindle: choose it in a book's menu and the plugin downloads the book to your e-readers, into a BookRaven folder. The KOReader catalog lists them too, under \"Sent to this device\".",
+    ],
+  },
+  {
     id: "2026-10-22-privacy-and-positions",
     date: "2026-10-22",
     title: "Fixes",

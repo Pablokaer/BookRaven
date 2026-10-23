@@ -13,7 +13,7 @@ import { THEMES, type ReaderSettings } from "../lib/settings";
 import { useLatest } from "../lib/useLatest";
 import { freeZone, selectionReporter, USER_NAV_WINDOW_MS, type ReaderHandle, type ReaderProps } from "./types";
 
-/** Percentage positions ("fraction:0.42"), from KOReader and books imported as read. */
+/** Percentage positions ("fraction:0.42"), from KOReader (when its position can't be a CFI) and books imported as read. */
 function fractionOf(locator: string | null) {
   const l = parseLocator(locator);
   return l?.kind === "fraction" ? l.fraction : null;
@@ -340,7 +340,7 @@ export const EpubReader = forwardRef<ReaderHandle, ReaderProps>(function EpubRea
 
       applySettings(view, propsRef.current.settings, isComicFormat(book.format));
       const resumeAt = lastLocator.current?.bookId === book.id ? lastLocator.current.cfi : propsRef.current.initialLocator;
-      // "fraction:0.42" comes from KOReader, whose positions can't be turned into a CFI.
+      // "fraction:0.42" comes from KOReader when its position couldn't be turned into a CFI (not an EPUB, say).
       const fraction = fractionOf(resumeAt);
       await view.init({ lastLocation: fraction === null ? resumeAt : null });
       if (fraction !== null) await view.goToFraction(fraction);

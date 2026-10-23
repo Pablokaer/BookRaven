@@ -95,7 +95,17 @@ export function cachedBookFile(id: string, opts: { cbz?: boolean } = {}): Promis
 
 // ---------- Metadata extraction (client-side, before upload) ----------
 
-export type Meta = { title?: string; author?: string; description?: string; cover?: Blob };
+export type Meta = {
+  title?: string;
+  author?: string;
+  description?: string;
+  series?: string;
+  seriesIndex?: number;
+  publisher?: string;
+  /** Publication date as the file gives it ("1965", "1965-08-01"). */
+  issued?: string;
+  cover?: Blob;
+};
 
 /** Book descriptions are often HTML: keep the text, one blank line between paragraphs. */
 export function htmlToText(html: string | null | undefined) {
@@ -113,6 +123,19 @@ function langString(v: unknown): string | undefined {
     return values.find((x) => typeof x === "string");
   }
   return undefined;
+}
+
+/**
+ * The series an EPUB belongs to and its position: EPUB 3 collections come as a list, Calibre's
+ * calibre:series as one object (whose name foliate leaves out when the file has both kinds).
+ */
+export function seriesOf(belongsTo: unknown): { series?: string; seriesIndex?: number } {
+  const raw = (belongsTo as { series?: unknown } | undefined)?.series;
+  const first = (Array.isArray(raw) ? raw[0] : raw) as { name?: unknown; position?: unknown } | undefined;
+  const series = langString(first?.name)?.trim();
+  if (!series) return {};
+  const index = parseFloat(String(first?.position ?? ""));
+  return { series, seriesIndex: Number.isFinite(index) ? index : undefined };
 }
 
 function authorString(v: unknown): string | undefined {
@@ -156,6 +179,9 @@ async function ebookMeta(file: File): Promise<Meta> {
       title: langString(book.metadata?.title),
       author: authorString(book.metadata?.author),
       description: htmlToText(langString(book.metadata?.description)) ?? undefined,
+      ...seriesOf(book.metadata?.belongsTo),
+      publisher: authorString(book.metadata?.publisher),
+      issued: typeof book.metadata?.published === "string" ? book.metadata.published.trim() : undefined,
       cover: cover ?? undefined,
     };
   } finally {
@@ -232,6 +258,10 @@ export async function uploadBook(file: File, opts: UploadOptions = {}): Promise<
   if (meta.title) form.append("title", meta.title.trim().slice(0, 500));
   if (meta.author) form.append("author", meta.author.trim().slice(0, 500));
   if (meta.description) form.append("description", meta.description.slice(0, 4000));
+  if (meta.series) form.append("series", meta.series.trim().slice(0, 500));
+  if (meta.seriesIndex !== undefined) form.append("seriesIndex", String(meta.seriesIndex));
+  if (meta.publisher) form.append("publisher", meta.publisher.trim().slice(0, 500));
+  if (meta.issued) form.append("issued", meta.issued.slice(0, 40));
   if (opts.folderId) form.append("folderId", opts.folderId);
   const cover = meta.cover && (await coverFromImage(meta.cover));
   if (cover && cover.size < 5 * 1024 * 1024) form.append("cover", cover, "cover");

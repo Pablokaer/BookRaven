@@ -148,7 +148,7 @@ describe("sharing and the public library", () => {
     const { password } = (await api(reader, "POST", "/api/app-passwords", { name: "Kobo" })).json();
     const feed = await (await getApp()).inject({
       method: "GET",
-      url: "/opds/public",
+      url: "/opds/public/recent",
       headers: { authorization: `Basic ${Buffer.from(`${reader.email}:${password}`).toString("base64")}` },
     });
     const ids = [...feed.body.matchAll(/urn:uuid:([0-9a-f-]{36})/g)].map((m) => m[1]);

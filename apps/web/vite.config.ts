@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { defineConfig } from "vite";
+import { PLUGIN_ZIP_PATH, pluginZip } from "./scripts/koreader-plugin.mjs";
 import { nativeVersion } from "./scripts/native-version.mjs";
 import { OFFLINE_COPIES_SCRIPT, offlineCopiesScript } from "./src/lib/offlineCopies.js";
 
@@ -28,6 +29,20 @@ export default defineConfig(({ mode }) => {
         name: "offline-copies",
         generateBundle() {
           this.emitFile({ type: "asset", fileName: OFFLINE_COPIES_SCRIPT, source: offlineCopiesScript() });
+        },
+      },
+      // The BookRaven plugin for KOReader (koreader/bookraven.koplugin), zipped, for Profile → Other
+      // apps to link to. Not in the Android app, which links to the server's copy.
+      !native && {
+        name: "koreader-plugin",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: PLUGIN_ZIP_PATH, source: pluginZip() });
+        },
+        configureServer(server) {
+          server.middlewares.use(`/${PLUGIN_ZIP_PATH}`, (_req, res) => {
+            res.setHeader("Content-Type", "application/zip");
+            res.end(pluginZip());
+          });
         },
       },
       // The Android app never shows the link-preview image: keep it out of the APK and live

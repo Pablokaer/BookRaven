@@ -2,7 +2,15 @@
 declare module "foliate-js/view.js" {
   export type TocItem = { label: string; href: string; subitems?: TocItem[] };
   export type FoliateBook = {
-    metadata?: { title?: unknown; author?: unknown; language?: unknown; description?: unknown };
+    metadata?: {
+      title?: unknown;
+      author?: unknown;
+      language?: unknown;
+      description?: unknown;
+      publisher?: unknown;
+      published?: unknown;
+      belongsTo?: unknown;
+    };
     toc?: TocItem[];
     dir?: string;
     getCover?: () => Promise<Blob | null>;
