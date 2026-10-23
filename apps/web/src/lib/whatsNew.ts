@@ -20,6 +20,18 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-23-kindle",
+    date: "2026-10-23",
+    title: "Better on Kindle and KOReader",
+    items: [
+      "The KOReader catalog shows what you're reading now and what you've finished, and each book shows how far you are, on which device, and its description.",
+      "Books downloaded from the catalog are saved as \"Author - Title\", with their series and publisher for books you upload from now on.",
+      "Covers in the catalog load faster on e-ink screens: small grayscale thumbnails, with the full cover when you open a book.",
+      "RAR, 7z and TAR comics can be downloaded as CBZ, which KOReader opens best.",
+      "The Public Library in the catalog has sections: most popular, recently added, one per theme, and all books.",
+    ],
+  },
+  {
     id: "2026-10-22-privacy-and-positions",
     date: "2026-10-22",
     title: "Fixes",

@@ -20,6 +20,10 @@ type SourceBook = {
   koreader_md5?: string | null;
   language?: string | null;
   description?: string | null;
+  series?: string | null;
+  series_index?: number | null;
+  publisher?: string | null;
+  issued?: string | null;
 };
 
 /**
@@ -35,11 +39,12 @@ export async function copyBookToUser(src: SourceBook, user: SessionUser, sharedB
   const id = await withQuota(user, Number(src.size_bytes), async (client) => {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover,
-                         shared_by_name, shared_at, koreader_md5, language, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, now(), $10, $11, $12)
+                         shared_by_name, shared_at, koreader_md5, language, description, series, series_index, publisher, issued)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, $9, now(), $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (user_id, sha256) DO UPDATE SET user_id = EXCLUDED.user_id
        RETURNING id`,
-      [user.id, src.title, src.author, src.format, src.original_filename, src.mime_type, src.size_bytes, src.sha256, sharedByName, src.koreader_md5 ?? null, src.language ?? null, src.description ?? null],
+      [user.id, src.title, src.author, src.format, src.original_filename, src.mime_type, src.size_bytes, src.sha256, sharedByName, src.koreader_md5 ?? null, src.language ?? null, src.description ?? null,
+       src.series ?? null, src.series_index ?? null, src.publisher ?? null, src.issued ?? null],
     );
     return rows[0]!.id;
   });

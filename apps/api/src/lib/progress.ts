@@ -15,7 +15,7 @@ export type ProgressRow = {
 export type Position = { locator: string; percentage: number; updated_at: Date };
 
 /** Progress at or past this point counts as finished (same mark as the app's). */
-const FINISHED_AT = 0.98;
+export const FINISHED_AT = 0.98;
 /** A longer pause between two saved positions is a break, not reading time. */
 const MAX_GAP_SECONDS = 600;
 

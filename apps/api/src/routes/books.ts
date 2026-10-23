@@ -32,6 +32,17 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024;
 /** Longest blurb kept (some EPUBs carry a whole chapter in their description). */
 const MAX_DESCRIPTION = 4000;
 
+/**
+ * Series, position in it, publisher and publication date from the upload's fields, as the
+ * columns store them: a date only when it starts with a year ("1965", "1965-08-01"), cut to the day.
+ */
+function seriesAndPublisher(fields: Record<string, string>) {
+  const series = fields.series?.trim() || null;
+  const index = Number(fields.seriesIndex);
+  const issued = /^\d{4}(-\d\d(-\d\d)?)?/.exec(fields.issued?.trim() ?? "")?.[0] ?? null;
+  return [series, series && fields.seriesIndex && Number.isFinite(index) && index >= 0 ? index : null, fields.publisher?.trim() || null, issued];
+}
+
 /** Trims, collapses spaces and drops case-insensitive duplicates, keeping the first spelling. */
 function normalizeTags(tags: string[]) {
   const seen = new Set<string>();
@@ -137,8 +148,8 @@ export async function bookRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Multipart upload. Fields: title, author, description (optional, extracted client-side),
-   * cover (optional image), file (required book file).
+   * Multipart upload. Fields: title, author, description, series, seriesIndex, publisher, issued
+   * (optional, extracted client-side), cover (optional image), file (required book file).
    */
   app.post("/api/books", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     // Refuse early, before streaming the file, when the account is already full or the
@@ -210,8 +221,9 @@ export async function bookRoutes(app: FastifyInstance) {
         // Exact check with the real size; the insert happens under the same per-user lock.
         id = await withQuota(request.user, upload.size, async (client) => {
           const { rows } = await client.query<{ id: string }>(
-            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5, folder_id, description)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+            `INSERT INTO book (user_id, title, author, format, original_filename, mime_type, size_bytes, sha256, has_cover, koreader_md5, folder_id, description,
+                               series, series_index, publisher, issued)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
             [
               request.user.id,
               fields.title?.trim() || fallbackTitle,
@@ -226,6 +238,7 @@ export async function bookRoutes(app: FastifyInstance) {
               folderId,
               // Multipart turns line breaks into CRLF.
               fields.description?.replace(/\r\n?/g, "\n").trim() || null,
+              ...seriesAndPublisher(fields),
             ],
           );
           return rows[0]!.id;

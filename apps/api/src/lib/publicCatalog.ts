@@ -169,6 +169,29 @@ const readCatalog = (offset: number, limit: number) =>
     [limit, offset],
   ).then(({ rows }) => rows);
 
+/** A page of the whole public library by title (A to Z), each file once as in `readCatalog`. Not kept in memory. */
+export const listCatalogByTitle = ({ offset, limit }: { offset: number; limit: number }) =>
+  query<CatalogRow>(
+    `WITH pick AS (
+       SELECT id, title FROM (
+         SELECT DISTINCT ON (sha256) id, title FROM book
+         WHERE is_public
+         ORDER BY sha256, published_at
+       ) d
+       ORDER BY lower(title), id
+       LIMIT $1 OFFSET $2
+     )
+     SELECT b.id, b.user_id, b.sha256, b.title, b.author, b.format, b.original_filename, b.mime_type, b.size_bytes, b.has_cover,
+            b.language, b.tags, b.themes, b.published_at, b.created_at,
+            u.name AS owner_name, cb.source, cb.source_url, cb.download_count
+     FROM pick JOIN book b ON b.id = pick.id JOIN "user" u ON u.id = b.user_id
+     LEFT JOIN LATERAL (
+       SELECT c.source, c.source_url, c.download_count FROM catalog_book c WHERE c.book_id = b.id LIMIT 1
+     ) cb ON true
+     ORDER BY lower(pick.title), pick.id`,
+    [limit, offset],
+  ).then(({ rows }) => rows);
+
 /**
  * The first `CATALOG_SIZE` books are the same for every viewer: they are read once (requests
  * arriving meanwhile share the read) and kept until the public library changes (a `public.changed`

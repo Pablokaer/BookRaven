@@ -22,6 +22,11 @@ export type BookRow = {
   published_at: Date | null;
   language: string | null;
   description: string | null;
+  series: string | null;
+  series_index: number | null;
+  publisher: string | null;
+  /** Publication date as the file gives it: "1965", "1965-08" or "1965-08-01". */
+  issued: string | null;
   created_at: Date;
   p_locator: string | null;
   p_percentage: number | null;
