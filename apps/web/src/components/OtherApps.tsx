@@ -5,10 +5,14 @@ import { confirmThen } from "../lib/confirm";
 import { timeAgo } from "../lib/format";
 import { useApi } from "../lib/useApi";
 import { KoreaderSetup } from "./KoreaderSetup";
+import { SentBooks } from "./SentBooks";
 
 type AppPassword = { id: string; name: string; createdAt: string; lastUsedAt: string | null };
 
-/** Profile section: KOReader setup (OPDS catalog and progress sync) and app passwords for other apps. */
+/**
+ * Profile section: KOReader setup (OPDS catalog, progress sync, the BookRaven plugin), the books
+ * sent to the e-readers, and app passwords for other apps.
+ */
 export function OtherApps({ email }: { email: string }) {
   const { data: list, reload } = useApi(() => apiJson<AppPassword[]>("/api/app-passwords"), [], { fallback: [] });
   const [created, setCreated] = useState<{ name: string; password: string } | null>(null);
@@ -38,12 +42,16 @@ export function OtherApps({ email }: { email: string }) {
         <p className="mt-1 text-xs leading-relaxed text-muted">
           Use your library from other reading apps. <b className="text-fg/90">OPDS</b> (KOReader, Moon+ Reader, Thorium, Calibre…) lets them browse
           and download your books. <b className="text-fg/90">KOReader progress sync</b> keeps your place in sync with e-ink readers (Kobo,
-          PocketBook, Kindle). Sign in there with your email and an app password, never your account password.
+          PocketBook, Kindle), and the <b className="text-fg/90">BookRaven plugin</b> for KOReader syncs your highlights, notes and bookmarks both
+          ways and downloads the books you send to your e-readers. Sign in there with your email and an app password, never your account
+          password.
         </p>
       </div>
 
       <KoreaderSetup origin={origin} email={email} created={created} onCreate={() => void create()} onHide={() => setCreated(null)} />
       <p className="text-xs text-muted">Other OPDS apps use the same catalog URL, username and an app password.</p>
+
+      <SentBooks />
 
       <div>
         <div className="mb-2 flex items-center justify-between">

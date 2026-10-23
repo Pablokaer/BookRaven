@@ -31,7 +31,18 @@ const esc = (s: string) =>
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, "")
     .replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!);
 
-async function basicAuth(request: FastifyRequest, reply: FastifyReply) {
+declare module "fastify" {
+  interface FastifyRequest {
+    /** The app password an OPDS reader or the KOReader plugin signed in with: which device this is. */
+    appPasswordId?: string;
+  }
+}
+
+/**
+ * preHandler for app-password sign-in with HTTP Basic (the OPDS catalog and the KOReader plugin,
+ * routes/koreader.ts): the account email and an app password.
+ */
+export async function basicAuth(request: FastifyRequest, reply: FastifyReply) {
   const header = request.headers.authorization ?? "";
   const m = /^Basic\s+(.+)$/i.exec(header);
   if (m) {
@@ -40,11 +51,13 @@ async function basicAuth(request: FastifyRequest, reply: FastifyReply) {
     const found = sep > 0 ? await verifyAppPassword(decoded.slice(0, sep), { password: decoded.slice(sep + 1) }) : null;
     if (found && !found.blocked) {
       request.user = found.user;
+      request.appPasswordId = found.appPasswordId;
       return;
     }
     // Readers first ask without credentials to get the challenge: only wrong ones are worth a line.
-    if (found) audit("app_password.blocked_account", { via: "opds", userId: found.user.id, ip: request.ip }, "warn");
-    else audit("app_password.auth_failed", { via: "opds", ip: request.ip }, "warn");
+    const via = request.url.startsWith("/api/koreader/") ? "koreader-plugin" : "opds";
+    if (found) audit("app_password.blocked_account", { via, userId: found.user.id, ip: request.ip }, "warn");
+    else audit("app_password.auth_failed", { via, ip: request.ip }, "warn");
   }
   reply.header("WWW-Authenticate", 'Basic realm="BookRaven", charset="UTF-8"'); // ASCII-only header
   return reply.code(401).type("text/plain").send("Use your account email and an app password (Profile → Other apps).");
@@ -235,6 +248,7 @@ export async function opdsRoutes(app: FastifyInstance) {
     ]);
     const entries = [
       navEntry("readsync:reading", "Reading now", "/opds/reading", "Books you have started, most recently read first"),
+      navEntry("readsync:sent", "Sent to this device", "/opds/sent", "Books you sent to your e-readers from BookRaven, newest first"),
       navEntry("readsync:library", "My library", "/opds/library", "All your books, most recently read first"),
       navEntry("readsync:recent", "Recently added", "/opds/library?sort=added", "Newest uploads first"),
       navEntry("readsync:finished", "Finished", "/opds/finished", "Books you have read to the end"),
@@ -247,13 +261,13 @@ export async function opdsRoutes(app: FastifyInstance) {
   async function libraryFeed(
     request: FastifyRequest,
     reply: FastifyReply,
-    opts: { where: string; params: unknown[]; title: string; self: string; order?: string },
+    opts: { where: string; params: unknown[]; title: string; self: string; order?: string; join?: string },
   ) {
     const page = pageOf(request);
     const order =
       opts.order ?? ((request.query as { sort?: string }).sort === "added" ? "b.created_at DESC" : "COALESCE(p.updated_at, b.created_at) DESC");
     const { rows } = await query<BookRow>(
-      `${SELECT_BOOK} WHERE b.user_id = $1 ${opts.where} ORDER BY ${order} LIMIT ${PAGE_SIZE + 1} OFFSET ${(page - 1) * PAGE_SIZE}`,
+      `${SELECT_BOOK} ${opts.join ?? ""} WHERE b.user_id = $1 ${opts.where} ORDER BY ${order} LIMIT ${PAGE_SIZE + 1} OFFSET ${(page - 1) * PAGE_SIZE}`,
       [request.user.id, ...opts.params],
     );
     const sep = opts.self.includes("?") ? "&" : "?";
@@ -278,6 +292,18 @@ export async function opdsRoutes(app: FastifyInstance) {
       title: "Reading now",
       self: "/opds/reading",
       order: "p.updated_at DESC",
+    }),
+  );
+
+  /** "Send to Kindle" (routes/deliveries.ts): the books sent to the account's e-readers, newest first. */
+  app.get("/opds/sent", (request, reply) =>
+    libraryFeed(request, reply, {
+      where: "",
+      params: [],
+      title: "Sent to this device",
+      self: "/opds/sent",
+      join: "JOIN book_delivery d ON d.book_id = b.id AND d.user_id = b.user_id",
+      order: "d.created_at DESC",
     }),
   );
 

@@ -170,6 +170,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
+      '@types/luaparse':
+        specifier: 0.2.13
+        version: 0.2.13
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -182,6 +185,9 @@ importers:
       happy-dom:
         specifier: 18.0.1
         version: 18.0.1
+      luaparse:
+        specifier: 0.3.1
+        version: 0.3.1
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -1412,6 +1418,9 @@ packages:
   '@types/fs-extra@8.1.5':
     resolution: {integrity: sha512-0dzKcwO+S8s2kuF5Z9oUWatQJj5Uq/iqphEtE3GQJVRRYm/tD1LglU2UnXi2A8jLq5umkGouOXOR9y0n613ZwQ==}
 
+  '@types/luaparse@0.2.13':
+    resolution: {integrity: sha512-nWs2m9b/zrMcAA2Rs+wTxdIsBkSYMo0+6ko8mpeqS5dhchU3hQN9kZGcSw96n497Vc7kGpDLtSicjdpaUrRAkw==}
+
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
 
@@ -2274,6 +2283,10 @@ packages:
   lru-cache@11.5.3:
     resolution: {integrity: sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg==}
     engines: {node: 20 || >=22}
+
+  luaparse@0.3.1:
+    resolution: {integrity: sha512-b21h2bFEbtGXmVqguHogbyrMAA0wOHyp9u/rx+w6Yc9pW1t9YjhGUsp87lYcp7pFRqSWN/PhFkrdIqKEUzRjjQ==}
+    hasBin: true
 
   lucide-react@1.56.0:
     resolution: {integrity: sha512-b+hqj30/trHBma5r1zlKb6yLewQp6tUtnz9loc3xdrYerPmvLYhlEbyPVCJ8DOg2/blBf6lwPLznftFVACka6A==}
@@ -4464,6 +4477,8 @@ snapshots:
     dependencies:
       '@types/node': 22.20.5
 
+  '@types/luaparse@0.2.13': {}
+
   '@types/node@20.19.43':
     dependencies:
       undici-types: 6.21.0
@@ -5261,6 +5276,8 @@ snapshots:
   loupe@3.2.1: {}
 
   lru-cache@11.5.3: {}
+
+  luaparse@0.3.1: {}
 
   lucide-react@1.56.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:

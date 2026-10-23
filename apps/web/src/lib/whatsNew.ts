@@ -31,6 +31,8 @@ export const RELEASE_NOTES: ReleaseNote[] = [
       "The Public Library in the catalog has sections: most popular, recently added, one per theme, and all books.",
       "Ebooks read in KOReader and in BookRaven now open at the exact same spot, not just the same percentage, in both directions.",
       "Setting up KOReader on a Kindle is easier: Profile → Other apps shows every step with the exact values to type, and new app passwords are short words you can type on an e-ink keyboard.",
+      "New BookRaven plugin for KOReader (Profile → Other apps): your highlights, notes and bookmarks now sync between your e-reader and BookRaven, both ways, in EPUBs and PDFs.",
+      "Send to Kindle: choose it in a book's menu and the plugin downloads the book to your e-readers, into a BookRaven folder. The KOReader catalog lists them too, under \"Sent to this device\".",
     ],
   },
   {

@@ -1,7 +1,16 @@
 import { inflateRawSync } from "node:zlib";
 import { log } from "./log.js";
 import { bookKey, readObject } from "./storage.js";
-import { cfiToXpointer, parseXml, xpointerToCfi, type EpubDocuments, type SpineItem, type XmlElement } from "./xpointer.js";
+import {
+  cfiRangeToXpointers,
+  cfiToXpointer,
+  parseXml,
+  xpointerRangeToCfi,
+  xpointerToCfi,
+  type EpubDocuments,
+  type SpineItem,
+  type XmlElement,
+} from "./xpointer.js";
 
 /**
  * KOReader positions in stored EPUBs (see xpointer.ts for the conversion itself). KOReader syncs
@@ -193,6 +202,26 @@ export async function storedCfiToXpointer(sha256: string, size: number, cfi: str
     return await cfiToXpointer(await storedEpub(sha256, size), cfi);
   } catch (err) {
     log.debug({ err, sha256 }, "position not converted for KOReader");
+    return null;
+  }
+}
+
+/** The range CFI of a KOReader highlight (pos0, pos1) in a stored EPUB, or null when it can't be converted. */
+export async function storedXpointerRangeToCfi(sha256: string, size: number, pos0: string, pos1: string) {
+  try {
+    return await xpointerRangeToCfi(await storedEpub(sha256, size), pos0, pos1);
+  } catch (err) {
+    log.debug({ err, sha256 }, "KOReader highlight not converted");
+    return null;
+  }
+}
+
+/** A range CFI (a highlight) as KOReader's pos0 and pos1 in a stored EPUB, or null when it can't be converted. */
+export async function storedCfiToXpointers(sha256: string, size: number, cfi: string) {
+  try {
+    return await cfiRangeToXpointers(await storedEpub(sha256, size), cfi);
+  } catch (err) {
+    log.debug({ err, sha256 }, "highlight not converted for KOReader");
     return null;
   }
 }

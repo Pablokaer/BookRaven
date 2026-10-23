@@ -9,6 +9,7 @@ import { retryEvents, startEvents, stopEvents } from "./lib/events";
 import { saveData } from "./lib/network";
 import { AppLoading } from "./components/AppLoading";
 import { WhatsNew } from "./components/WhatsNew";
+import { Toaster } from "./components/ui/Toaster";
 import { AppShell } from "./components/shell/AppShell";
 import { LibraryProvider } from "./lib/libraryStore";
 import { SettingsProvider } from "./lib/settings";
@@ -269,6 +270,7 @@ const SignedInApp = memo(function SignedInApp({ userId, name, email }: { userId:
           <NativeBackButton />
           {/* After an update: what changed, once. */}
           <WhatsNew />
+          <Toaster />
           <Routes>
             {/* The reader is full screen, outside the library layout. */}
             <Route

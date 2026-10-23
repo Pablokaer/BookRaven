@@ -1,4 +1,4 @@
-import { Check, Copy, KeyRound, Plus, X } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Plus, X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { useCopy } from "./ui/CopyField";
 
@@ -23,6 +23,9 @@ function TypeValue({ label, value, hint, big = false }: { label: string; value: 
     </div>
   );
 }
+
+/** Where the web build puts the plugin (vite.config.ts, from koreader/bookraven.koplugin). */
+export const PLUGIN_ZIP = "/koreader/bookraven.koplugin.zip";
 
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
@@ -115,10 +118,31 @@ export function KoreaderSetup({
             <b className="text-fg/90">Binary</b>. Turn on <b className="text-fg/90">Auto sync</b> to sync each time you open or close a book.
           </p>
         </Step>
+
+        <Step n={4} title="Install the BookRaven plugin">
+          <p className="text-xs leading-relaxed text-muted">
+            It syncs your <b className="text-fg/90">highlights, notes and bookmarks</b> both ways and downloads the books you{" "}
+            <b className="text-fg/90">Send to Kindle</b> from a book’s menu. On a computer:
+          </p>
+          <a className="btn-outline py-1.5 text-xs" href={`${origin}${PLUGIN_ZIP}`} download>
+            <Download className="h-3.5 w-3.5" /> Download the plugin
+          </a>
+          <p className="text-xs leading-relaxed text-muted">
+            Unzip it and copy the <b className="font-mono text-fg/90">bookraven.koplugin</b> folder into <b className="font-mono text-fg/90">koreader/plugins</b> on
+            the e-reader (connected by USB; on a Kindle that is <span className="font-mono">/mnt/us/koreader/plugins</span>), then restart KOReader. With
+            a book open: <b className="text-fg/90">Tools</b> → <b className="text-fg/90">BookRaven</b> → <b className="text-fg/90">Settings</b>, and enter:
+          </p>
+          <TypeValue label="Server" value={origin} />
+          <p className="text-xs leading-relaxed text-muted">
+            with the same username and app password. Highlights sync when you open and close a book, and sent books arrive in a{" "}
+            <b className="text-fg/90">BookRaven</b> folder in KOReader’s home folder when the Wi-Fi comes on.
+          </p>
+        </Step>
       </ol>
 
       <p className="mt-5 text-xs leading-relaxed text-muted">
         PDFs and comics sync page by page both ways, and EPUBs to the exact spot. For other ebooks, BookRaven offers to jump to KOReader’s percentage.
+        The plugin syncs highlights in EPUBs and PDFs, and bookmarks in EPUBs, PDFs and comics.
       </p>
     </div>
   );

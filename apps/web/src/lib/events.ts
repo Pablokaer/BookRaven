@@ -23,6 +23,8 @@ export type ServerEvents = {
   "highlight.saved": Highlight;
   "highlight.deleted": { id: string; bookId: string };
   "ink.updated": { bookId: string; page: number; version: number; updatedAt: string; add: Stroke[]; remove: string[]; deviceId: string | null };
+  /** A book sent to the e-readers, removed from that list, or downloaded by one of them ("Send to Kindle"). */
+  "delivery.changed": { id: string };
   "settings.updated": { settings: Partial<ReaderSettings>; updatedAt: string; deviceId: string | null };
   /** Broadcast: the public library's catalog changed (a book published, unpublished, edited, removed, imported). */
   "public.changed": { bookId?: string; sha256?: string };

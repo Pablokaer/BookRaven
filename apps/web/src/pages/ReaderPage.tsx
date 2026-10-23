@@ -37,10 +37,10 @@ const ComicScroller = lazy(() => import("../reader/ComicScroller").then((m) => (
 
 type Panel = "settings" | "toc" | "notebook" | "search";
 
-/** A PDF highlight's page and first character ("pdf:<page>:<start>-<end>"). */
+/** A PDF highlight's page and first character ("pdf:<page>:<start>-<end>"); KOReader's ("pdfsearch:<page>:…") are placed at the page's start. */
 const pdfPos = (cfi: string) => {
   const l = parseLocator(cfi);
-  return l?.kind === "pdfRange" ? [l.page, l.start] : null;
+  return l?.kind === "pdfRange" ? [l.page, l.start] : l?.kind === "pdfSearch" ? [l.page, 0] : null;
 };
 
 /**

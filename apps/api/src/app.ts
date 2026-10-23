@@ -17,8 +17,10 @@ import { statsRoutes } from "./routes/stats.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { adminRoutes } from "./routes/admin.js";
 import { clubRoutes } from "./routes/clubs.js";
+import { deliveryRoutes } from "./routes/deliveries.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { folderRoutes } from "./routes/folders.js";
+import { koreaderRoutes } from "./routes/koreader.js";
 import { kosyncRoutes } from "./routes/kosync.js";
 import { highlightRoutes } from "./routes/highlights.js";
 import { inkRoutes } from "./routes/ink.js";
@@ -97,10 +99,12 @@ export async function buildServer() {
   await app.register(requestRoutes);
   await app.register(lookupRoutes);
   await app.register(deviceRoutes);
+  await app.register(deliveryRoutes);
   await app.register(clubRoutes);
-  // Other reading apps: OPDS catalog and KOReader progress sync (app-password auth).
+  // Other reading apps: OPDS catalog, KOReader progress sync and the KOReader plugin (app-password auth).
   await app.register(opdsRoutes);
   await app.register(kosyncRoutes);
+  await app.register(koreaderRoutes);
   await app.register(eventRoutes);
 
   return app;

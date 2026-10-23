@@ -161,16 +161,10 @@ const bodyOf = (root: XmlElement) => (root.name === "body" ? root : findChild(ro
 
 type CfiStep = { index: number; id?: string; offset?: number };
 
-const escapeCfi = (s: string) => s.replace(/[\^[\](),;=]/g, "^$&");
-
-/**
- * The steps of a CFI, one list per indirection ("!"); a range CFI gives its start. Temporal,
- * spatial and text assertions are ignored. Null when it isn't a CFI.
- */
-export function parseCfi(cfi: string): CfiStep[][] | null {
+/** A CFI's inside split at its unescaped commas outside assertions: [parent, start, end] for a range. */
+function cfiPieces(cfi: string) {
   const inner = /^epubcfi\((.*)\)$/s.exec(cfi.trim())?.[1];
   if (inner === undefined) return null;
-  // Split the range at its unescaped commas outside assertions: parent, start, end.
   const pieces: string[] = [""];
   let inAssertion = false;
   for (let i = 0; i < inner.length; i++) {
@@ -182,6 +176,19 @@ export function parseCfi(cfi: string): CfiStep[][] | null {
       pieces[pieces.length - 1] += ch;
     }
   }
+  return pieces;
+}
+
+const escapeCfi = (s: string) => s.replace(/[\^[\](),;=]/g, "^$&");
+
+/**
+ * The steps of a CFI, one list per indirection ("!"); a range CFI gives its start. Temporal,
+ * spatial and text assertions are ignored. Null when it isn't a CFI.
+ */
+export function parseCfi(cfi: string): CfiStep[][] | null {
+  // A range is split at its unescaped commas outside assertions: parent, start, end.
+  const pieces = cfiPieces(cfi);
+  if (!pieces) return null;
   const parts: CfiStep[][] = [[]];
   for (const piece of pieces.slice(0, 2)) {
     let i = 0;
@@ -357,4 +364,63 @@ export async function cfiToXpointer(book: EpubDocuments, cfi: string): Promise<s
     path = `/${xpStep(p)}${path}`;
   }
   return `${fragment}/body${path}.${node.kind === "text" ? rawToCrengine(node, offset) : 0}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Ranges: KOReader highlights (pos0, pos1) and the web reader's range CFIs
+
+/**
+ * The start and the end of a range CFI as two CFIs (`epubcfi(/6/4!/4/2,/1:3,/1:9)` →
+ * `epubcfi(/6/4!/4/2/1:3)` and `epubcfi(/6/4!/4/2/1:9)`); a CFI that isn't a range is both.
+ * Null when it isn't a CFI.
+ */
+export function cfiRangeEnds(cfi: string): { start: string; end: string } | null {
+  const pieces = cfiPieces(cfi);
+  if (!pieces || !parseCfi(cfi)) return null;
+  if (pieces.length !== 3) return { start: cfi.trim(), end: cfi.trim() };
+  const [parent, start, end] = pieces as [string, string, string];
+  return { start: `epubcfi(${parent}${start})`, end: `epubcfi(${parent}${end})` };
+}
+
+/** The steps of a CFI path as written: "/4", "/2[id]", "/1:3", "/1:3[text]". */
+const CFI_STEP = /\/\d+(?:\[(?:\^.|[^\]^])*\])?(?::\d+(?:\.\d+)?(?:\[(?:\^.|[^\]^])*\])?)?/gs;
+
+/**
+ * A range CFI from two CFIs in the same spine item, as foliate-js writes one: the steps they
+ * share, then the rest of each (`epubcfi(/6/4!/4/2,/1:3,/1:9)`). Null when they are in different
+ * spine items or aren't plain CFIs.
+ */
+export function cfiRange(start: string, end: string): string | null {
+  const a = cfiPieces(start);
+  const b = cfiPieces(end);
+  if (a?.length !== 1 || b?.length !== 1) return null;
+  const [aItem, aPath, ...aMore] = a[0]!.split("!");
+  const [bItem, bPath, ...bMore] = b[0]!.split("!");
+  if (aItem !== bItem || aPath === undefined || bPath === undefined || aMore.length || bMore.length) return null;
+  const aSteps = aPath.match(CFI_STEP) ?? [];
+  const bSteps = bPath.match(CFI_STEP) ?? [];
+  if (aSteps.join("") !== aPath || bSteps.join("") !== bPath || !aSteps.length || !bSteps.length) return null;
+  // Each end keeps at least its last step (the one with the offset).
+  let common = 0;
+  while (common < aSteps.length - 1 && common < bSteps.length - 1 && aSteps[common] === bSteps[common]) common++;
+  return `epubcfi(${aItem}!${aSteps.slice(0, common).join("")},${aSteps.slice(common).join("")},${bSteps.slice(common).join("")})`;
+}
+
+/**
+ * The range CFI of a KOReader highlight (its pos0 and pos1 XPointers), or null when either end
+ * can't be converted or they are in different spine items.
+ */
+export async function xpointerRangeToCfi(book: EpubDocuments, pos0: string, pos1: string): Promise<string | null> {
+  const start = await xpointerToCfi(book, pos0);
+  const end = start && (await xpointerToCfi(book, pos1));
+  return start && end ? cfiRange(start, end) : null;
+}
+
+/** A range CFI (a web highlight) as KOReader's pos0 and pos1 XPointers, or null when it can't be converted. */
+export async function cfiRangeToXpointers(book: EpubDocuments, cfi: string): Promise<{ pos0: string; pos1: string } | null> {
+  const ends = cfiRangeEnds(cfi);
+  if (!ends) return null;
+  const pos0 = await cfiToXpointer(book, ends.start);
+  const pos1 = pos0 && (await cfiToXpointer(book, ends.end));
+  return pos0 && pos1 ? { pos0, pos1 } : null;
 }

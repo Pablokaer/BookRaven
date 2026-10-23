@@ -1,7 +1,8 @@
-import { BookOpen, CloudDownload, Download, FolderInput, Globe, Heart, Info, MoreHorizontal, Share2, Trash2 } from "lucide-react";
+import { BookOpen, CloudDownload, Download, FolderInput, Globe, Heart, Info, MoreHorizontal, Send, Share2, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import type { Book } from "../../lib/api";
 import { saveForOffline } from "../../lib/books";
+import { sendToDevices } from "../../lib/deliveries";
 import { downloadOwnBook, updateBook } from "../../lib/library";
 import { useLibraryActions } from "../../lib/libraryStore";
 import { Menu } from "../ui/Menu";
@@ -88,6 +89,8 @@ export function BookMenu({ book, className }: { book: Book; className?: string }
                 ),
               ),
         },
+        // To the account's e-readers, through the BookRaven plugin for KOReader (Profile → Other apps).
+        { label: "Send to Kindle", icon: <Send />, onSelect: () => void sendToDevices(book) },
         { label: "Download file", icon: <Download />, onSelect: () => void downloadOwnBook(book).catch(() => window.alert("Download failed, try again.")) },
         {
           label: book.favorite ? "Remove from favorites" : "Add to favorites",

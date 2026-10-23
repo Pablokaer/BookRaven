@@ -3,12 +3,13 @@ import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { publish } from "../lib/events.js";
 import { obj } from "../lib/http.js";
+import { forgetOnKoreader } from "../lib/koreaderAnnotations.js";
 import { loadOwnedBook } from "./books.js";
 
 /** More than enough for any book; stops a runaway client. */
 const MAX_BOOKMARKS_PER_BOOK = 2000;
 
-type BookmarkRow = {
+export type BookmarkRow = {
   id: string;
   book_id: string;
   locator: string;
@@ -18,7 +19,7 @@ type BookmarkRow = {
   created_at: Date;
 };
 
-const toDto = (r: BookmarkRow) => ({
+export const bookmarkDto = (r: BookmarkRow) => ({
   id: r.id,
   bookId: r.book_id,
   locator: r.locator,
@@ -42,7 +43,7 @@ export async function bookmarkRoutes(app: FastifyInstance) {
       "SELECT * FROM bookmark WHERE book_id = $1 AND user_id = $2 ORDER BY percentage, created_at",
       [book.id, request.user.id],
     );
-    return rows.map(toDto);
+    return rows.map(bookmarkDto);
   });
 
   /** Adds a bookmark, or updates the one on that page. A `title` of null clears it; leaving it out keeps it. */
@@ -74,11 +75,12 @@ export async function bookmarkRoutes(app: FastifyInstance) {
         `INSERT INTO bookmark (user_id, book_id, locator, percentage, label, title) VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (user_id, book_id, locator) DO UPDATE SET
            label = COALESCE(EXCLUDED.label, bookmark.label),
-           title = CASE WHEN $7 THEN EXCLUDED.title ELSE bookmark.title END
+           title = CASE WHEN $7 THEN EXCLUDED.title ELSE bookmark.title END,
+           updated_at = now()
          RETURNING *`,
         [request.user.id, book.id, locator, percentage, label?.trim() || null, title?.trim() || null, title !== undefined],
       );
-      const dto = toDto(rows[0]!);
+      const dto = bookmarkDto(rows[0]!);
       publish(request.user.id, "bookmark.saved", dto);
       return dto;
     },
@@ -100,12 +102,13 @@ export async function bookmarkRoutes(app: FastifyInstance) {
       const book = await loadOwnedBook(request, reply);
       if (!book) return;
       const { locator } = request.query;
-      const { rowCount } = await query("DELETE FROM bookmark WHERE book_id = $1 AND user_id = $2 AND locator = $3", [
+      const { rows } = await query<{ id: string }>("DELETE FROM bookmark WHERE book_id = $1 AND user_id = $2 AND locator = $3 RETURNING id", [
         book.id,
         request.user.id,
         locator,
       ]);
-      if (rowCount) publish(request.user.id, "bookmark.deleted", { bookId: book.id, locator });
+      if (rows[0]) await forgetOnKoreader("bookmark", rows[0].id);
+      if (rows[0]) publish(request.user.id, "bookmark.deleted", { bookId: book.id, locator });
       return reply.code(204).send();
     },
   );
