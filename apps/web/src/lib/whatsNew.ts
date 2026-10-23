@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-23-koreader-folder-shelves",
+    date: "2026-10-23",
+    title: "Folder shelves in KOReader",
+    items: [
+      "In the BookRaven plugin for KOReader, any folder on your e-reader can become a shelf on the home screen: tap + Add shelf, then long-press the folder.",
+      "A folder shelf opens a gallery of its books with their covers. Download the updated plugin from Profile → Other apps.",
+    ],
+  },
+  {
     id: "2026-10-23-koreader-plugin-home",
     date: "2026-10-23",
     title: "A new BookRaven plugin for KOReader",

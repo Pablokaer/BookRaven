@@ -34,6 +34,7 @@ W.s = s
 W.INK = Blitbuffer.COLOR_BLACK
 W.PAPER = Blitbuffer.COLOR_WHITE
 W.MUTED = Blitbuffer.COLOR_DARK_GRAY
+W.SOFT = Blitbuffer.Color8(0x30) -- secondary text on the home and tiles: dark enough to read on e-ink
 W.RULE = Blitbuffer.Color8(0xC8)
 W.SHADOW = Blitbuffer.Color8(0xA8)
 W.TRACK = Blitbuffer.Color8(0xDD)
@@ -48,7 +49,8 @@ end
 function W.fonts()
     local theme = Theme.current()
     local f = theme and theme.home or {
-        display = "tfont", text = "cfont", label = "smallinfofontbold", mono = "ffont", italic = "cfont",
+        display = "tfont", text = "cfont", strong = "smallinfofontbold", label = "smallinfofontbold",
+        mono = "ffont", italic = "cfont",
     }
     return {
         get = function(role, size) return Font:getFace(f[role] or f.text, size) end,
@@ -246,31 +248,72 @@ function W.card(widget, width, height, padding)
     }
 end
 
+--- A small pill button for section headings: "+ Add shelf".
+function W.pillButton(text, style, callback)
+    local f = W.fonts()
+    local hud = style == "hud"
+    local tw = TextWidget:new{
+        text = hud and W.upper(text) or text,
+        face = f.get(hud and "mono" or "strong", hud and 13 or 14),
+        bold = hud or nil,
+        fgcolor = hud and W.PAPER or W.INK,
+    }
+    local th = tw:getSize().h
+    local plus = Painter:new{
+        width = th, height = th,
+        paint = function(bb, x, y, w, h)
+            local t = math.max(2, s(1.6))
+            local arm = math.floor(w * 0.32)
+            local cx, cy = x + math.floor(w / 2), y + math.floor(h / 2)
+            local c = hud and W.PAPER or W.INK
+            bb:paintRect(cx - arm, cy - math.floor(t / 2), 2 * arm, t, c)
+            bb:paintRect(cx - math.floor(t / 2), cy - arm, t, 2 * arm, c)
+        end,
+    }
+    local frame = FrameContainer:new{
+        padding = s(5),
+        padding_left = s(8),
+        padding_right = s(10),
+        margin = 0,
+        bordersize = hud and 0 or Size.border.thin,
+        color = W.INK,
+        radius = hud and 0 or math.floor((th + s(10)) / 2),
+        background = hud and W.INK or W.PAPER,
+        HorizontalGroup:new{ align = "center", plus, HorizontalSpan:new{ width = s(4) }, tw },
+    }
+    return Tap:new{ callback = callback, frame }
+end
+
 --- Section heading: tracked capitals and a rule that ends in a diamond (engraved),
---- or "> NAME_" with ticks (hud).
-function W.label(text, width, style)
+--- or "> NAME_" with ticks (hud). With action = { text, callback }, the rule ends in a button.
+function W.label(text, width, style, action)
     local f = W.fonts()
     local tw
     if style == "hud" then
         tw = TextWidget:new{
             text = "> " .. W.upper(text):gsub(" ", "_"),
-            face = f.get("mono", 12),
+            face = f.get("mono", 14),
+            bold = true,
         }
     else
         tw = TextWidget:new{
             text = W.tracked(text),
-            face = f.get("label", 10),
-            fgcolor = W.MUTED,
+            face = f.get("label", 12),
+            fgcolor = W.SOFT,
         }
     end
     local tsz = tw:getSize()
     local gap = s(10)
-    local rule_w = math.max(0, width - tsz.w - gap)
+    local button = action and W.pillButton(action.text, style, action.callback)
+    local button_w = button and (button:getSize().w + gap) or 0
+    local rule_w = math.max(0, width - tsz.w - gap - button_w)
     local rule = Painter:new{
         width = rule_w, height = tsz.h,
         paint = function(bb, x, y, w, h)
             local cy = y + math.floor(h / 2)
-            if style == "hud" then
+            if button then
+                bb:paintRect(x, cy, w, 1, style == "hud" and W.INK or W.RULE)
+            elseif style == "hud" then
                 bb:paintRect(x, cy, w - s(26), 1, W.INK)
                 for i = 0, 2 do
                     bb:paintRect(x + w - s(20) + i * s(7), cy - s(3), s(3), s(7), W.INK)
@@ -286,7 +329,12 @@ function W.label(text, width, style)
             end
         end,
     }
-    return HorizontalGroup:new{ align = "center", tw, HorizontalSpan:new{ width = gap }, rule }
+    local group = HorizontalGroup:new{ align = "center", tw, HorizontalSpan:new{ width = gap }, rule }
+    if button then
+        table.insert(group, HorizontalSpan:new{ width = gap })
+        table.insert(group, button)
+    end
+    return group
 end
 
 --- Which engraving goes with a shelf: by name, else a stable pick from the rest.
@@ -300,53 +348,92 @@ local ART_BY_WORD = {
 }
 local ART_REST = { "flight", "window", "collection", "shadow", "public", "library", "recent" }
 
-function W.shelfArt(plugin_dir, title, index)
+--- `used` (optional) is a table of engravings already on the page: the shelf then gets one
+--- that is not, while there are some left.
+function W.shelfArt(plugin_dir, title, index, used)
     local t = (title or ""):lower()
     local key
     for _, pair in ipairs(ART_BY_WORD) do
         if t:find(pair[1], 1, true) then key = pair[2]; break end
     end
+    local h = 0
+    for i = 1, #t do h = (h * 31 + t:byte(i)) % 997 end
     if not key then
-        local h = 0
-        for i = 1, #t do h = (h * 31 + t:byte(i)) % 997 end
         key = ART_REST[(h + (index or 0)) % #ART_REST + 1]
+    end
+    if used then
+        if used[key] then
+            for i = 0, #ART_REST - 1 do
+                local candidate = ART_REST[(h + i) % #ART_REST + 1]
+                if not used[candidate] then key = candidate; break end
+            end
+        end
+        used[key] = true
     end
     local theme = Theme.current()
     local dir = theme and theme.art or "art/bookraven"
     return string.format("%s/%s/shelf-%s.png", plugin_dir, dir, key)
 end
 
---- A shelf tile: engraving + name + note. args: title, note, width, height, art, callback, style, index
+--- The art of the "add a shelf" tile: a ring (engraved) or brackets (hud) around a plus.
+function W.plusArt(size, style)
+    return Painter:new{
+        width = size, height = size,
+        paint = function(bb, x, y, w, h)
+            local cx, cy = x + math.floor(w / 2), y + math.floor(h / 2)
+            local t = math.max(2, s(1.8))
+            local arm = math.floor(w * 0.2)
+            if style == "hud" then
+                W.brackets(bb, x + math.floor(w * 0.1), y + math.floor(h * 0.1), math.floor(w * 0.8), math.floor(h * 0.8))
+            else
+                bb:paintCircle(cx, cy, math.floor(w * 0.45), W.INK, math.max(2, s(1.2)))
+                bb:paintCircle(cx, cy, math.floor(w * 0.39), W.RULE, math.max(1, s(0.6)))
+            end
+            bb:paintRect(cx - arm, cy - math.floor(t / 2), 2 * arm, t, W.INK)
+            bb:paintRect(cx - math.floor(t / 2), cy - arm, t, 2 * arm, W.INK)
+        end,
+    }
+end
+
+--- A shelf tile: engraving + name + note.
+--- args: title, note, width, height, art (file) or plus = true, callback, hold_callback, style, index
 function W.shelfTile(args)
     local f = W.fonts()
     local style = args.style
+    local hud = style == "hud"
     local pad = s(8)
     local inner_h = args.height - 2 * pad - 2 * Size.border.thin
     local art_size = inner_h
     local text_w = args.width - 2 * pad - art_size - s(12) - 2 * Size.border.thin
-    local title = style == "hud" and W.upper(args.title) or args.title
+    local title = hud and W.upper(args.title) or args.title
     local texts = VerticalGroup:new{ align = "left" }
     table.insert(texts, TextBoxWidget:new{
         text = title,
-        face = f.get("display", style == "hud" and 15 or 17),
+        face = f.get("display", hud and 17 or 19),
         width = text_w,
-        height = math.floor(inner_h * 0.62),
+        height = math.floor(inner_h * 0.6),
         height_adjust = true,
         height_overflow_show_ellipsis = true,
     })
     if args.note and args.note ~= "" then
-        table.insert(texts, VerticalSpan:new{ width = s(3) })
+        table.insert(texts, VerticalSpan:new{ width = s(2) })
         table.insert(texts, TextBoxWidget:new{
-            text = style == "hud" and ("// " .. args.note) or args.note,
-            face = f.get(style == "hud" and "mono" or "text", style == "hud" and 10 or 11),
-            fgcolor = W.MUTED,
+            text = hud and ("// " .. args.note) or args.note,
+            face = f.get(hud and "mono" or "strong", hud and 12 or 13),
+            bold = hud or nil,
+            fgcolor = W.SOFT,
             width = text_w,
-            height = math.floor(inner_h * 0.36),
+            height = math.floor(inner_h * 0.4),
             height_adjust = true,
             height_overflow_show_ellipsis = true,
         })
     end
-    local art = ImageWidget:new{ file = args.art, width = art_size, height = art_size, alpha = false }
+    local art
+    if args.plus or not args.art then
+        art = W.plusArt(art_size, style)
+    else
+        art = ImageWidget:new{ file = args.art, width = art_size, height = art_size, alpha = false }
+    end
     local row = HorizontalGroup:new{
         align = "center",
         art,
@@ -354,10 +441,11 @@ function W.shelfTile(args)
         texts,
     }
     local box
-    if style == "hud" then
+    if hud then
         local tag = args.index and TextWidget:new{
-            text = string.format("%02d", args.index),
-            face = f.get("mono", 9),
+            text = args.plus and "+" or string.format("%02d", args.index),
+            face = f.get("mono", 10),
+            bold = true,
             fgcolor = W.PAPER,
         }
         box = HudPanel:new{ width = args.width, height = args.height, padding = pad, tag = tag, row }
@@ -376,14 +464,15 @@ function W.noteTile(args)
     local group = VerticalGroup:new{ align = "left" }
     table.insert(group, TextWidget:new{
         text = style == "hud" and W.upper(args.title) or args.title,
-        face = f.get("display", style == "hud" and 15 or 18),
+        face = f.get("display", style == "hud" and 18 or 21),
         max_width = inner_w,
     })
     table.insert(group, VerticalSpan:new{ width = s(4) })
     table.insert(group, TextBoxWidget:new{
         text = args.text,
-        face = f.get(style == "hud" and "mono" or "text", style == "hud" and 10 or 12),
-        fgcolor = W.MUTED,
+        face = f.get(style == "hud" and "mono" or "strong", style == "hud" and 12 or 14),
+        bold = style == "hud" or nil,
+        fgcolor = W.SOFT,
         width = inner_w,
     })
     local box
