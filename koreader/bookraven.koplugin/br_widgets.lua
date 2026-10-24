@@ -2,16 +2,18 @@
 Small drawing pieces shared by the library home and the catalog: tappable areas, progress bars,
 covers with a shadow (or HUD brackets), section labels, shelf tiles and their engraved art.
 
-Two looks: "engraved" (BookRaven theme, and KOReader's original look) and "hud" (Cyberdeck).
+Three looks: "engraved" (BookRaven theme, and KOReader's original look), "hud" (Cyberdeck) and
+"classic" (Classic e-reader: hairlines, square corners, no shadows or ornaments).
+Text goes through Theme.face, so the reader's text settings (size, bold, font) apply everywhere.
 ]]
 
 local Blitbuffer = require("ffi/blitbuffer")
-local Font = require("ui/font")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
+local IconWidget = require("ui/widget/iconwidget")
 local ImageWidget = require("ui/widget/imagewidget")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
@@ -22,6 +24,7 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local Widget = require("ui/widget/widget")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
+local lfs = require("libs/libkoreader-lfs")
 local Screen = require("device").screen
 
 local Theme = require("br_theme")
@@ -39,11 +42,14 @@ W.RULE = Blitbuffer.Color8(0xC8)
 W.SHADOW = Blitbuffer.Color8(0xA8)
 W.TRACK = Blitbuffer.Color8(0xDD)
 
---- The look in effect: "engraved" or "hud".
+--- The look in effect: "engraved", "hud" or "classic".
 function W.style()
     local theme = Theme.current()
     return theme and theme.style or "engraved"
 end
+
+-- What each font role is, for the font family and bold settings.
+local KIND = { display = "bold", label = "bold", strong = "strong", text = "regular", italic = "italic", mono = "mono" }
 
 --- Fonts for the home and the catalog tiles, by role, for the look in effect.
 function W.fonts()
@@ -53,8 +59,44 @@ function W.fonts()
         mono = "ffont", italic = "cfont",
     }
     return {
-        get = function(role, size) return Font:getFace(f[role] or f.text, size) end,
+        get = function(role, size) return Theme.face(f[role] or f.text, size, KIND[role] or "regular") end,
     }
+end
+
+--- One of the plugin's own icons (sun, moon, quick settings…): the theme's version if it has
+--- one, else the shared one in icons/common.
+function W.icon(name)
+    local theme = Theme.current()
+    local dir = Theme.plugin_dir or "."
+    if theme then
+        local own = string.format("%s/%s/%s.svg", dir, theme.icons, name)
+        if lfs.attributes(own, "mode") == "file" then return own end
+    end
+    return string.format("%s/icons/common/%s.svg", dir, name)
+end
+
+--- A tappable icon of ours: size is the icon's, pad the room around it (part of the tap zone).
+function W.iconTap(name, size, pad, callback, hold_callback)
+    pad = pad or 0
+    return W.Tap:new{
+        callback = callback,
+        hold_callback = hold_callback,
+        FrameContainer:new{
+            padding = pad, margin = 0, bordersize = 0,
+            IconWidget:new{ file = W.icon(name), width = size, height = size, alpha = true },
+        },
+    }
+end
+
+--- Paints its child, then inverts it (a selected chip, a switched-on toggle).
+local Invert = WidgetContainer:extend{ on = true }
+W.Invert = Invert
+
+function Invert:paintTo(bb, x, y)
+    local size = self[1]:getSize()
+    self.dimen = Geom:new{ x = x, y = y, w = size.w, h = size.h }
+    self[1]:paintTo(bb, x, y)
+    if self.on then bb:invertRect(x, y, size.w, size.h) end
 end
 
 --- Uppercase with hair spaces between letters: small tracked capitals for labels.
@@ -134,6 +176,16 @@ function W.progress(width, pct, style)
             end,
         }
     end
+    if style == "classic" then -- a plain bar on a light track
+        local th = s(3)
+        return Painter:new{
+            width = width, height = th + s(4),
+            paint = function(bb, x, y, w)
+                bb:paintRect(x, y + s(2), w, th, W.TRACK)
+                if pct > 0 then bb:paintRect(x, y + s(2), math.max(th, math.floor(w * pct)), th, W.INK) end
+            end,
+        }
+    end
     local h = s(3.5)
     return Painter:new{
         width = width, height = h + s(4),
@@ -155,16 +207,19 @@ function W.progress(width, pct, style)
     }
 end
 
---- Wraps a cover: soft shadow (engraved) or corner brackets (hud).
+--- Wraps a cover: soft shadow (engraved), corner brackets (hud) or nothing (classic).
 local Mount = WidgetContainer:extend{ look = "engraved", pad = 0 }
 W.Mount = Mount
 
 function Mount:init()
-    self.pad = self.look == "hud" and s(4) or s(3)
+    self.pad = (self.look == "hud" and s(4)) or (self.look == "classic" and 0) or s(3)
 end
 
 function Mount:getSize()
     local size = self[1]:getSize()
+    if self.look == "classic" then
+        return size
+    end
     if self.look == "hud" then
         return Geom:new{ w = size.w + 2 * self.pad, h = size.h + 2 * self.pad }
     end
@@ -175,7 +230,9 @@ function Mount:paintTo(bb, x, y)
     local size = self:getSize()
     self.dimen = Geom:new{ x = x, y = y, w = size.w, h = size.h }
     local inner = self[1]:getSize()
-    if self.look == "hud" then
+    if self.look == "classic" then
+        self[1]:paintTo(bb, x, y)
+    elseif self.look == "hud" then
         self[1]:paintTo(bb, x + self.pad, y + self.pad)
         W.brackets(bb, x, y, size.w, size.h)
     else
@@ -242,7 +299,7 @@ function W.card(widget, width, height, padding)
         margin = 0,
         bordersize = b,
         color = W.RULE,
-        radius = s(9),
+        radius = W.style() ~= "classic" and s(9) or nil,
         background = W.PAPER,
         LeftContainer:new{ dimen = Geom:new{ w = inner_w, h = inner_h }, widget },
     }
@@ -254,7 +311,7 @@ function W.pillButton(text, style, callback)
     local hud = style == "hud"
     local tw = TextWidget:new{
         text = hud and W.upper(text) or text,
-        face = f.get(hud and "mono" or "strong", hud and 13 or 14),
+        face = f.get(hud and "mono" or (style == "classic" and "label" or "strong"), hud and 13 or 14),
         bold = hud or nil,
         fgcolor = hud and W.PAPER or W.INK,
     }
@@ -277,7 +334,7 @@ function W.pillButton(text, style, callback)
         margin = 0,
         bordersize = hud and 0 or Size.border.thin,
         color = W.INK,
-        radius = hud and 0 or math.floor((th + s(10)) / 2),
+        radius = (hud or style == "classic") and 0 or math.floor((th + s(10)) / 2),
         background = hud and W.INK or W.PAPER,
         HorizontalGroup:new{ align = "center", plus, HorizontalSpan:new{ width = s(4) }, tw },
     }
@@ -285,11 +342,14 @@ function W.pillButton(text, style, callback)
 end
 
 --- Section heading: tracked capitals and a rule that ends in a diamond (engraved),
---- or "> NAME_" with ticks (hud). With action = { text, callback }, the rule ends in a button.
+--- "> NAME_" with ticks (hud), or plain bold text (classic). With action = { text, callback },
+--- the heading ends in a button.
 function W.label(text, width, style, action)
     local f = W.fonts()
     local tw
-    if style == "hud" then
+    if style == "classic" then
+        tw = TextWidget:new{ text = text, face = f.get("label", 16) }
+    elseif style == "hud" then
         tw = TextWidget:new{
             text = "> " .. W.upper(text):gsub(" ", "_"),
             face = f.get("mono", 14),
@@ -311,7 +371,9 @@ function W.label(text, width, style, action)
         width = rule_w, height = tsz.h,
         paint = function(bb, x, y, w, h)
             local cy = y + math.floor(h / 2)
-            if button then
+            if style == "classic" then
+                return -- no rule: the button sits on the right
+            elseif button then
                 bb:paintRect(x, cy, w, 1, style == "hud" and W.INK or W.RULE)
             elseif style == "hud" then
                 bb:paintRect(x, cy, w - s(26), 1, W.INK)
@@ -385,12 +447,37 @@ function W.plusArt(size, style)
             local arm = math.floor(w * 0.2)
             if style == "hud" then
                 W.brackets(bb, x + math.floor(w * 0.1), y + math.floor(h * 0.1), math.floor(w * 0.8), math.floor(h * 0.8))
+            elseif style == "classic" then
+                bb:paintBorder(x + math.floor(w * 0.12), y + math.floor(h * 0.12), math.floor(w * 0.76), math.floor(h * 0.76), 1, W.MUTED)
             else
                 bb:paintCircle(cx, cy, math.floor(w * 0.45), W.INK, math.max(2, s(1.2)))
                 bb:paintCircle(cx, cy, math.floor(w * 0.39), W.RULE, math.max(1, s(0.6)))
             end
             bb:paintRect(cx - arm, cy - math.floor(t / 2), 2 * arm, t, W.INK)
             bb:paintRect(cx - math.floor(t / 2), cy - arm, t, 2 * arm, W.INK)
+        end,
+    }
+end
+
+--- The art of a shelf in the classic look, instead of an engraving: three covers, fanned like a
+--- stack on a shelf, the front one with two title lines.
+function W.stackArt(size)
+    return Painter:new{
+        width = size, height = size,
+        paint = function(bb, x, y, w, h)
+            local bw, bh = math.floor(w * 0.5), math.floor(h * 0.68)
+            local step = math.floor(w * 0.11)
+            local top = y + math.floor((h - bh - 2 * step) / 2)
+            local left = x + math.floor((w - bw - 2 * step) / 2)
+            for i = 2, 0, -1 do
+                local bx, by = left + i * step, top + (2 - i) * step
+                bb:paintRect(bx, by, bw, bh, W.PAPER)
+                bb:paintBorder(bx, by, bw, bh, math.max(1, s(1)), i == 0 and W.INK or W.MUTED)
+            end
+            local bx, by = left, top + 2 * step
+            local m = math.floor(bw * 0.18)
+            bb:paintRect(bx + m, by + math.floor(bh * 0.25), bw - 2 * m, math.max(1, s(1.5)), W.INK)
+            bb:paintRect(bx + m, by + math.floor(bh * 0.36), math.floor((bw - 2 * m) * 0.65), math.max(1, s(1)), W.MUTED)
         end,
     }
 end
@@ -431,6 +518,8 @@ function W.shelfTile(args)
     local art
     if args.plus or not args.art then
         art = W.plusArt(art_size, style)
+    elseif style == "classic" then
+        art = W.stackArt(art_size)
     else
         art = ImageWidget:new{ file = args.art, width = art_size, height = art_size, alpha = false }
     end

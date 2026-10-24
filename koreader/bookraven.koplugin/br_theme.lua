@@ -9,19 +9,30 @@ Interface themes for KOReader. "original" leaves KOReader untouched; the others 
              type, a monospace status line, black HUD title bars with a cut corner and uppercase
              titles, angular icons, dashed rules, square dialogs, a glitched raven as the home
              button and scanlined engravings. On a colour screen it stays in greys.
+  classic    A classic e-reader, inspired by the Kindle's stock look: white pages, black Noto Sans
+             type, title bars with the title on the left and a hairline under them, thin line
+             icons, covers in a grid with their titles below, and no ornaments. Nothing of
+             Amazon's is used: the type is KOReader's own Noto Sans, the icons are drawn here.
 
 All fonts and art are bundled (fonts renamed so they never clash with fonts you installed). Fonts
 are read when widgets are created, so a theme is applied once at start-up and a change asks for a
 restart. br_style.lua does the rest of the restyling (icons, menus, dialogs, file browser rows).
+
+The reader's text settings (size, bold, font family: Settings.text) apply to the plugin's own
+screens at once, through Theme.face, and to the theme's interface fonts at the next start-up.
 ]]
 
 local Blitbuffer = require("ffi/blitbuffer")
 local Font = require("ui/font")
 local FontList = require("fontlist")
 local logger = require("logger")
+local _ = require("gettext")
+
+local Settings = require("br_settings")
 
 local Theme = {
     applied = nil, -- name of the theme applied this session
+    applied_text = nil, -- the text settings the interface fonts were set up with
     plugin_dir = nil,
     FONTS = {
         "BookRavenSerif-Bold.ttf", "BookRavenSerif-SemiBold.ttf", "BookRavenSerif-Italic.ttf",
@@ -111,7 +122,99 @@ Theme.THEMES = {
             cover_author = "BookRavenMono-Regular.ttf",
         },
     },
+    classic = {
+        label = _("Classic e-reader"),
+        roles = roles("NotoSans-Bold.ttf", "NotoSans-Regular.ttf", "NotoSans-Bold.ttf"),
+        size_bump = {},
+        bold_pairs = {},
+        titlebar = "classic",
+        fm_title = _("Library"),
+        style = "classic",
+        icons = "icons/classic",
+        art = "art/bookraven",
+        marks = { check_on = "cl.check.on", check_off = "cl.check.off", radio_on = "cl.radio.on", radio_off = "cl.radio.off" },
+        tabs = "plain",
+        lines = "soft",
+        dialog_radius = 6,
+        home = {
+            display = "NotoSans-Bold.ttf",
+            italic = "NotoSans-Italic.ttf",
+            text = "NotoSans-Regular.ttf",
+            strong = "NotoSans-Regular.ttf",
+            label = "NotoSans-Bold.ttf",
+            mono = "NotoSans-Regular.ttf",
+        },
+        card = {
+            style = "classic",
+            title = "NotoSans-Bold.ttf",
+            author = "NotoSans-Regular.ttf",
+            cover_title = "NotoSans-Bold.ttf",
+            cover_author = "NotoSans-Regular.ttf",
+        },
+    },
 }
+
+--- Font families for the plugin's screens (Settings → BookRaven, or the quick settings panel).
+--- "theme" keeps the theme's own fonts. regular / strong (secondary lines) / bold / italic.
+Theme.FAMILIES = {
+    { key = "theme", label = _("Theme's own") },
+    { key = "noto", label = "Noto Sans", regular = "NotoSans-Regular.ttf", strong = "NotoSans-Regular.ttf",
+        bold = "NotoSans-Bold.ttf", italic = "NotoSans-Italic.ttf" },
+    { key = "noto_serif", label = "Noto Serif", regular = "NotoSerif-Regular.ttf", strong = "NotoSerif-Regular.ttf",
+        bold = "NotoSerif-Bold.ttf", italic = "NotoSerif-Italic.ttf" },
+    { key = "sans", label = "Inter", regular = "BookRavenSans-Regular.ttf", strong = "BookRavenSans-SemiBold.ttf",
+        bold = "BookRavenSans-SemiBold.ttf", italic = "BookRavenSans-Regular.ttf" },
+    { key = "serif", label = "Cormorant", regular = "BookRavenSerif-SemiBold.ttf", strong = "BookRavenSerif-SemiBold.ttf",
+        bold = "BookRavenSerif-Bold.ttf", italic = "BookRavenSerif-Italic.ttf" },
+    { key = "cyber", label = "Chakra Petch", regular = "BookRavenCyber-Medium.ttf", strong = "BookRavenCyber-SemiBold.ttf",
+        bold = "BookRavenCyber-Bold.ttf", italic = "BookRavenCyber-Medium.ttf" },
+}
+
+-- The heavier file of each of our fonts, for "bold text" (KOReader knows its own Noto pairs).
+local BOLD_OF = {
+    ["BookRavenSans-Regular.ttf"] = "BookRavenSans-SemiBold.ttf",
+    ["BookRavenSerif-SemiBold.ttf"] = "BookRavenSerif-Bold.ttf",
+    ["BookRavenSerif-Italic.ttf"] = "BookRavenSerif-Bold.ttf",
+    ["BookRavenCyber-Medium.ttf"] = "BookRavenCyber-Bold.ttf",
+    ["BookRavenCyber-SemiBold.ttf"] = "BookRavenCyber-Bold.ttf",
+}
+
+function Theme.family(key)
+    for _, fam in ipairs(Theme.FAMILIES) do
+        if fam.key == key and fam.regular then return fam end
+    end
+end
+
+--- The bold file of a font (a file name or a KOReader role), or the font itself if it has none.
+function Theme.boldOf(font)
+    local real = Font.fontmap[font] or font
+    return BOLD_OF[real] or Font.bold_font_variant[real] or real
+end
+
+--- A face for the plugin's own screens, after the text settings.
+--- font: the theme's choice; kind: "bold", "strong", "italic", "regular" or "mono" (left alone).
+function Theme.face(font, size, kind)
+    local text = Settings.text()
+    if kind ~= "mono" then
+        local fam = Theme.family(text.font)
+        if fam then font = fam[kind] or fam.regular end
+        if text.bold then font = Theme.boldOf(font) end
+    end
+    size = math.max(8, math.floor(size * text.scale / 100 + 0.5))
+    return Font:getFace(font, size) or Font:getFace("cfont", size)
+end
+
+--- How much bigger the plugin's text is than at 100%, for boxes that hold it (at least 1).
+function Theme.textGrowth()
+    return math.max(1, Settings.text().scale / 100)
+end
+
+--- True when the text settings changed since the interface fonts were set up (a restart applies them).
+function Theme.textPending()
+    if not Theme.applied or not Theme.applied_text then return false end
+    local now, was = Settings.text(), Theme.applied_text
+    return now.scale ~= was.scale or now.bold ~= was.bold or now.font ~= was.font
+end
 
 --- The theme in effect this session (nil for the original look).
 function Theme.current()
@@ -251,6 +354,12 @@ local function patchTitleBar(theme)
                 local oh = self._br_orn_widget:getSize().h
                 self.bottom_v_padding = oh + Size.padding.default + (self._br_orn == "wide" and Size.padding.small or 0)
             end
+        elseif theme.titlebar == "classic" then
+            if self.fullscreen then -- title on the left, a hairline under the bar
+                self.align = "left"
+                self.with_bottom_line = true
+                self.bottom_line_color = Blitbuffer.COLOR_BLACK
+            end
         elseif theme.titlebar == "hud" then
             if self.fullscreen then
                 self._br_hud = true
@@ -304,16 +413,36 @@ function Theme.apply(plugin_dir, name)
     for k, v in pairs(Font.fontmap) do old_map[k] = v end
     for k, v in pairs(Font.sizemap) do old_sizes[k] = v end
 
+    -- Real bold pairs, so bold text uses the heavier file instead of a synthesized one.
+    for regular, bold in pairs(theme.bold_pairs) do
+        Font.bold_font_variant[regular] = bold
+        Font.regular_font_variant[bold] = regular
+    end
+    -- The reader's text settings, on the theme's interface fonts: family, bold, size.
+    local text = Settings.text()
+    Theme.applied_text = text
+    local fam = Theme.family(text.font)
+    local title_roles, text_roles = {}, { smallinfofontbold = true }
+    for _, r in ipairs(TITLE_ROLES) do title_roles[r] = true end
+    for _, r in ipairs(TEXT_ROLES) do text_roles[r] = true end
     for role, font in pairs(theme.roles) do
+        if fam and title_roles[role] then
+            font = fam.bold
+        elseif fam and text_roles[role] then
+            font = role == "smallinfofontbold" and fam.bold or fam.regular
+        end
+        if text.bold and text_roles[role] then font = Theme.boldOf(font) end
         Font.fontmap[role] = font
     end
     for role, bump in pairs(theme.size_bump) do
         if Font.sizemap[role] then Font.sizemap[role] = Font.sizemap[role] + bump end
     end
-    -- Real bold pairs, so bold text uses the heavier file instead of a synthesized one.
-    for regular, bold in pairs(theme.bold_pairs) do
-        Font.bold_font_variant[regular] = bold
-        Font.regular_font_variant[bold] = regular
+    if text.scale ~= 100 then
+        for role in pairs(theme.roles) do
+            if (title_roles[role] or text_roles[role]) and Font.sizemap[role] then
+                Font.sizemap[role] = math.floor(Font.sizemap[role] * text.scale / 100 + 0.5)
+            end
+        end
     end
 
     refreshLoadedFaces(theme, old_map, old_sizes)

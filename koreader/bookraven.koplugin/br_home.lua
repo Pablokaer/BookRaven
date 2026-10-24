@@ -1,7 +1,8 @@
 --[[--
 The BookRaven library home: the start screen, like the Kindle's own home.
 
-  * a top bar with the raven mark, search, the file browser and KOReader's menu;
+  * a top bar with the raven mark, search (every book, wherever it is: br_search), the quick
+    settings (br_quick; also a swipe down from the top edge), the file browser and KOReader's menu;
   * a header with an engraving (Doré's "The Raven"), the greeting and the date;
   * "Continue reading": the last book you opened, with its cover and progress (tap to open);
   * "Shelves": the BookRaven catalog's top-level shelves as illustrated tiles, then the folder
@@ -16,6 +17,7 @@ local Blitbuffer = require("ffi/blitbuffer")
 local Device = require("device")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconButton = require("ui/widget/iconbutton")
@@ -114,6 +116,10 @@ function Home:init()
     if Device:hasKeys() then
         self.key_events = { Close = { { Device.input.group.Back } } }
     end
+    -- A swipe down from the top edge: the quick settings (br_quick.fromTop checks where it starts).
+    self.ges_events = {
+        BrHomeSwipe = { GestureRange:new{ ges = "swipe", range = function() return self.dimen end } },
+    }
     self.plugin_dir = Theme.plugin_dir
     self.cache = Settings.get("home_cache") or {}
     self:loadReading()
@@ -164,9 +170,10 @@ end
 
 function Home:topBar(sw, m, style, f)
     local bar_h = s(46)
+    local classic = style == "classic"
     local left = HorizontalGroup:new{ align = "center" }
     table.insert(left, HorizontalSpan:new{ width = m })
-    local mark = self:markFile()
+    local mark = not classic and self:markFile()
     if mark then
         local size = math.floor(bar_h * 0.8)
         table.insert(left, W.Tap:new{
@@ -175,9 +182,10 @@ function Home:topBar(sw, m, style, f)
         })
         table.insert(left, HorizontalSpan:new{ width = s(8) })
     end
+    local name = (style == "hud" and "BOOKRAVEN") or (classic and _("Home")) or "BookRaven"
     table.insert(left, TextWidget:new{
-        text = style == "hud" and "BOOKRAVEN" or "BookRaven",
-        face = f.get("display", style == "hud" and 21 or 25),
+        text = name,
+        face = f.get("display", (style == "hud" and 21) or (classic and 22) or 25),
     })
     if style == "hud" then
         table.insert(left, TextWidget:new{ text = "  // DECK", face = f.get("mono", 13), bold = true, fgcolor = W.MUTED })
@@ -187,14 +195,19 @@ function Home:topBar(sw, m, style, f)
     local right = HorizontalGroup:new{ align = "center" }
     local actions = {
         { "appbar.search", function() self:search() end },
+        { "br.quick", function() require("br_quick").show(self) end, true },
         { "appbar.filebrowser", function() self:onClose() end },
         { "appbar.menu", function() self:showMenu() end },
     }
     for _, a in ipairs(actions) do
-        table.insert(right, IconButton:new{
-            icon = a[1], width = icon, height = icon, padding = s(8),
-            callback = a[2], show_parent = self,
-        })
+        if a[3] then -- one of our own icons (KOReader has no quick settings icon)
+            table.insert(right, W.iconTap(a[1], icon, s(8), a[2]))
+        else
+            table.insert(right, IconButton:new{
+                icon = a[1], width = icon, height = icon, padding = s(8),
+                callback = a[2], show_parent = self,
+            })
+        end
     end
     table.insert(right, HorizontalSpan:new{ width = math.max(0, m - s(8)) })
 
@@ -207,6 +220,17 @@ function Home:topBar(sw, m, style, f)
     if style == "hud" then
         return Inverted:new{ bar }
     end
+    if classic then -- the Kindle's bar: title left, icons right, a hairline under it
+        return VerticalGroup:new{
+            align = "left",
+            bar,
+            W.Painter:new{
+                width = sw, height = Size.line.medium,
+                paint = function(bb, x, y, w, h) bb:paintRect(x, y, w, h, W.INK) end,
+            },
+            VerticalSpan:new{ width = s(4) },
+        }
+    end
     local group = VerticalGroup:new{ align = "center", bar }
     local orn = self.plugin_dir .. "/icons/bookraven/ornament.small.svg"
     if lfs.attributes(orn, "mode") == "file" then
@@ -217,7 +241,29 @@ function Home:topBar(sw, m, style, f)
     return group
 end
 
+--- Classic e-reader: no engraving, just the greeting and the day, in plain type.
+function Home:plainHeader(sw, m, f)
+    local texts = VerticalGroup:new{ align = "left" }
+    local max_w = sw - 2 * m
+    table.insert(texts, VerticalSpan:new{ width = s(6) })
+    table.insert(texts, TextWidget:new{ text = greeting(), face = f.get("display", 24), max_width = max_w })
+    local line
+    if self.offline then
+        line = _("Offline — showing your saved shelves")
+    elseif (self.in_progress or 0) == 1 then
+        line = _("One book in progress")
+    elseif (self.in_progress or 0) > 1 then
+        line = T(_("%1 books in progress"), self.in_progress)
+    end
+    local date = os.date("%A %d %B")
+    table.insert(texts, TextWidget:new{
+        text = line and (date .. " · " .. line) or date, face = f.get("strong", 14), fgcolor = W.SOFT, max_width = max_w,
+    })
+    return HorizontalGroup:new{ HorizontalSpan:new{ width = m }, texts }
+end
+
 function Home:header(sw, m, style, f)
+    if style == "classic" then return self:plainHeader(sw, m, f) end
     local theme = Theme.current()
     local art = string.format("%s/%s/header.png", self.plugin_dir, theme and theme.art or "art/bookraven")
     local hh = math.min(math.floor(sw * 340 / 1072), math.floor(self.dimen.h * 0.23))
@@ -477,7 +523,7 @@ function Home:shelfRows(width, height, style)
     local gap = s(10)
     local gap_v = s(8)
     local tile_w = math.floor((width - (cols - 1) * gap) / cols)
-    local tile_h = s(74)
+    local tile_h = s(math.floor(74 * Theme.textGrowth()))
     local entries = self:shelfEntries()
     local add = table.remove(entries) -- "Add a shelf" is always last
     local rows_fit = math.max(1, math.floor((height + gap_v) / (tile_h + gap_v)))
@@ -748,12 +794,22 @@ function Home:openShelf(url, title)
     self:openCatalog(url, title)
 end
 
+--- The magnifier: one search for every book, on the device and in the catalog (br_search).
 function Home:search()
-    self:openCatalog(nil, nil, function(browser)
-        if browser.search_url then
-            browser:searchCatalog(browser.search_url)
-        end
-    end)
+    require("br_search").everything(self)
+end
+
+function Home:onBrHomeSwipe(arg, ges)
+    local Quick = require("br_quick")
+    if Quick.fromTop(ges) then
+        Quick.show(self)
+        return true
+    end
+end
+
+--- Text size, bold or font changed in the quick settings.
+function Home:onBookRavenTextChanged()
+    self:rebuild()
 end
 
 function Home:showMenu()
