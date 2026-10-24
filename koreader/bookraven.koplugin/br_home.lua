@@ -9,8 +9,18 @@ The BookRaven library home: the start screen, like the Kindle's own home.
     shelves you added with "+ Add shelf" (see br_gallery);
   * "New in your library": covers from the catalog's recently added shelf, when there is room.
 
-Shelves and new books are kept in the plugin settings, so the home works offline and shows
-straight away; it refreshes from the server when KOReader is online.
+Shelves and new books are kept in the plugin settings, so the home shows straight away; it
+refreshes from the server when KOReader is online.
+
+Offline (no network, or the BookRaven server does not answer), the Shelves section has a single
+shelf, "On this Kindle" ("On this device" elsewhere): every book on the device, as a gallery of
+covers with its own search (br_gallery.DeviceGallery). The catalog's shelves, the folder shelves
+and "New in your library" come back by themselves once the server can be reached: the home
+follows KOReader's NetworkConnected / NetworkDisconnected events, and checks again every
+RECHECK seconds while it is on screen, with one refresh when the state changes. Being online
+means "connected and the server answers" (NetworkMgr:isConnected, then an HTTP request to the
+server with a short timeout, kept REACH_TTL seconds), not "on the Internet": the server may be
+on the local network.
 ]]
 
 local Blitbuffer = require("ffi/blitbuffer")
@@ -36,6 +46,7 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
+local logger = require("logger")
 local _ = require("gettext")
 local T = require("ffi/util").template
 local Screen = Device.screen
@@ -47,6 +58,52 @@ local W = require("br_widgets")
 local s = W.s
 
 local WHITE = Blitbuffer.COLOR_WHITE
+
+local REACH_TTL = 60 -- seconds an answer (or none) from the server is trusted
+local RECHECK = 90 -- seconds between checks while the home is on screen
+
+-- Whether the server answered, shared by every home of the session: { url, ok, time }.
+local reach = {}
+
+--- False only when KOReader knows it is not on a network (Wi-Fi off, or no address yet).
+local function connected()
+    local NetworkMgr = require("ui/network/manager")
+    local ok, on = pcall(NetworkMgr.isConnected, NetworkMgr)
+    return not (ok and on == false)
+end
+
+--- Whether the server of the catalog at `url` answers: any HTTP status will do, we only ask
+--- whether it can be reached (a short timeout, so an unreachable server stalls the home briefly).
+local function reachable(url)
+    if reach.url == url and os.time() - (reach.time or 0) < REACH_TTL then return reach.ok end
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+    local socket = require("socket")
+    local socketutil = require("socketutil")
+    local base = url:gsub("/opds.*$", ""):gsub("/+$", "")
+    socketutil:set_timeout(2, 4)
+    local ok, code = pcall(function()
+        return socket.skip(1, http.request{ url = base .. "/api/health", method = "GET", sink = ltn12.sink.null() })
+    end)
+    socketutil:reset_timeout()
+    -- On a network error http.request gives (nil, message), which socket.skip turns into the message.
+    local up = ok and type(code) == "number"
+    if up ~= reach.ok or reach.url ~= url then logger.info("BookRaven: server", up and "reachable" or "unreachable", base) end
+    reach.url, reach.ok, reach.time = url, up, os.time()
+    return up
+end
+
+--- Online for the home: connected, and (with an account) its server answers. probe = false
+--- asks nothing over the network: the last answer is used, or the server is assumed to answer.
+local function online(entry, probe)
+    if not connected() then return false end
+    if not entry or not entry.url then return true end
+    if probe == false then
+        if reach.url == entry.url and reach.ok ~= nil then return reach.ok end
+        return true
+    end
+    return reachable(entry.url)
+end
 
 --- Paints its child, then inverts it: a black HUD bar with a cut bottom-right corner.
 local Inverted = WidgetContainer:extend{}
@@ -122,10 +179,14 @@ function Home:init()
     }
     self.plugin_dir = Theme.plugin_dir
     self.cache = Settings.get("home_cache") or {}
+    -- What we already know, without waiting for the network: the first layout is the right one.
+    self.offline = not online(self:account(), false)
     self:loadReading()
     self:build()
     self._refresh = function() self:refresh() end
+    self._recheck = function() self:recheck() end
     UIManager:scheduleIn(0.4, self._refresh)
+    UIManager:scheduleIn(RECHECK, self._recheck)
 end
 
 function Home:account()
@@ -249,7 +310,7 @@ function Home:plainHeader(sw, m, f)
     table.insert(texts, TextWidget:new{ text = greeting(), face = f.get("display", 24), max_width = max_w })
     local line
     if self.offline then
-        line = _("Offline — showing your saved shelves")
+        line = _("Offline")
     elseif (self.in_progress or 0) == 1 then
         line = _("One book in progress")
     elseif (self.in_progress or 0) > 1 then
@@ -295,7 +356,7 @@ function Home:header(sw, m, style, f)
         table.insert(texts, VerticalSpan:new{ width = s(10) })
         local line
         if self.offline then
-            line = _("Offline — showing your saved shelves")
+            line = _("You are offline")
         elseif (self.in_progress or 0) == 1 then
             line = _("One book in progress")
         elseif (self.in_progress or 0) > 1 then
@@ -417,9 +478,16 @@ function Home:continueCard(width, style, f)
 end
 
 --- Everything the Shelves section can show, in order: the catalog's shelves (or a tile saying
---- why there are none yet), the folder shelves you added, and "Add a shelf".
+--- why there are none yet), the folder shelves you added, and "Add a shelf". Offline, only the
+--- shelf with every book on the device.
 function Home:shelfEntries()
     local list = {}
+    if self.offline then
+        local Shelves = require("br_gallery")
+        table.insert(list, { title = Shelves.deviceTitle(), text = Shelves.deviceTitle(), kind = "device",
+            art_key = "library", content = Shelves.deviceNote() })
+        return list
+    end
     local hud = W.style() == "hud"
     if not self.ui.opds then
         table.insert(list, { title = _("Catalog unavailable"), art_key = "library", kind = "noopds",
@@ -455,6 +523,8 @@ function Home:shelfAction(entry, from_menu)
         self:addShelf(from_menu)
     elseif entry.kind == "folder" then
         self:openFolder(entry.local_path, entry.title)
+    elseif entry.kind == "device" then
+        UIManager:show(require("br_gallery").DeviceGallery:new{ home = self, ui = self.ui })
     elseif entry.kind == "catalog" then
         self:openShelf(entry.url, entry.title)
     elseif entry.kind == "all" then
@@ -525,6 +595,14 @@ function Home:shelfRows(width, height, style)
     local tile_w = math.floor((width - (cols - 1) * gap) / cols)
     local tile_h = s(math.floor(74 * Theme.textGrowth()))
     local entries = self:shelfEntries()
+    if self.offline then -- one shelf, the whole width
+        local entry = entries[1]
+        return { W.shelfTile{
+            title = entry.title, note = entry.content, width = width, height = tile_h,
+            art = W.shelfArt(self.plugin_dir, entry.art_key, 1), style = style, index = 1,
+            callback = function() self:shelfAction(entry) end,
+        } }, tile_h, gap_v
+    end
     local add = table.remove(entries) -- "Add a shelf" is always last
     local rows_fit = math.max(1, math.floor((height + gap_v) / (tile_h + gap_v)))
     local slots = rows_fit * cols
@@ -631,7 +709,8 @@ function Home:build()
     space(s(6))
     add(self:continueCard(inner, style, f), true)
     space(s(12))
-    add(W.label(_("Shelves"), inner, style, { text = _("Add shelf"), callback = function() self:addShelf() end }), true)
+    local add_shelf = not self.offline and { text = _("Add shelf"), callback = function() self:addShelf() end } or nil
+    add(W.label(_("Shelves"), inner, style, add_shelf), true)
     space(s(6))
     local rows = self:shelfRows(inner, sh - used - s(6), style)
     for _, row in ipairs(rows) do
@@ -640,7 +719,7 @@ function Home:build()
     end
     self.pending_covers = {}
     local recent = self.cache.recent or {}
-    if #recent > 0 and self.cache.recent_url then
+    if #recent > 0 and self.cache.recent_url and not self.offline then
         local label = W.label(_("New in your library"), inner, style)
         local remain = sh - used - label:getSize().h - s(20)
         if remain >= s(100) then -- only when the covers can be big enough to read
@@ -737,16 +816,15 @@ end
 function Home:refresh(force)
     if self._closed then return end
     local entry = self:account()
-    if not entry then
-        if force then self:rebuild() end
-        return
-    end
-    local NetworkMgr = require("ui/network/manager")
-    local ok, online = pcall(NetworkMgr.isConnected, NetworkMgr)
     local was_offline = self.offline
-    self.offline = ok and online == false
+    if force then reach.time = 0 end
+    self.offline = not online(entry)
     if self.offline then
         if not was_offline or force then self:rebuild() end
+        return
+    end
+    if not entry then
+        if force or was_offline then self:rebuild() end
         return
     end
     local stale = force or not self.cache.time or self.cache.root ~= entry.url or os.time() - self.cache.time > 60
@@ -799,6 +877,29 @@ function Home:search()
     require("br_search").everything(self)
 end
 
+--- Every RECHECK seconds while the home is on screen: lay it out again if it went offline or
+--- came back (a server stopped or started without the network changing).
+function Home:recheck()
+    if self._closed then return end
+    if UIManager:getTopmostVisibleWidget() == self and online(self:account()) == self.offline then
+        self:refresh()
+    end
+    UIManager:scheduleIn(RECHECK, self._recheck)
+end
+
+--- KOReader's network events (NetworkMgr, and the emulator's Wi-Fi toggle): the home follows
+--- at once, after the event has gone round.
+function Home:onNetworkConnected()
+    reach.time = 0 -- ask the server again
+    UIManager:unschedule(self._refresh)
+    UIManager:nextTick(self._refresh)
+end
+
+function Home:onNetworkDisconnected()
+    UIManager:unschedule(self._refresh)
+    UIManager:nextTick(self._refresh)
+end
+
 function Home:onBrHomeSwipe(arg, ges)
     local Quick = require("br_quick")
     if Quick.fromTop(ges) then
@@ -833,6 +934,7 @@ end
 function Home:onCloseWidget()
     self._closed = true
     if self._refresh then UIManager:unschedule(self._refresh) end
+    if self._recheck then UIManager:unschedule(self._recheck) end
 end
 
 return Home

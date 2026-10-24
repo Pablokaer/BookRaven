@@ -5,12 +5,14 @@ BookRaven for KOReader.
     modern with engraved details), "Cyberdeck" (neon noir) or "Classic e-reader" (inspired by the
     Kindle's stock look). Themes restyle fonts, icons, menus, dialogs, title bars and the file
     browser.
-  * The BookRaven library home (br_home): continue reading, illustrated shelves, new books.
+  * The BookRaven library home (br_home): continue reading, illustrated shelves, new books;
+    offline, a single shelf with every book on the device.
     Settings → BookRaven → Start with the BookRaven library (also offered in "Start with").
   * Search (br_search): one search for every book (device, library, Public Library) from the
     home, and a magnifier in every shelf.
   * Quick settings (br_quick): brightness, warmth, dark mode, text size, bold and font, from a
-    swipe down at the top of the plugin's screens or an assignable gesture.
+    swipe down at the top of the plugin's screens, the sun at the end of the top menu's tabs (in
+    a book too) or an assignable gesture.
   * OPDS book lists as cards with covers from the server, shelves as illustrated tiles.
   * One-step account setup for the BookRaven catalog and progress sync.
 
@@ -122,11 +124,68 @@ local function patchStartWith()
     end
 end
 
+--- The sun, last on the top menu's tab bar (after ☰, in a book and in the file browser): a tap
+--- closes the menu and opens the quick settings. KOReader's own "file browser" tab is made the
+--- same way: a tab with an icon, a callback and remember = false, and no items. We add ours to
+--- the tabs each time KOReader builds them (setUpdateItemTable), so a custom menu order cannot
+--- drop it. If a future KOReader builds its menu differently, the sun is simply not there.
+local QUICK_TAB_ICON = "br.tab.quick"
+
+local function patchMenuTabs(Menu, close_method)
+    if type(Menu) ~= "table" or type(Menu.setUpdateItemTable) ~= "function" or rawget(Menu, "_br_quick_tab") then return end
+    Menu._br_quick_tab = true
+    local orig_update = Menu.setUpdateItemTable
+    Menu.setUpdateItemTable = function(self, ...)
+        local ret = orig_update(self, ...)
+        local ok, err = pcall(function()
+            local tabs = self.tab_item_table
+            if type(tabs) ~= "table" or #tabs == 0 then return end
+            for _, tab in ipairs(tabs) do
+                if type(tab) == "table" and tab._br_quick then return end
+            end
+            table.insert(tabs, {
+                icon = QUICK_TAB_ICON,
+                remember = false, -- never reopened as the last tab used
+                _br_quick = true,
+                callback = function()
+                    local close = self[close_method]
+                    if type(close) == "function" then close(self) end
+                    -- Once the menu is gone, so the panel comes down over the book or the files.
+                    UIManager:nextTick(function() require("br_quick").show(self.ui) end)
+                end,
+            })
+        end)
+        if not ok then logger.warn("BookRaven: no quick settings tab", err) end
+        return ret
+    end
+    -- A swipe down at the far right opens the last tab: keep that one KOReader's ☰.
+    local orig_index = Menu._getTabIndexFromLocation
+    if type(orig_index) == "function" then
+        Menu._getTabIndexFromLocation = function(self, ...)
+            local index = orig_index(self, ...)
+            local tab = type(index) == "number" and type(self.tab_item_table) == "table" and self.tab_item_table[index]
+            if type(tab) == "table" and tab._br_quick and index > 1 then return index - 1 end
+            return index
+        end
+    end
+end
+
+local function installQuickTab()
+    local Style = require("br_style")
+    Style.addIcon(QUICK_TAB_ICON, require("br_widgets").icon(QUICK_TAB_ICON))
+    local ok_r, ReaderMenu = pcall(require, "apps/reader/modules/readermenu")
+    if ok_r then patchMenuTabs(ReaderMenu, "onTapCloseMenu") end
+    local ok_f, FileManagerMenu = pcall(require, "apps/filemanager/filemanagermenu")
+    if ok_f then patchMenuTabs(FileManagerMenu, "onCloseFileManagerMenu") end
+end
+
 local function installHooks()
     if hooks_installed then return end
     hooks_installed = true
     placeMenuItems()
     patchStartWith()
+    local ok_q, err_q = pcall(installQuickTab)
+    if not ok_q then logger.err("BookRaven: no quick settings tab", err_q) end
     local ok_s, err = pcall(function() require("br_search").installTitleBar() end)
     if not ok_s then logger.err("BookRaven: no magnifier in title bars", err) end
     local ok, OPDSBrowser = pcall(require, "opdsbrowser")

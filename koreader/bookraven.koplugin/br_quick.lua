@@ -10,9 +10,11 @@ Quick settings: a panel that comes down from the top of the screen, like the Kin
 
 It opens with a swipe down from the top edge of the plugin's screens (the home, folder shelves,
 All shelves, search results and the catalog's cards view; a swipe down lower on those screens
-does what it did before), with the chevron on the home's top bar, from Settings → BookRaven, or
-with a gesture you assign to "BookRaven quick settings" (Settings → Taps and gestures), also in a
-book. Inside a book KOReader's own swipe down from the top (its menu) is left alone.
+does what it did before), with the chevron on the home's top bar, with the sun at the end of
+KOReader's top menu tabs (in a book and in the file browser; see main.lua), from Settings →
+BookRaven, or with a gesture you assign to "BookRaven quick settings" (Settings → Taps and
+gestures), also in a book. Inside a book KOReader's own swipe down from the top (its menu) is
+left alone.
 
 E-ink friendly: no animation, one refresh per change. It closes with a tap below it, a swipe up,
 the close button or the handle at its bottom.

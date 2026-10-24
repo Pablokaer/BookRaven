@@ -759,8 +759,18 @@ function Search.start(args)
     }
 end
 
---- The magnifier on the home: every book, wherever it is.
+--- The magnifier on the home: every book, wherever it is (offline, the books on the device).
 function Search.everything(home)
+    if home.offline then
+        Search.start{
+            ui = home.ui,
+            home = home,
+            title = Device:isKindle() and _("Search this Kindle") or _("Search this device"),
+            description = _("Offline: the books on this device."),
+            scope = { device = true },
+        }
+        return
+    end
     Search.start{
         ui = home.ui,
         home = home,

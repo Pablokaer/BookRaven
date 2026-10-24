@@ -53,6 +53,14 @@ local function patchIcons()
     end
 end
 
+--- Makes one of the plugin's own icons findable by name (IconWidget{ icon = name }), whatever the
+--- theme, for widgets that only take a name (the top menu's tabs). A theme's own drawing of it,
+--- loaded by Style.apply, wins.
+function Style.addIcon(name, file)
+    if not Style.icons[name] then Style.icons[name] = file end
+    patchIcons()
+end
+
 local function patchMarks(theme)
     local marks = theme.marks
     if not marks then return end
@@ -276,7 +284,11 @@ end
 function Style.apply(plugin_dir, theme)
     Style.theme = theme
     Style.dir = plugin_dir
-    Style.icons = loadIcons(plugin_dir .. "/" .. theme.icons)
+    local icons = loadIcons(plugin_dir .. "/" .. theme.icons)
+    for name, file in pairs(Style.icons) do -- added with addIcon before the theme
+        if not icons[name] then icons[name] = file end
+    end
+    Style.icons = icons
     patchIcons()
     patchMarks(theme)
     patchTouchMenu(theme)

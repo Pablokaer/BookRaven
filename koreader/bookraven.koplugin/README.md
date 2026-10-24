@@ -8,7 +8,9 @@ A KOReader plugin that brings BookRaven to e-ink readers (Kindle, Kobo, PocketBo
   - *Folder shelves*: tap **+ Add shelf** (on the Shelves heading, or the + tile) and long-press a folder on the device to choose it. The folder becomes a shelf with its name. Tapping it opens a gallery of its books as cards with their covers, like *My library*. Sub-folders appear as folder cards you can open; tap a book to read it. Long-press a folder shelf to remove it; the folder and its books stay on the device. When the home runs out of room, the last tile opens *All shelves*.
   - *New in your library*: covers from the catalog's recently added shelf, when the screen has room.
 
-  The top bar has search (below), the quick settings (the chevron, below), the file browser and KOReader's menu. Shelves and new books are saved on the device, so the home works offline and refreshes when KOReader is online. Turn it on with Settings → BookRaven → *Start with the BookRaven library*, or open it from *BookRaven library* in the file browser's ☰ menu. With that setting on, the home also comes back when you close a book.
+  The top bar has search (below), the quick settings (the chevron, below), the file browser and KOReader's menu. Shelves and new books are saved on the device, so the home shows at once and refreshes when KOReader is online.
+
+  **Offline**, the Shelves section has a single shelf, *On this Kindle* (*On this device* on other e-readers): every book on the device (the places search looks, below), as a gallery of cards with covers, sorted by title. Tap a book to read it; its magnifier searches the device's books, and the back arrow returns to the full shelf. The catalog's shelves, your folder shelves, *+ Add shelf* and *New in your library* are hidden until the BookRaven server can be reached again; then they come back by themselves, with one screen refresh, without restarting. *Continue reading* stays, and the home's magnifier searches only the device meanwhile. "Offline" means no network, or a network without the server: the plugin asks the server's `/api/health` (2-second timeout, the answer kept for a minute), so a server on your home network works without Internet. The home follows KOReader's *NetworkConnected* and *NetworkDisconnected* events (Wi-Fi turned on or off), and checks again every 90 seconds while it is on screen (a server stopped or started). Turn it on with Settings → BookRaven → *Start with the BookRaven library*, or open it from *BookRaven library* in the file browser's ☰ menu. With that setting on, the home also comes back when you close a book.
 - **Search everything** (the magnifier on the home's top bar). One search, by title, author or file name (capitals and accents don't matter), over:
   - the books on this device: KOReader's home folder, your folder shelves, the download folder, the last folder you were in and the books you have opened. Titles and authors come from KOReader's book information cache (the cover browser's) when it has them, else from the file name (`Author - Title.epub`). The list is made the first time you search and kept for ten minutes; the walk skips hidden folders, `.sdr` folders and KOReader's own folder, and stops after 6000 books, 2500 folders or 4 seconds, so it stays quick on a Kindle;
   - your BookRaven library, through the catalog's own search;
@@ -29,7 +31,7 @@ A KOReader plugin that brings BookRaven to e-ink readers (Kindle, Kobo, PocketBo
 
   Text size, bold and font change the plugin's screens (home, shelves, cards, search) at once, and are saved (also in Settings → BookRaven → *Text*). With a theme on, KOReader's menus and dialogs take them at the next start: the panel then shows a *Restart* button. Brightness, warmth and dark mode are KOReader's own settings.
 
-  Open it with a swipe down from the top edge of the plugin's screens (the home, folder shelves, *All shelves*, search results and the catalog's cards view; a swipe down lower on a shelf still closes it), the chevron on the home's top bar, Settings → BookRaven → *Quick settings…*, or any gesture you assign to *BookRaven quick settings* (Settings → Taps and gestures → Gesture manager), which also works in a book. Inside a book, KOReader's own swipe down from the top (its menu) is left alone. It is made for e-ink: no animation and one refresh per change. Close it with a tap below it, a swipe up, its close button or the handle at its bottom.
+  Open it with a swipe down from the top edge of the plugin's screens (the home, folder shelves, *All shelves*, search results and the catalog's cards view; a swipe down lower on a shelf still closes it), the chevron on the home's top bar, the **sun at the end of KOReader's top menu tabs** (after ☰, in a book and in the file browser: the menu closes and the panel comes down over the page; a swipe down at the far right still opens ☰), Settings → BookRaven → *Quick settings…*, or any gesture you assign to *BookRaven quick settings* (Settings → Taps and gestures → Gesture manager), which also works in a book. Inside a book, KOReader's own swipe down from the top (its menu) is left alone. It is made for e-ink: no animation and one refresh per change. Close it with a tap below it, a swipe up, its close button or the handle at its bottom.
 - **Theme** (Settings → BookRaven → Theme). Changing it restarts KOReader.
   - *KOReader (original)* leaves KOReader's look untouched. The home, shelf tiles and cards still work, in KOReader's fonts.
   - *BookRaven* is the look of bookraven.cloud, modern with engraved details:
@@ -73,25 +75,25 @@ To remove it, disable it in Tools → More tools → Plugin management or delete
 
 ## Compatibility
 
-Written and tested against KOReader v2026.07.2, the current stable release, at the Kindle Paperwhite's resolution in portrait and landscape; search, quick settings and the Classic e-reader theme were tested on KOReader v2026.07.1's emulator. It only adds to KOReader's widgets at run time (no KOReader files are changed). If the cards view ever fails on a future KOReader, it switches itself back to the original list.
+Written and tested against KOReader v2026.07.2, the current stable release, at the Kindle Paperwhite's resolution in portrait and landscape; search, quick settings, the Classic e-reader theme, the sun tab and the offline home were tested on KOReader v2026.07.1's emulator (offline: the emulator's *Wi-Fi connection* toggle, starting with it off, and stopping and starting the server). It only adds to KOReader's widgets at run time (no KOReader files are changed). If the cards view ever fails on a future KOReader, it switches itself back to the original list; if KOReader's top menu is ever built differently, the sun tab is simply left out.
 
 ## Files
 
 | File | What it does |
 |---|---|
-| `main.lua` | Plugin entry: menus, start screen, gesture actions, applies the theme while plugins load |
-| `br_home.lua` | The library home |
+| `main.lua` | Plugin entry: menus, the sun tab in the top menu, start screen, gesture actions, applies the theme while plugins load |
+| `br_home.lua` | The library home, and whether it is online (network and server) |
 | `br_search.lua` | Search: everything (device, library, Public Library), each shelf, the results grid, the magnifier in title bars |
 | `br_quick.lua` | The quick settings panel: dark mode, brightness, warmth, text size, bold, font |
 | `br_theme.lua` | The themes: fonts, the text settings (size, bold, font family) and title bars (ornament, HUD or classic) |
 | `br_style.lua` | The rest of a theme: icons, check boxes, menu tabs, separators, dialogs, file browser rows |
 | `br_widgets.lua` | Drawing pieces shared by the home and the catalog: tiles, labels, progress bars, cover shadows |
 | `br_cards.lua` | Cards and shelf tiles for the OPDS browser |
-| `br_gallery.lua` | Folder shelves: the gallery of a folder's books, and the All shelves page |
+| `br_gallery.lua` | Folder shelves: the gallery of a folder's books, *On this Kindle* (every book on the device) and the All shelves page |
 | `br_covers.lua` | Cover download, shrinking and cache (catalog and local books) |
 | `br_account.lua` | Account setup for the OPDS catalog and progress sync |
 | `br_settings.lua` | Plugin settings (`bookraven` in KOReader's settings) |
 | `fonts/` | Cormorant Garamond, Inter, Chakra Petch and Share Tech Mono, Latin subsets renamed BookRavenSerif / BookRavenSans / BookRavenCyber / BookRavenMono (SIL Open Font License, see the OFL files) |
 | `icons/bookraven/`, `icons/cyberdeck/`, `icons/classic/` | Each theme's icon set, ornaments and home button |
-| `icons/common/` | The plugin's own icons for every theme: quick settings, suns, moon, bold, warmth |
+| `icons/common/` | The plugin's own icons for every theme: quick settings, suns, moon, bold, warmth, and the sun tab in KOReader's original look (each theme's folder has its own `br.tab.quick.svg`) |
 | `art/bookraven/`, `art/cyberdeck/` | The home's header and the shelf vignettes: details of Gustave Doré's 1884 engravings for Poe's *The Raven* (public domain; scans from the Library of Congress) |
