@@ -817,9 +817,45 @@ function Cards.install(OPDSBrowser)
 
     local orig_onCloseWidget = OPDSBrowser.onCloseWidget
     OPDSBrowser.onCloseWidget = function(self, ...)
-        self._br_closed = true
+        if not self._br_closed then
+            self._br_closed = true
+            require("br_nav").flashOnClose(self) -- the screen under it, refreshed whole
+        end
         if orig_onCloseWidget then
             return orig_onCloseWidget(self, ...)
+        end
+    end
+
+    -- The raven at the top left, outside a book: back to the library home (the catalog's own
+    -- menu button moves right of it).
+    OPDSBrowser._br_title_home = function(self)
+        local ok, FileManager = pcall(require, "apps/filemanager/filemanager")
+        if not ok or not FileManager.instance then return nil end
+        local manager = self._manager
+        if manager and manager.ui and manager.ui.document then return nil end
+        return function() require("br_nav").goHome() end
+    end
+
+    -- Opened from the library home on one of its shelves (br_home sets _br_entry_depth): the
+    -- back arrow on that shelf goes back to the home, not up to the catalog's start.
+    local orig_onReturn = OPDSBrowser.onReturn
+    if orig_onReturn then
+        OPDSBrowser.onReturn = function(self, ...)
+            local depth = self._br_entry_depth
+            if depth and #(self.paths or {}) <= depth then
+                self._br_entry_depth = nil
+                self:onCloseAllMenus()
+                return true
+            end
+            return orig_onReturn(self, ...)
+        end
+    end
+    -- A long-press on the back arrow goes to the list of catalogs: from there, back is KOReader's.
+    local orig_onHoldReturn = OPDSBrowser.onHoldReturn
+    if orig_onHoldReturn then
+        OPDSBrowser.onHoldReturn = function(self, ...)
+            self._br_entry_depth = nil
+            return orig_onHoldReturn(self, ...)
         end
     end
 

@@ -14,7 +14,8 @@ Shelves you add from folders on the device.
 Both have a magnifier in the title bar (br_search): the gallery searches its folder and all the
 folders in it, and shows the books found in the same grid (the back arrow, or "Clear search",
 returns to the shelf); All shelves searches every shelf (your folders and the catalog) at once.
-A swipe down from the top edge opens the quick settings (br_quick).
+The raven at the top left goes back to the library home (br_nav), and a swipe down from the top
+edge opens the quick settings (br_quick). They come and go with a full-screen refresh.
 
 Folder shelves are kept in the plugin settings under "local_shelves" ({ path, title }).
 ]]
@@ -191,8 +192,8 @@ function Gallery:onMenuSelect(entry)
         self:switchItemTable(entry.title, self:list(entry.dir))
     elseif entry.local_file then
         self._br_closed = true
-        UIManager:close(self)
-        if self.home then
+        require("br_nav").closeQuietly(self) -- the book's opening refreshes the whole screen
+        if self.home and not self.home._closed then
             self.home:openBook(entry.local_file)
         elseif self.ui then
             self.ui:openFile(entry.local_file)
@@ -255,6 +256,11 @@ function Gallery:search(query)
     self:switchItemTable(T(_("Search: %1"), query), found)
 end
 
+--- The raven, top left: back to the library home.
+function Gallery:_br_title_home()
+    return function() require("br_nav").goHome() end
+end
+
 function Gallery:onSwipe(arg, ges_ev)
     local Quick = require("br_quick")
     if Quick.fromTop(ges_ev) then
@@ -270,6 +276,7 @@ end
 
 function Gallery:onCloseWidget()
     self._br_closed = true
+    require("br_nav").flashOnClose(self)
     return Menu.onCloseWidget(self)
 end
 
@@ -415,6 +422,10 @@ function ShelfMenu:_br_title_search()
     end
 end
 
+function ShelfMenu:_br_title_home()
+    return function() require("br_nav").goHome() end
+end
+
 function ShelfMenu:onSwipe(arg, ges_ev)
     local Quick = require("br_quick")
     if Quick.fromTop(ges_ev) then
@@ -426,6 +437,11 @@ end
 
 function ShelfMenu:onBookRavenTextChanged()
     self:updateItems()
+end
+
+function ShelfMenu:onCloseWidget()
+    require("br_nav").flashOnClose(self)
+    return Menu.onCloseWidget(self)
 end
 
 return Shelves

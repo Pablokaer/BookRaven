@@ -1,6 +1,9 @@
 --[[--
 Quick settings: a panel that comes down from the top of the screen, like the Kindle's.
 
+  * Wi-Fi, first and full width like the Kindle's own toggle: its state and network name, and a
+    switch; a tap turns it on (and connects) or off at once, a long-press while it is off turns
+    it on and shows KOReader's list of networks (br_wifi). Only where KOReader controls Wi-Fi;
   * Dark mode (KOReader's night mode), Bold text, and the frontlight on or off;
   * Brightness: a slider between a small and a large sun (tap either sun for one step), and
     Warmth on devices with a natural light;
@@ -49,6 +52,7 @@ local Screen = Device.screen
 local Settings = require("br_settings")
 local Theme = require("br_theme")
 local W = require("br_widgets")
+local Wifi = require("br_wifi")
 local s = W.s
 
 local Quick = { open = nil }
@@ -179,6 +183,92 @@ function Panel:chip(text, on, callback, width, icon)
     return W.Tap:new{ callback = callback, W.Invert:new{ on = on and true or false, frame } }
 end
 
+--- An on/off switch: a track with a knob, filled when on (square corners in the classic and
+--- HUD looks, like their other controls).
+local function switch(on, w, h, round)
+    return W.Painter:new{
+        width = w, height = h,
+        paint = function(bb, x, y)
+            local r = round and math.floor(h / 2) or 0
+            local b = math.max(2, s(1.6))
+            if on then
+                bb:paintRoundedRect(x, y, w, h, W.INK, r)
+            else
+                bb:paintRoundedRect(x, y, w, h, W.INK, r)
+                bb:paintRoundedRect(x + b, y + b, w - 2 * b, h - 2 * b, W.PAPER, math.max(0, r - b))
+            end
+            local k = h - 4 * b -- the knob
+            local kx = on and (x + w - 2 * b - k) or (x + 2 * b)
+            local ky = y + 2 * b
+            if round then
+                bb:paintCircle(kx + math.floor(k / 2), ky + math.floor(k / 2), math.floor(k / 2), on and W.PAPER or W.INK)
+            else
+                bb:paintRect(kx, ky, k, k, on and W.PAPER or W.INK)
+            end
+        end,
+    }
+end
+
+--- Wi-Fi, full width: icon, "Wi-Fi" and its state (network name), and a switch on the right.
+function Panel:wifiRow(width)
+    local f = W.fonts()
+    local style = W.style()
+    local st = Wifi.state()
+    self._wifi = st
+    local pad = s(10)
+    local icon_size = s(34)
+    local sw_w, sw_h = s(58), s(30)
+    local text_w = width - 2 * Size.border.thin - 2 * pad - icon_size - s(12) - sw_w - s(12)
+    local texts = VerticalGroup:new{
+        align = "left",
+        TextWidget:new{ text = _("Wi-Fi"), face = f.get("display", 18), max_width = text_w },
+        VerticalSpan:new{ width = s(2) },
+        TextWidget:new{ text = Wifi.describe(st), face = f.get("strong", 14), fgcolor = W.SOFT, max_width = text_w },
+    }
+    local row = HorizontalGroup:new{
+        align = "center",
+        IconWidget:new{ file = W.icon(st.on and "br.wifi" or "br.wifi.off"), width = icon_size, height = icon_size, alpha = true },
+        HorizontalSpan:new{ width = s(12) },
+        texts,
+    }
+    local inner_w = width - 2 * Size.border.thin - 2 * pad
+    local inner_h = math.max(row:getSize().h, sw_h)
+    local content = OverlapGroup:new{
+        dimen = Geom:new{ w = inner_w, h = inner_h },
+        LeftContainer:new{ dimen = Geom:new{ w = inner_w, h = inner_h }, row },
+        RightContainer:new{ dimen = Geom:new{ w = inner_w, h = inner_h }, switch(st.on, sw_w, sw_h, style ~= "classic" and style ~= "hud") },
+    }
+    local frame = FrameContainer:new{
+        padding = pad, margin = 0,
+        bordersize = Size.border.thin,
+        color = W.INK,
+        radius = style ~= "classic" and s(6) or nil,
+        background = W.PAPER,
+        content,
+    }
+    return W.Tap:new{
+        callback = function() self:toggleWifi(false) end,
+        hold_callback = function() self:toggleWifi(true) end,
+        frame,
+    }
+end
+
+function Panel:toggleWifi(long_press)
+    if long_press and self._wifi and self._wifi.on then return end -- the list is for turning it on
+    Wifi.toggle(long_press)
+    UIManager:nextTick(function() self:refresh() end)
+end
+
+--- KOReader's network events: the Wi-Fi row follows.
+function Panel:onNetworkConnected()
+    Wifi.asked_on = nil
+    UIManager:nextTick(function() self:refresh() end)
+end
+
+function Panel:onNetworkDisconnected()
+    UIManager:nextTick(function() self:refresh() end)
+end
+
 --- A row label on the left and an optional value on the right.
 function Panel:heading(text, value, width)
     local f = W.fonts()
@@ -240,6 +330,12 @@ function Panel:build()
         RightContainer:new{ dimen = bar:copy(), close },
     })
     space(s(10))
+
+    -- Wi-Fi, first: the Kindle's quick actions start with it too.
+    if Wifi.available() then
+        add(self:wifiRow(inner))
+        space(gap)
+    end
 
     -- Toggles.
     local p = powerd()
