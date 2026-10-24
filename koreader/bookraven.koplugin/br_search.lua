@@ -9,7 +9,8 @@ Search for the BookRaven plugin.
     it for KOReader's download dialog: formats, folder, book information).
   * A magnifier in the title bar of every shelf: it searches that shelf. A folder shelf with all
     its sub-folders (br_gallery), a catalog shelf with all its pages (searchFeed), All shelves
-    with every shelf, and the search results themselves (a new search).
+    with every shelf, and the search results themselves (a new search). The title bars get it
+    from br_nav, for the screens that have a _br_title_search method.
 
 The device's books are listed once, then kept for ten minutes: the walk skips hidden folders,
 ".sdr" folders and KOReader's own folder, and stops at MAX_FILES books, MAX_DIRS folders or
@@ -561,10 +562,12 @@ end
 
 --- Opens a book on the device from a results screen (closing it, and the home under it).
 function Search.openLocal(menu, path)
+    local Nav = require("br_nav")
     if menu then
+        -- No flash of their own: the book's opening refreshes the whole screen.
         menu._br_closed = true
-        UIManager:close(menu)
-        for _, w in ipairs(menu.close_also or {}) do UIManager:close(w) end
+        Nav.closeQuietly(menu)
+        for _, w in ipairs(menu.close_also or {}) do Nav.closeQuietly(w) end
     end
     if menu and menu.home and not menu.home._closed then
         menu.home:openBook(path)
@@ -711,6 +714,11 @@ function Results:_br_title_search()
     end
 end
 
+--- The raven, top left: back to the library home.
+function Results:_br_title_home()
+    return function() require("br_nav").goHome() end
+end
+
 function Results:onSwipe(arg, ges_ev)
     local Quick = require("br_quick")
     if Quick.fromTop(ges_ev) then
@@ -726,6 +734,7 @@ end
 
 function Results:onCloseWidget()
     self._br_closed = true
+    require("br_nav").flashOnClose(self)
     return Menu.onCloseWidget(self)
 end
 
@@ -745,7 +754,7 @@ function Search.start(args)
                 Search.nothingFound(query)
                 return
             end
-            UIManager:show(Results:new{
+            require("br_nav").show(Results:new{
                 item_table = results,
                 query = query,
                 summary = summary,
@@ -901,53 +910,6 @@ function Search.searchFeed(browser)
             browser._br_search = { query = query, items = browser.item_table, base = base, depth = #browser.paths }
         end,
     }
-end
-
--- ------------------------------------------------------------------ the magnifier in title bars
-
---- Adds a magnifier next to the close button of the title bars of the screens that ask for
---- one: a widget with _br_title_search(self) returning the callback (or nil for none).
-function Search.installTitleBar()
-    local TitleBar = require("ui/widget/titlebar")
-    if TitleBar._br_search then return end
-    TitleBar._br_search = true
-    local IconButton = require("ui/widget/iconbutton")
-    local Screen = Device.screen
-    local orig_init = TitleBar.init
-    TitleBar.init = function(self, ...)
-        local parent = self.show_parent
-        local wants = parent and parent._br_title_search
-        local ok, callback = false, nil
-        if type(wants) == "function" then ok, callback = pcall(wants, parent) end
-        if not ok or not callback then
-            if self._br_pad then self.title_h_padding = self._br_pad end
-            return orig_init(self, ...)
-        end
-        local defaults = rawget(_G, "G_defaults")
-        local base = defaults and defaults:readSetting("DGENERIC_ICON_SIZE") or 40
-        local size = Screen:scaleBySize(base * (self.right_icon_size_ratio or 0.6))
-        local pad = self.button_padding or Screen:scaleBySize(11)
-        self._br_pad = self._br_pad or self.title_h_padding
-        self.title_h_padding = self._br_pad + size + pad -- keep the title clear of the magnifier
-        local ret = orig_init(self, ...)
-        for _, w in ipairs(self) do
-            if w._br_search_icon then return ret end -- already added by a nested init
-        end
-        local right = (self.close_callback or self.right_icon) and (size + 2 * pad) or 0
-        local button = IconButton:new{
-            icon = "appbar.search",
-            width = size,
-            height = size,
-            padding = pad,
-            padding_bottom = size,
-            overlap_offset = { self.width - right - size - 2 * pad, 0 },
-            callback = callback,
-            show_parent = parent,
-        }
-        button._br_search_icon = true
-        table.insert(self, 1, button) -- before the other buttons, whose tap zones reach this far
-        return ret
-    end
 end
 
 return Search

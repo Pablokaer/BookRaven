@@ -1,8 +1,11 @@
 --[[--
 The BookRaven library home: the start screen, like the Kindle's own home.
 
-  * a top bar with the raven mark, search (every book, wherever it is: br_search), the quick
-    settings (br_quick; also a swipe down from the top edge), the file browser and KOReader's menu;
+  * a top bar with the raven (tap: ask the server again and lay the home out anew; it is at the
+    top left of every plugin screen and brings you back here, see br_nav), Wi-Fi on/off (its
+    icon shows the state; br_wifi), search (every book, wherever it is: br_search), the quick
+    settings (br_quick; also a swipe down from the top edge), the file browser and KOReader's
+    menu. Its icons are KOReader's title bar size, the file browser's;
   * a header with an engraving (Doré's "The Raven"), the greeting and the date;
   * "Continue reading": the last book you opened, with its cover and progress (tap to open);
   * "Shelves": the BookRaven catalog's top-level shelves as illustrated tiles, then the folder
@@ -10,7 +13,8 @@ The BookRaven library home: the start screen, like the Kindle's own home.
   * "New in your library": covers from the catalog's recently added shelf, when there is room.
 
 Shelves and new books are kept in the plugin settings, so the home shows straight away; it
-refreshes from the server when KOReader is online.
+refreshes from the server when KOReader is online. It comes and goes with a full-screen refresh
+(br_nav), so nothing of the previous screen stays on e-ink.
 
 Offline (no network, or the BookRaven server does not answer), the Shelves section has a single
 shelf, "On this Kindle" ("On this device" elsewhere): every book on the device, as a gallery of
@@ -31,6 +35,7 @@ local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local IconButton = require("ui/widget/iconbutton")
+local IconWidget = require("ui/widget/iconwidget")
 local ImageWidget = require("ui/widget/imagewidget")
 local InfoMessage = require("ui/widget/infomessage")
 local InputContainer = require("ui/widget/container/inputcontainer")
@@ -52,9 +57,11 @@ local T = require("ffi/util").template
 local Screen = Device.screen
 
 local Covers = require("br_covers")
+local Nav = require("br_nav")
 local Settings = require("br_settings")
 local Theme = require("br_theme")
 local W = require("br_widgets")
+local Wifi = require("br_wifi")
 local s = W.s
 
 local WHITE = Blitbuffer.COLOR_WHITE
@@ -221,56 +228,80 @@ local function greeting()
     return _("Good evening")
 end
 
-function Home:markFile()
-    local theme = Theme.current()
-    local dir = self.plugin_dir .. "/" .. (theme and theme.icons or "icons/bookraven")
-    for _, name in ipairs({ "home.svg", "home.png" }) do
-        if lfs.attributes(dir .. "/" .. name, "mode") == "file" then return dir .. "/" .. name end
+--- The top bar's buttons, after the title: { icon (a name, or our own file), callback, hold =,
+--- no_flash = }.
+function Home:barActions()
+    local actions = {}
+    if Wifi.available() then
+        self._wifi_on = Wifi.state().on
+        table.insert(actions, {
+            W.icon(self._wifi_on and "br.wifi" or "br.wifi.off"),
+            function() Wifi.toggle() end,
+            hold = function() Wifi.toggle(true) end,
+        })
     end
+    table.insert(actions, { "appbar.search", function() self:search() end })
+    table.insert(actions, { W.icon("br.quick"), function() require("br_quick").show(self) end })
+    -- (no highlight flash: it closes the home, and that flash would refresh only its own corner)
+    table.insert(actions, { "appbar.filebrowser", function() self:onClose() end, no_flash = true })
+    table.insert(actions, { "appbar.menu", function() self:showMenu() end })
+    return actions
 end
 
 function Home:topBar(sw, m, style, f)
-    local bar_h = s(46)
     local classic = style == "classic"
+    local actions = self:barActions()
+    -- KOReader's title bar icons (the file browser's size), smaller only if they would not fit.
+    local pad_h, pad_v = s(6), s(8)
+    local icon = Nav.iconSize(1)
+    local room = math.floor(sw * 0.62 / (#actions + 1)) - 2 * pad_h -- the raven counts too
+    icon = math.max(s(24), math.min(icon, room))
+
     local left = HorizontalGroup:new{ align = "center" }
-    table.insert(left, HorizontalSpan:new{ width = m })
-    local mark = not classic and self:markFile()
-    if mark then
-        local size = math.floor(bar_h * 0.8)
+    table.insert(left, HorizontalSpan:new{ width = math.max(0, m - pad_h) })
+    local raven = Nav.ravenFile()
+    if raven then
+        -- The raven: here, a fresh look at the server and a new layout (elsewhere: back to this home).
         table.insert(left, W.Tap:new{
-            callback = function() self:showMenu() end,
-            ImageWidget:new{ file = mark, width = size, height = size, alpha = true },
+            callback = function() self:goHome() end,
+            hold_callback = function() self:showMenu() end,
+            FrameContainer:new{
+                padding = pad_h, padding_top = pad_v, padding_bottom = pad_v, margin = 0, bordersize = 0,
+                IconWidget:new{ file = raven, width = icon, height = icon, alpha = true },
+            },
         })
-        table.insert(left, HorizontalSpan:new{ width = s(8) })
+        table.insert(left, HorizontalSpan:new{ width = s(4) })
     end
     local name = (style == "hud" and "BOOKRAVEN") or (classic and _("Home")) or "BookRaven"
     table.insert(left, TextWidget:new{
         text = name,
         face = f.get("display", (style == "hud" and 21) or (classic and 22) or 25),
     })
-    if style == "hud" then
+    if style == "hud" and #actions < 5 then
         table.insert(left, TextWidget:new{ text = "  // DECK", face = f.get("mono", 13), bold = true, fgcolor = W.MUTED })
     end
 
-    local icon = s(24)
     local right = HorizontalGroup:new{ align = "center" }
-    local actions = {
-        { "appbar.search", function() self:search() end },
-        { "br.quick", function() require("br_quick").show(self) end, true },
-        { "appbar.filebrowser", function() self:onClose() end },
-        { "appbar.menu", function() self:showMenu() end },
-    }
     for _, a in ipairs(actions) do
-        if a[3] then -- one of our own icons (KOReader has no quick settings icon)
-            table.insert(right, W.iconTap(a[1], icon, s(8), a[2]))
-        else
+        if a[1]:find("/", 1, true) then -- one of our own icons (a file)
+            table.insert(right, W.Tap:new{
+                callback = a[2],
+                hold_callback = a.hold,
+                FrameContainer:new{
+                    padding = pad_h, padding_top = pad_v, padding_bottom = pad_v, margin = 0, bordersize = 0,
+                    IconWidget:new{ file = a[1], width = icon, height = icon, alpha = true },
+                },
+            })
+        else -- KOReader's icon (the theme's drawing of it), with KOReader's tap highlight
             table.insert(right, IconButton:new{
-                icon = a[1], width = icon, height = icon, padding = s(8),
-                callback = a[2], show_parent = self,
+                icon = a[1], width = icon, height = icon,
+                padding = pad_h, padding_top = pad_v, padding_bottom = pad_v,
+                callback = a[2], allow_flash = not a.no_flash, show_parent = self,
             })
         end
     end
-    table.insert(right, HorizontalSpan:new{ width = math.max(0, m - s(8)) })
+    table.insert(right, HorizontalSpan:new{ width = math.max(0, m - pad_h) })
+    local bar_h = math.max(left:getSize().h, right:getSize().h)
 
     local dimen = Geom:new{ w = sw, h = bar_h }
     local bar = OverlapGroup:new{
@@ -524,11 +555,11 @@ function Home:shelfAction(entry, from_menu)
     elseif entry.kind == "folder" then
         self:openFolder(entry.local_path, entry.title)
     elseif entry.kind == "device" then
-        UIManager:show(require("br_gallery").DeviceGallery:new{ home = self, ui = self.ui })
+        Nav.show(require("br_gallery").DeviceGallery:new{ home = self, ui = self.ui })
     elseif entry.kind == "catalog" then
         self:openShelf(entry.url, entry.title)
     elseif entry.kind == "all" then
-        UIManager:show(require("br_gallery").ShelfMenu:new{ home = self })
+        Nav.show(require("br_gallery").ShelfMenu:new{ home = self })
     elseif entry.kind == "connect" then
         require("br_account").showDialog(self.ui, function() self:refresh(true) end)
     elseif entry.kind == "offline" then
@@ -582,7 +613,7 @@ function Home:openFolder(path, title)
         })
         return
     end
-    UIManager:show(require("br_gallery").Gallery:new{ root = path, title = title, home = self, ui = self.ui })
+    Nav.show(require("br_gallery").Gallery:new{ root = path, title = title, home = self, ui = self.ui })
 end
 
 --- The tiles that fit in `height`: two per row; if there are too many, the last one opens
@@ -719,7 +750,9 @@ function Home:build()
     end
     self.pending_covers = {}
     local recent = self.cache.recent or {}
-    if #recent > 0 and self.cache.recent_url and not self.offline then
+    -- Only the account's own books: none without an account (or saved for another server).
+    local entry = not self.offline and #recent > 0 and self:account()
+    if entry and self.cache.recent_url and self.cache.root == entry.url then
         local label = W.label(_("New in your library"), inner, style)
         local remain = sh - used - label:getSize().h - s(20)
         if remain >= s(100) then -- only when the covers can be big enough to read
@@ -736,11 +769,13 @@ function Home:build()
     }
 end
 
-function Home:rebuild()
+--- Lays the home out again. flash: a full-screen flashing refresh (the layout changed a lot:
+--- offline or back online, or coming back to the home), else a plain one.
+function Home:rebuild(flash)
     if self._closed then return end
     self:loadReading()
     self:build()
-    UIManager:setDirty(self, function() return "ui", self.dimen end)
+    UIManager:setDirty(self, function() return flash and "flashui" or "ui", self.dimen end)
 end
 
 -- ------------------------------------------------------------------ data from the server
@@ -819,28 +854,35 @@ function Home:refresh(force)
     local was_offline = self.offline
     if force then reach.time = 0 end
     self.offline = not online(entry)
+    local switched = was_offline ~= self.offline -- offline, or back online: another layout
     if self.offline then
-        if not was_offline or force then self:rebuild() end
+        if switched or force or self:wifiChanged() then self:rebuild(switched) end
         return
     end
     if not entry then
-        if force or was_offline then self:rebuild() end
+        if force or switched or self:wifiChanged() then self:rebuild(switched) end
         return
     end
     local stale = force or not self.cache.time or self.cache.root ~= entry.url or os.time() - self.cache.time > 60
     if stale and self:fetch() then
-        self:rebuild()
-    elseif was_offline then
-        self:rebuild()
+        self:rebuild(switched)
+    elseif switched or self:wifiChanged() then
+        self:rebuild(switched)
     end
     self:fetchCovers()
 end
 
+--- Whether the Wi-Fi icon on the top bar no longer shows the state.
+function Home:wifiChanged()
+    return self._wifi_on ~= nil and Wifi.available() and Wifi.state().on ~= self._wifi_on
+end
+
 -- ------------------------------------------------------------------ actions
 
+--- Opens a book. The home stays until the file browser goes away with it (the reader then
+--- refreshes the whole screen once); if KOReader cannot open the file, you are still here.
 function Home:openBook(file)
-    UIManager:close(self)
-    self._closed = true
+    if not self.ui then return end
     self.ui:openFile(file)
 end
 
@@ -864,6 +906,10 @@ function Home:openCatalog(url, title, then_fn)
             browser.catalog_title = title
             browser:updateCatalog(url)
         end
+        -- Back from the shelf it opened on: here again (br_cards), not the catalog's start.
+        browser._br_entry_depth = #(browser.paths or {})
+        -- A new screen over the home: refresh all of it, with a flash.
+        UIManager:setDirty(browser, "flashui")
         if then_fn then then_fn(browser) end
     end)
 end
@@ -891,6 +937,7 @@ end
 --- at once, after the event has gone round.
 function Home:onNetworkConnected()
     reach.time = 0 -- ask the server again
+    Wifi.asked_on = nil
     UIManager:unschedule(self._refresh)
     UIManager:nextTick(self._refresh)
 end
@@ -925,16 +972,29 @@ function Home:onSetDimensions()
     self:build()
 end
 
+--- The raven on the home: ask the server again, and lay everything out anew.
+function Home:goHome()
+    self:rebuild(true)
+    UIManager:nextTick(function() self:refresh(true) end)
+end
+
 function Home:onClose()
     self._closed = true
     UIManager:close(self)
     return true
 end
 
+--- Shown: refresh the whole screen with a flash (from the file browser, a menu or at start-up,
+--- what was there before must not stay on e-ink).
+function Home:onShow()
+    UIManager:setDirty(self, "flashui")
+end
+
 function Home:onCloseWidget()
     self._closed = true
     if self._refresh then UIManager:unschedule(self._refresh) end
     if self._recheck then UIManager:unschedule(self._recheck) end
+    Nav.flashOnClose(self) -- the file browser, refreshed whole
 end
 
 return Home

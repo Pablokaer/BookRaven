@@ -8,42 +8,90 @@ BookRaven for KOReader.
   * The BookRaven library home (br_home): continue reading, illustrated shelves, new books;
     offline, a single shelf with every book on the device.
     Settings → BookRaven → Start with the BookRaven library (also offered in "Start with").
+  * The raven at the top left of every plugin screen and of the catalog goes back to the home;
+    screens come and go with a full-screen refresh (br_nav).
   * Search (br_search): one search for every book (device, library, Public Library) from the
     home, and a magnifier in every shelf.
-  * Quick settings (br_quick): brightness, warmth, dark mode, text size, bold and font, from a
-    swipe down at the top of the plugin's screens, the sun at the end of the top menu's tabs (in
-    a book too) or an assignable gesture.
+  * Quick settings (br_quick): Wi-Fi (br_wifi), brightness, warmth, dark mode, text size, bold and
+    font, from a swipe down at the top of the plugin's screens, the sun at the end of the top
+    menu's tabs (in a book too) or an assignable gesture.
   * OPDS book lists as cards with covers from the server, shelves as illustrated tiles.
   * One-step account setup for the BookRaven catalog and progress sync.
+
+Start-up never fails as a whole: KOReader silently leaves out a plugin whose main.lua raises an
+error while it loads, so every step here (the theme, each module, each hook into KOReader) is
+guarded, and one that fails is logged ("BookRaven: …" in crash.log) and left out on its own. If
+the plugin's core modules cannot load at all, Settings → BookRaven says so instead of vanishing.
 
 @module koplugin.BookRaven
 ]]
 
-local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local _ = require("gettext")
-local T = require("ffi/util").template
 
 local PLUGIN_DIR = (debug.getinfo(1, "S").source or ""):match("^@(.*)/[^/]*$") or "plugins/bookraven.koplugin"
 
-local Settings = require("br_settings")
-local Theme = require("br_theme")
-local Covers = require("br_covers")
+--- Runs fn(...) and logs its error instead of raising it. Returns ok and fn's first result.
+local function try(what, fn, ...)
+    local ok, res = pcall(fn, ...)
+    if not ok then logger.err("BookRaven: " .. what .. " failed:", res) end
+    return ok, res
+end
+
+local failed = {} -- modules that could not load
+
+local T = require("ffi/util").template
+local InfoMessage = require("ui/widget/infomessage")
+
+--- What stands in for a module that could not load: any field of it is itself, and calling it
+--- does nothing but say (once) that this part of the plugin is missing. So a button whose module
+--- failed shows a message instead of stopping KOReader.
+local function standIn(name)
+    local stub, told = {}, false
+    setmetatable(stub, {
+        __index = function() return stub end,
+        __call = function()
+            if not told then
+                told = true
+                UIManager:show(InfoMessage:new{
+                    text = T(_("This part of BookRaven could not load (%1). See crash.log for details."), name),
+                })
+            end
+        end,
+    })
+    return stub
+end
+
+--- Our modules are only findable while plugins load (KOReader puts the plugin's folder on the
+--- module path just for that), so each is loaded now; a module that fails is replaced by a
+--- stand-in (above), and the rest of the plugin goes on without it.
+local function loadModule(name)
+    local ok, mod = try("loading " .. name, require, name)
+    if ok then return mod end
+    table.insert(failed, name)
+    package.loaded[name] = standIn(name)
+end
+
+local Settings = loadModule("br_settings")
+local Theme = Settings and loadModule("br_theme")
+local Covers = Settings and loadModule("br_covers")
 
 -- Runs while plugins load, before the first screen is laid out: fonts and theme must be in
 -- place before any title bar or menu is built.
-Theme.registerFonts(PLUGIN_DIR)
-if Settings.themeName() then
-    local ok, err = pcall(Theme.apply, PLUGIN_DIR, Settings.themeName())
-    if not ok then logger.err("BookRaven: could not apply the theme", err) end
+if Theme then
+    try("registering the fonts", Theme.registerFonts, PLUGIN_DIR)
+    local ok_name, name = try("reading the theme", Settings.themeName)
+    if ok_name and name then
+        try("applying the theme " .. tostring(name), Theme.apply, PLUGIN_DIR, name)
+    end
+    for _, mod in ipairs({ "br_widgets", "br_wifi", "br_nav", "br_account", "br_cards", "br_gallery",
+            "br_search", "br_quick", "br_home" }) do
+        loadModule(mod)
+    end
 end
--- Our other modules are only findable while plugins load, so load them now.
-for _, mod in ipairs({ "br_widgets", "br_account", "br_cards", "br_gallery", "br_search", "br_quick", "br_home" }) do
-    local ok, err = pcall(require, mod)
-    if not ok then logger.err("BookRaven: could not load", mod, err) end
-end
+if #failed > 0 then logger.err("BookRaven: modules left out:", table.concat(failed, ", ")) end
 
 local hooks_installed = false
 local start_done = false
@@ -52,6 +100,8 @@ local BookRaven = WidgetContainer:extend{
     name = "bookraven",
     is_doc_only = false,
 }
+
+-- ------------------------------------------------------------------ hooks into KOReader
 
 local function insertAfter(list, after, key)
     for _, v in ipairs(list) do
@@ -93,6 +143,35 @@ local function placeMenuItems()
             table.insert(order.main, 1, "bookraven_library")
         end
     end
+end
+
+-- ------------------------------------------------------------------ the core modules failed
+
+if not (Settings and Theme) then
+    --- A plugin that only says it could not start (Settings → BookRaven), instead of vanishing.
+    function BookRaven:init()
+        try("adding the menu entries", placeMenuItems)
+        try("registering the menu", function() self.ui.menu:registerToMainMenu(self) end)
+    end
+
+    function BookRaven:addToMainMenu(menu_items)
+        menu_items.bookraven = {
+            text = "BookRaven",
+            sub_item_table = {
+                {
+                    text = _("BookRaven could not start"),
+                    callback = function()
+                        UIManager:show(InfoMessage:new{
+                            text = T(_("BookRaven could not load %1.\n\nSee crash.log for details, and reinstall the plugin."),
+                                table.concat(failed, ", ")),
+                        })
+                    end,
+                },
+            },
+        }
+    end
+
+    return BookRaven
 end
 
 --- Adds "BookRaven library" to the core "Start with" choices.
@@ -179,15 +258,7 @@ local function installQuickTab()
     if ok_f then patchMenuTabs(FileManagerMenu, "onCloseFileManagerMenu") end
 end
 
-local function installHooks()
-    if hooks_installed then return end
-    hooks_installed = true
-    placeMenuItems()
-    patchStartWith()
-    local ok_q, err_q = pcall(installQuickTab)
-    if not ok_q then logger.err("BookRaven: no quick settings tab", err_q) end
-    local ok_s, err = pcall(function() require("br_search").installTitleBar() end)
-    if not ok_s then logger.err("BookRaven: no magnifier in title bars", err) end
+local function installCards()
     local ok, OPDSBrowser = pcall(require, "opdsbrowser")
     if ok and OPDSBrowser then
         require("br_cards").install(OPDSBrowser)
@@ -196,53 +267,88 @@ local function installHooks()
     end
 end
 
+--- Each hook on its own: one that fails leaves the others (and the plugin) working.
+local function installHooks()
+    if hooks_installed then return end
+    hooks_installed = true
+    try("adding the menu entries", placeMenuItems)
+    try("adding the Start with choice", patchStartWith)
+    try("adding the quick settings tab", installQuickTab)
+    try("adding the raven and the magnifier to title bars", function() require("br_nav").install() end)
+    try("installing the cards view", installCards)
+end
+
 function BookRaven:init()
     installHooks()
-    self.ui.menu:registerToMainMenu(self)
-    -- So a gesture or corner tap can open the library (Settings → Taps and gestures).
-    require("dispatcher"):registerAction("bookraven_open_library", {
-        category = "none",
-        event = "BookRavenOpenLibrary",
-        title = _("BookRaven library"),
-        filemanager = true,
-    })
-    -- The quick settings panel, for a gesture of your choice, also in a book. (On the plugin's
-    -- own screens a swipe down from the top edge opens it; KOReader's swipe in books is untouched.)
-    require("dispatcher"):registerAction("bookraven_quick_settings", {
-        category = "none",
-        event = "BookRavenQuickSettings",
-        title = _("BookRaven quick settings"),
-        general = true,
-    })
+    try("registering the menu", function() self.ui.menu:registerToMainMenu(self) end)
+    try("registering the gesture actions", function()
+        local Dispatcher = require("dispatcher")
+        -- So a gesture or corner tap can open the library (Settings → Taps and gestures).
+        Dispatcher:registerAction("bookraven_open_library", {
+            category = "none",
+            event = "BookRavenOpenLibrary",
+            title = _("BookRaven library"),
+            filemanager = true,
+        })
+        -- The quick settings panel, for a gesture of your choice, also in a book. (On the plugin's
+        -- own screens a swipe down from the top edge opens it; KOReader's swipe in books is untouched.)
+        Dispatcher:registerAction("bookraven_quick_settings", {
+            category = "none",
+            event = "BookRavenQuickSettings",
+            title = _("BookRaven quick settings"),
+            general = true,
+        })
+    end)
 
-    -- The file browser is titled after the app it belongs to.
-    local theme = Theme.current()
-    if theme and theme.fm_title and not self.ui.document and self.ui.title then
-        self.ui.title = theme.fm_title
-    end
-
-    if not self.ui.document and Theme.current() then
-        -- The file browser's list is built after the plugins: restyle its rows once it exists.
-        local function decorate()
-            local fc = self.ui.file_chooser
-            if not fc then return end
-            require("br_style").decorateFileChooser(fc)
-            if fc.refreshPath then pcall(fc.refreshPath, fc) end
-        end
-        if type(self.ui.postInitCallback) == "table" then
-            table.insert(self.ui.postInitCallback, decorate)
-        else
-            UIManager:nextTick(decorate)
-        end
+    if not self.ui.document then
+        try("restyling the file browser", function() self:decorateFileManager() end)
     end
 
     if not start_done then
         start_done = true
-        UIManager:scheduleIn(5, function() pcall(Covers.prune, Covers) end)
+        UIManager:scheduleIn(5, function() if Covers then pcall(Covers.prune, Covers) end end)
     end
     if not self.ui.document and G_reader_settings:readSetting("start_with") == Settings.START_WITH then
-        -- At start-up, and when coming back from a book: the home, over the file browser.
-        UIManager:nextTick(function() self:openLibrary() end)
+        -- At start-up, and when coming back from a book: the home, over the file browser, as soon
+        -- as the file browser is shown (onShow, before anything is painted: the file browser never
+        -- flashes by). If it is never shown that way, on the next tick.
+        self._open_on_show = true
+        UIManager:nextTick(function()
+            if self._open_on_show then
+                self._open_on_show = nil
+                self:openLibrary()
+            end
+        end)
+    end
+end
+
+--- The file browser is titled after the app it belongs to, and its rows get the theme's looks.
+function BookRaven:decorateFileManager()
+    local theme = Theme.current()
+    if not theme then return end
+    if theme.fm_title and self.ui.title then
+        self.ui.title = theme.fm_title
+    end
+    -- The file browser's list is built after the plugins: restyle its rows once it exists.
+    local function decorate()
+        local fc = self.ui.file_chooser
+        if not fc then return end
+        require("br_style").decorateFileChooser(fc)
+        if fc.refreshPath then pcall(fc.refreshPath, fc) end
+    end
+    if type(self.ui.postInitCallback) == "table" then
+        table.insert(self.ui.postInitCallback, function() try("restyling the file list", decorate) end)
+    else
+        UIManager:nextTick(function() try("restyling the file list", decorate) end)
+    end
+end
+
+--- The file browser was just shown (its Show event reaches its plugins): the home goes over it
+--- before the first paint.
+function BookRaven:onShow()
+    if self._open_on_show then
+        self._open_on_show = nil
+        self:openLibrary()
     end
 end
 
@@ -253,13 +359,21 @@ function BookRaven:openLibrary()
     local ok, Home = pcall(require, "br_home")
     if not ok then
         logger.err("BookRaven: home unavailable", Home)
+        UIManager:show(InfoMessage:new{ text = _("The BookRaven library could not open. See crash.log for details.") })
         return
     end
-    self.home = Home:new{ ui = self.ui }
-    UIManager:show(self.home)
+    local ok_new, home = pcall(Home.new, Home, { ui = self.ui })
+    if not ok_new then
+        logger.err("BookRaven: the home could not be built", home)
+        UIManager:show(InfoMessage:new{ text = _("The BookRaven library could not open. See crash.log for details.") })
+        return
+    end
+    self.home = home
+    UIManager:show(self.home, "flashui")
 end
 
 function BookRaven:onCloseWidget()
+    self._open_on_show = nil
     if self.home and not self.home._closed then
         self.home._closed = true
         UIManager:close(self.home)
@@ -268,7 +382,7 @@ function BookRaven:onCloseWidget()
 end
 
 function BookRaven:onBookRavenOpenLibrary()
-    self:openLibrary()
+    if not require("br_nav").goHome() then self:openLibrary() end
     return true
 end
 
@@ -406,7 +520,7 @@ function BookRaven:viewMenu()
                 text = _("Clear cached covers"),
                 keep_menu_open = true,
                 callback = function()
-                    local n = Covers:clear()
+                    local n = Covers and Covers:clear() or 0
                     UIManager:show(InfoMessage:new{ text = T(_("Removed %1 cached covers."), n), timeout = 2 })
                 end,
             },
@@ -415,7 +529,6 @@ function BookRaven:viewMenu()
 end
 
 function BookRaven:addToMainMenu(menu_items)
-    local Account = require("br_account")
     if not self.ui.document then -- next to "OPDS catalog", which only the file browser has
         menu_items.bookraven_library = {
             text = _("BookRaven library"),
@@ -424,50 +537,52 @@ function BookRaven:addToMainMenu(menu_items)
             end,
         }
     end
+    local items = {}
+    for _, build in ipairs({ "themeMenu", "textMenu", "viewMenu" }) do
+        local ok, item = try("building the " .. build, self[build], self)
+        if ok and item then table.insert(items, item) end
+    end
+    table.insert(items, {
+        text = _("Start with the BookRaven library"),
+        help_text = _("Open your BookRaven library when KOReader starts, instead of the file browser."),
+        checked_func = function()
+            return G_reader_settings:readSetting("start_with") == Settings.START_WITH
+        end,
+        callback = function()
+            if G_reader_settings:readSetting("start_with") == Settings.START_WITH then
+                G_reader_settings:saveSetting("start_with", "filemanager")
+            else
+                G_reader_settings:saveSetting("start_with", Settings.START_WITH)
+            end
+        end,
+        separator = true,
+    })
+    table.insert(items, {
+        text_func = function()
+            local ok, Account = pcall(require, "br_account")
+            local email = ok and Account.credentials(self.ui)
+            return email and T(_("Account: %1"), email) or _("Set up BookRaven account…")
+        end,
+        keep_menu_open = true,
+        callback = function(touchmenu_instance)
+            require("br_account").showDialog(self.ui, function()
+                if touchmenu_instance then touchmenu_instance:updateItems() end
+            end)
+        end,
+    })
+    table.insert(items, {
+        text = _("Open the BookRaven library"),
+        enabled_func = function() return not self.ui.document end,
+        callback = function() self:openLibrary() end,
+    })
+    table.insert(items, {
+        text = _("Quick settings…"),
+        help_text = _("Wi-Fi, brightness, warmth, dark mode, text size, bold and font. On the BookRaven screens, swipe down from the top edge to open them."),
+        callback = function() require("br_quick").show(self.ui) end,
+    })
     menu_items.bookraven = {
         text = "BookRaven",
-        sub_item_table = {
-            self:themeMenu(),
-            self:textMenu(),
-            self:viewMenu(),
-            {
-                text = _("Start with the BookRaven library"),
-                help_text = _("Open your BookRaven library when KOReader starts, instead of the file browser."),
-                checked_func = function()
-                    return G_reader_settings:readSetting("start_with") == Settings.START_WITH
-                end,
-                callback = function()
-                    if G_reader_settings:readSetting("start_with") == Settings.START_WITH then
-                        G_reader_settings:saveSetting("start_with", "filemanager")
-                    else
-                        G_reader_settings:saveSetting("start_with", Settings.START_WITH)
-                    end
-                end,
-                separator = true,
-            },
-            {
-                text_func = function()
-                    local email = Account.credentials(self.ui)
-                    return email and T(_("Account: %1"), email) or _("Set up BookRaven account…")
-                end,
-                keep_menu_open = true,
-                callback = function(touchmenu_instance)
-                    Account.showDialog(self.ui, function()
-                        if touchmenu_instance then touchmenu_instance:updateItems() end
-                    end)
-                end,
-            },
-            {
-                text = _("Open the BookRaven library"),
-                enabled_func = function() return not self.ui.document end,
-                callback = function() self:openLibrary() end,
-            },
-            {
-                text = _("Quick settings…"),
-                help_text = _("Brightness, warmth, dark mode, text size, bold and font. On the BookRaven screens, swipe down from the top edge to open them."),
-                callback = function() require("br_quick").show(self.ui) end,
-            },
-        },
+        sub_item_table = items,
     }
 end
 
