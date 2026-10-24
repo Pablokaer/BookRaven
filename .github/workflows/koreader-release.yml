@@ -1,0 +1,87 @@
+name: KOReader plugin release
+
+# Every push to main that passes CI and changes the KOReader plugin (koreader/) publishes a GitHub
+# release with bookraven.koplugin.zip, the same ZIP the web build serves. The version is the last
+# koreader-v* tag with its minor number raised (koreader-v1.0.0 → koreader-v1.1.0). "Run workflow"
+# in the Actions tab publishes the current main if the plugin changed since the last release.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: koreader-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.COMMIT }}
+          fetch-depth: 0 # the tags, and the plugin's history since the last release
+
+      - name: Plugin changed since the last release?
+        id: version
+        run: |
+          last=$(git tag --list 'koreader-v*' --sort=-v:refname | head -n 1)
+          if [ -n "$last" ] && git diff --quiet "$last" "$COMMIT" -- koreader/; then
+            echo "::notice::koreader/ is unchanged since $last: no release"
+            exit 0
+          fi
+          if [ -n "$last" ]; then
+            IFS=. read -r major minor _ <<< "${last#koreader-v}"
+            next="koreader-v${major}.$((minor + 1)).0"
+            changes=$(git log --format='- %s' "$last..$COMMIT" -- koreader/)
+          else
+            next="koreader-v1.0.0"
+            changes=$(git log --format='- %s' "$COMMIT" -- koreader/)
+          fi
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          { echo "changes<<CHANGES"; echo "$changes"; echo "CHANGES"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v7
+        if: steps.version.outputs.tag
+        with:
+          node-version: 22
+
+      # The same deterministic ZIP the web build serves at /koreader/bookraven.koplugin.zip
+      # (apps/web/scripts/koreader-plugin.mjs uses only Node's own modules, no install needed).
+      - name: Plugin ZIP
+        if: steps.version.outputs.tag
+        run: node -e "import('./apps/web/scripts/koreader-plugin.mjs').then((m) => require('node:fs').writeFileSync('bookraven.koplugin.zip', m.pluginZip()))"
+
+      - name: Release
+        if: steps.version.outputs.tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          CHANGES: ${{ steps.version.outputs.changes }}
+        run: |
+          version=${TAG#koreader-v}
+          cat > notes.md <<EOF
+          The BookRaven plugin for **KOReader** (Kindle, Kobo, PocketBook and other e-readers running KOReader), version ${version}.
+
+          ## Changes
+          ${CHANGES}
+
+          ## Install or update
+          1. Download **bookraven.koplugin.zip** below and unzip it on a computer.
+          2. Connect the e-reader by USB and copy the \`bookraven.koplugin\` folder into \`koreader/plugins/\` (on a Kindle, the \`koreader/plugins\` folder on its drive), replacing the old folder. The path must end in \`koreader/plugins/bookraven.koplugin/main.lua\`.
+          3. Restart KOReader. The first time: Settings → BookRaven → Set up BookRaven account, with your server, email and an app password (BookRaven → Profile → Other apps). Your settings are kept when you update.
+
+          See \`koreader/bookraven.koplugin/README.md\` for what the plugin does.
+          EOF
+          gh release create "$TAG" bookraven.koplugin.zip --target "$COMMIT" --title "BookRaven for KOReader ${version} (Kindle)" --notes-file notes.md

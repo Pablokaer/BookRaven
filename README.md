@@ -351,6 +351,8 @@ Books you *Send to Kindle* from a book's menu appear in the catalog's *Sent to t
 
 **Install:** *Profile → Other apps* has a *Download the plugin* link (`https://<your server>/koreader/bookraven.koplugin.zip`, built from `koreader/` by the web build: `apps/web/scripts/koreader-plugin.mjs`, run by a Vite plugin in `apps/web/vite.config.ts` and left out of the Android build; Caddy serves it as a static file, with `noindex` like every other address). On a computer, unzip it and copy the `bookraven.koplugin` folder into `koreader/plugins/` on the e-reader (by USB; on a Kindle that is `/mnt/us/koreader/plugins/`; on a Kobo `.adds/koreader/plugins/`), restart KOReader, then *Settings → BookRaven → Set up BookRaven account*.
 
+**Releases:** every push to `main` that passes CI and changes `koreader/` publishes a GitHub release with `bookraven.koplugin.zip` (`.github/workflows/koreader-release.yml`): the last `koreader-v*` tag with its minor number raised, notes listing the plugin's commits since then, and install steps. *Run workflow* in the Actions tab does the same for the current `main`.
+
 **Assets:** the fonts (Cormorant Garamond, Inter, Chakra Petch, Share Tech Mono; Latin subsets, SIL Open Font License, licence files alongside) and Doré's engravings (public domain, scans from the Library of Congress) ship inside the plugin, about 2 MB.
 
 **Tested:** written against KOReader v2026.07.2 at the Kindle Paperwhite's resolution, in portrait and landscape. `apps/web/src/lib/koreaderPlugin.test.ts` parses every Lua file as LuaJIT (with `luaparse`), checks it for undeclared globals and checks the ZIP.
