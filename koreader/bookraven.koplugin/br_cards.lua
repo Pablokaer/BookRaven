@@ -74,10 +74,10 @@ local function faces(size)
     return {
         style = c.style,
         author_prefix = c.author_prefix or "",
-        title = Font:getFace(c.title, size),
-        author = Font:getFace(c.author, math.max(12, size - 4)),
-        cover_title = Font:getFace(c.cover_title, math.max(12, size - 2)),
-        cover_author = Font:getFace(c.cover_author, math.max(11, size - 4)),
+        title = Theme.face(c.title, size, "bold"),
+        author = Theme.face(c.author, math.max(12, size - 4), "regular"),
+        cover_title = Theme.face(c.cover_title, math.max(12, size - 2), "bold"),
+        cover_author = Theme.face(c.cover_author, math.max(11, size - 4), "italic"),
     }
 end
 
@@ -179,10 +179,14 @@ end
 --- A folder on the device, in a folder shelf's gallery: its engraving, name and book count.
 local function folderCover(entry, w, h, f)
     local hud = f.style == "hud"
+    local classic = f.style == "classic"
     local inner_w = w - 2 * math.min(Screen:scaleBySize(10), math.floor(w * 0.07))
     local art_size = math.floor(math.min(inner_w, h * 0.55))
     local parts = VerticalGroup:new{ align = "center" }
-    if entry.art then
+    if classic then
+        table.insert(parts, W.stackArt(art_size))
+        table.insert(parts, VerticalSpan:new{ width = Screen:scaleBySize(8) })
+    elseif entry.art then
         table.insert(parts, ImageWidget:new{ file = entry.art, width = art_size, height = art_size })
         table.insert(parts, VerticalSpan:new{ width = Screen:scaleBySize(8) })
     end
@@ -222,7 +226,40 @@ local function folderCover(entry, w, h, f)
     return FrameContainer:new{
         width = w, height = h, padding = 0, margin = 0,
         bordersize = Size.border.thin, color = BORDER, background = Blitbuffer.COLOR_WHITE,
-        radius = Screen:scaleBySize(6),
+        radius = not classic and Screen:scaleBySize(6) or nil,
+        CenterContainer:new{
+            dimen = Geom:new{ w = w - 2 * Size.border.thin, h = h - 2 * Size.border.thin },
+            parts,
+        },
+    }
+end
+
+--- Classic e-reader stand-in: a white cover with a black hairline, the title in bold and a
+--- short rule above the author, like the generated covers of e-readers.
+local function plainCover(entry, w, h, f)
+    local inner_w = w - 2 * math.min(Screen:scaleBySize(10), math.floor(w * 0.08))
+    local parts = VerticalGroup:new{ align = "center" }
+    table.insert(parts, TextBoxWidget:new{
+        text = entry.title or entry.text or "",
+        face = f.cover_title,
+        width = inner_w,
+        alignment = "center",
+        height = math.floor(h * 0.5),
+        height_adjust = true,
+        height_overflow_show_ellipsis = true,
+    })
+    if isBook(entry) and entry.author then
+        table.insert(parts, VerticalSpan:new{ width = Screen:scaleBySize(8) })
+        table.insert(parts, LineWidget:new{
+            background = Blitbuffer.COLOR_BLACK,
+            dimen = Geom:new{ w = math.floor(inner_w * 0.25), h = Size.line.medium },
+        })
+        table.insert(parts, VerticalSpan:new{ width = Screen:scaleBySize(8) })
+        table.insert(parts, TextWidget:new{ text = entry.author, face = f.cover_author, max_width = inner_w })
+    end
+    return FrameContainer:new{
+        width = w, height = h, padding = 0, margin = 0,
+        bordersize = Size.border.thin, color = Blitbuffer.COLOR_BLACK, background = Blitbuffer.COLOR_WHITE,
         CenterContainer:new{
             dimen = Geom:new{ w = w - 2 * Size.border.thin, h = h - 2 * Size.border.thin },
             parts,
@@ -234,6 +271,7 @@ end
 local function fakeCover(entry, w, h, f)
     if entry.dir then return folderCover(entry, w, h, f) end
     if f.style == "hud" then return hudCover(entry, w, h, f) end
+    if f.style == "classic" then return plainCover(entry, w, h, f) end
     local book = isBook(entry)
     local bg = book and CLOTH or SHELF
     local fg = book and Blitbuffer.COLOR_WHITE or Blitbuffer.COLOR_BLACK
@@ -288,6 +326,24 @@ local function fakeCover(entry, w, h, f)
     }
 end
 
+--- A cover with its file type in a small black tag at the bottom left (search results).
+local FormatTag = WidgetContainer:extend{ tag = nil }
+
+function FormatTag:getSize()
+    return self[1]:getSize()
+end
+
+function FormatTag:paintTo(bb, x, y)
+    local size = self[1]:getSize()
+    self.dimen = Geom:new{ x = x, y = y, w = size.w, h = size.h }
+    self[1]:paintTo(bb, x, y)
+    local ts = self.tag:getSize()
+    local pad = Screen:scaleBySize(4)
+    local tx, ty = x + Screen:scaleBySize(4), y + size.h - ts.h - Screen:scaleBySize(10)
+    bb:paintRect(tx, ty, ts.w + 2 * pad, ts.h, Blitbuffer.COLOR_BLACK)
+    self.tag:paintTo(bb, tx + pad, ty)
+end
+
 local CardItem = InputContainer:extend{
     entry = nil,
     menu = nil,
@@ -325,11 +381,12 @@ function CardItem:build(cover_path)
                 ImageWidget:new{ file = cover_path, width = fw, height = fh },
             }
         else
-            local shadow = Screen:scaleBySize(3)
+            local classic = self.f.style == "classic"
+            local shadow = classic and 0 or Screen:scaleBySize(3)
             local fw, fh = Covers.fit(iw, ih, self.box_w - 2 * Size.border.thin - shadow,
                 self.box_h - 2 * Size.border.thin - shadow)
             cover = W.Mount:new{
-                look = "engraved",
+                look = classic and "classic" or "engraved",
                 FrameContainer:new{
                     padding = 0,
                     margin = 0,
@@ -347,8 +404,24 @@ function CardItem:build(cover_path)
         local cw = math.min(self.box_w, math.floor(self.box_h / 1.5))
         cover = fakeCover(self.entry, cw, math.min(self.box_h, math.floor(cw * 1.5)), self.f)
     end
+    if self.entry.format and self.where_h and self.where_h > 0 then
+        cover = FormatTag:new{
+            tag = TextWidget:new{ text = self.entry.format, face = self.f.author, bold = true, fgcolor = Blitbuffer.COLOR_WHITE },
+            cover,
+        }
+    end
 
     local text_w = self.width - 2 * Size.padding.small
+    -- Classic e-reader: titles start under the cover's left edge, as on the Kindle's grid.
+    local classic = self.f.style == "classic"
+    local cover_w = cover:getSize().w
+    local Line = classic and LeftContainer or CenterContainer
+    if classic then text_w = math.min(text_w, math.max(cover_w, math.floor(self.width * 0.8))) end
+    local function line(widget, h)
+        local box = Line:new{ dimen = Geom:new{ w = classic and text_w or self.width, h = h }, widget }
+        if not classic then return box end
+        return CenterContainer:new{ dimen = Geom:new{ w = self.width, h = h }, box }
+    end
     local group = VerticalGroup:new{ align = "center" }
     table.insert(group, BottomContainer:new{
         dimen = Geom:new{ w = self.width, h = self.box_h },
@@ -358,25 +431,32 @@ function CardItem:build(cover_path)
         },
     })
     table.insert(group, VerticalSpan:new{ width = Size.padding.default })
-    table.insert(group, TextBoxWidget:new{
+    local title = TextBoxWidget:new{
         text = self.entry.title or self.entry.text or "",
         face = self.f.title,
         width = text_w,
-        alignment = "center",
+        alignment = classic and "left" or "center",
         height = self.title_h,
         height_adjust = true,
         height_overflow_show_ellipsis = true,
-    })
+    }
+    table.insert(group, line(title, title:getSize().h))
     if self.entry.author and isBook(self.entry) then
-        table.insert(group, CenterContainer:new{
-            dimen = Geom:new{ w = self.width, h = self.author_h },
-            TextWidget:new{
-                text = self.f.author_prefix .. self.entry.author,
-                face = self.f.author,
-                fgcolor = Blitbuffer.COLOR_DARK_GRAY,
-                max_width = text_w,
-            },
-        })
+        table.insert(group, line(TextWidget:new{
+            text = self.f.author_prefix .. self.entry.author,
+            face = self.f.author,
+            fgcolor = Blitbuffer.COLOR_DARK_GRAY,
+            max_width = text_w,
+        }, self.author_h))
+    end
+    if self.entry.where and (self.where_h or 0) > 0 then
+        -- Search results: where the book is ("On device · Novels", "BookRaven library"…).
+        table.insert(group, line(TextWidget:new{
+            text = self.entry.where,
+            face = self.f.author,
+            fgcolor = Blitbuffer.COLOR_BLACK,
+            max_width = text_w,
+        }, self.where_h))
     end
     self[1] = FrameContainer:new{
         width = self.width,
@@ -466,8 +546,9 @@ local function recalculate(menu)
     local line_author = math.ceil(f.author.size * 1.45)
     menu.card_title_h = 2 * line_title + 1
     menu.card_author_h = line_author
+    menu.card_where_h = menu.show_where and line_author or 0 -- search results: one line for where it is
     menu.card_box_w = menu.card_w - 2 * Size.padding.small
-    menu.card_box_h = menu.card_h - menu.card_title_h - menu.card_author_h - Size.padding.default
+    menu.card_box_h = menu.card_h - menu.card_title_h - menu.card_author_h - menu.card_where_h - Size.padding.default
 end
 
 local function scheduleCovers(menu, cards)
@@ -553,7 +634,7 @@ function Cards.updateShelves(menu, select_number)
     if menu.title_bar and not menu.no_title then others = others + menu.title_bar:getHeight() end
     if menu.page_info then others = others + menu.page_info:getSize().h + Size.padding.button end
     local tile_w = math.floor((menu.inner_dimen.w - (cols + 1) * margin) / cols)
-    local tile_h = Screen:scaleBySize(78)
+    local tile_h = Screen:scaleBySize(math.floor(78 * Theme.textGrowth()))
     local rows = math.max(1, math.floor((menu.inner_dimen.h - others - margin) / (tile_h + margin)))
     menu.perpage = rows * cols
     menu.page_num = math.max(1, math.ceil(#menu.item_table / menu.perpage))
@@ -656,6 +737,7 @@ function Cards.updateItems(menu, select_number)
             box_h = menu.card_box_h,
             title_h = menu.card_title_h,
             author_h = menu.card_author_h,
+            where_h = menu.card_where_h,
             font_size = menu.card_font_size,
         }
         table.insert(row, card)
@@ -739,6 +821,29 @@ function Cards.install(OPDSBrowser)
         if orig_onCloseWidget then
             return orig_onCloseWidget(self, ...)
         end
+    end
+
+    -- A magnifier in the title bar inside a catalog: search this shelf (see br_search).
+    OPDSBrowser._br_title_search = function(self)
+        if #(self.paths or {}) == 0 then return nil end
+        return function() require("br_search").searchFeed(self) end
+    end
+
+    -- On the cards view, a swipe down from the top edge opens the quick settings instead of
+    -- closing the catalog (a swipe down anywhere else still closes it).
+    local orig_onSwipe = OPDSBrowser.onSwipe
+    OPDSBrowser.onSwipe = function(self, arg, ges_ev)
+        local Quick = require("br_quick")
+        if self._br_cards and Quick.fromTop(ges_ev) then
+            Quick.show(self)
+            return true
+        end
+        return orig_onSwipe(self, arg, ges_ev)
+    end
+
+    -- Text size, bold or font changed in the quick settings: draw the cards again.
+    OPDSBrowser.onBookRavenTextChanged = function(self)
+        if self._br_cards then self:updateItems() end
     end
 
     for _, name in ipairs({ "showOPDSMenu", "showCatalogMenu" }) do

@@ -4,8 +4,9 @@ Interface restyling that goes with a theme, applied once at start-up (see br_the
   * icons: KOReader's icons (menu tabs, arrows, close, home, notices…) are swapped for the
     theme's own set in icons/<theme>/, by name;
   * check boxes and radio buttons drawn as icons instead of text glyphs;
-  * the top menu's tab bar: a short underline with a diamond (BookRaven) or an inverted block
-    (Cyberdeck) under the open tab, instead of KOReader's folder-tab lines;
+  * the top menu's tab bar: a short underline with a diamond (BookRaven), an inverted block
+    (Cyberdeck) or a plain bar (Classic e-reader) under the open tab, instead of KOReader's
+    folder-tab lines;
   * softer separators in menus, dialogs and the file browser; dashed ones for Cyberdeck;
   * rounder dialogs (BookRaven) or square ones (Cyberdeck);
   * the file browser's book rows: a shadow (or HUD brackets) on the cover and a reading progress bar.
@@ -101,6 +102,13 @@ local function paintTabs(bar, bb, x, y, theme)
         return
     end
     bb:paintRect(x, y + total_h - line, w, line, RULE)
+    if theme.tabs == "plain" then -- a plain black bar under the open tab, the width of the tab
+        if ib and ib.dimen and ib.dimen.w then
+            local th = s(3)
+            bb:paintRect(ib.dimen.x + s(4), y + total_h - th, ib.dimen.w - s(8), th, INK)
+        end
+        return
+    end
     if ib and ib.dimen and ib.dimen.w then
         local bw = math.floor(ib.dimen.w * 0.42)
         local th = s(2.2)
@@ -194,6 +202,8 @@ local function rowExtras(item, bb, x, y, theme)
             local x1, y1, x2, y2 = cx - p, cy - p, cx + cw + p, cy + ch + p
             bb:paintRect(x1, y1, len, t, INK); bb:paintRect(x1, y1, t, len, INK)
             bb:paintRect(x2 - len, y2 - t, len, t, INK); bb:paintRect(x2 - t, y2 - len, t, len, INK)
+        elseif theme.style == "classic" then
+            bb:paintBorder(cx, cy, cw, ch, 1, RULE) -- just a hairline, like the covers on the home
         else
             local p = s(2.5)
             bb:paintRect(cx + cw, cy + p, p, ch, SHADOW)

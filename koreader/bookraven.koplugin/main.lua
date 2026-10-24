@@ -2,10 +2,15 @@
 BookRaven for KOReader.
 
   * Settings → BookRaven → Theme: "KOReader (original)", "BookRaven" (the look of bookraven.cloud,
-    modern with engraved details) or "Cyberdeck" (neon noir). Themes restyle fonts, icons, menus,
-    dialogs, title bars and the file browser.
+    modern with engraved details), "Cyberdeck" (neon noir) or "Classic e-reader" (inspired by the
+    Kindle's stock look). Themes restyle fonts, icons, menus, dialogs, title bars and the file
+    browser.
   * The BookRaven library home (br_home): continue reading, illustrated shelves, new books.
     Settings → BookRaven → Start with the BookRaven library (also offered in "Start with").
+  * Search (br_search): one search for every book (device, library, Public Library) from the
+    home, and a magnifier in every shelf.
+  * Quick settings (br_quick): brightness, warmth, dark mode, text size, bold and font, from a
+    swipe down at the top of the plugin's screens or an assignable gesture.
   * OPDS book lists as cards with covers from the server, shelves as illustrated tiles.
   * One-step account setup for the BookRaven catalog and progress sync.
 
@@ -33,7 +38,7 @@ if Settings.themeName() then
     if not ok then logger.err("BookRaven: could not apply the theme", err) end
 end
 -- Our other modules are only findable while plugins load, so load them now.
-for _, mod in ipairs({ "br_widgets", "br_account", "br_cards", "br_gallery", "br_home" }) do
+for _, mod in ipairs({ "br_widgets", "br_account", "br_cards", "br_gallery", "br_search", "br_quick", "br_home" }) do
     local ok, err = pcall(require, mod)
     if not ok then logger.err("BookRaven: could not load", mod, err) end
 end
@@ -122,6 +127,8 @@ local function installHooks()
     hooks_installed = true
     placeMenuItems()
     patchStartWith()
+    local ok_s, err = pcall(function() require("br_search").installTitleBar() end)
+    if not ok_s then logger.err("BookRaven: no magnifier in title bars", err) end
     local ok, OPDSBrowser = pcall(require, "opdsbrowser")
     if ok and OPDSBrowser then
         require("br_cards").install(OPDSBrowser)
@@ -139,6 +146,14 @@ function BookRaven:init()
         event = "BookRavenOpenLibrary",
         title = _("BookRaven library"),
         filemanager = true,
+    })
+    -- The quick settings panel, for a gesture of your choice, also in a book. (On the plugin's
+    -- own screens a swipe down from the top edge opens it; KOReader's swipe in books is untouched.)
+    require("dispatcher"):registerAction("bookraven_quick_settings", {
+        category = "none",
+        event = "BookRavenQuickSettings",
+        title = _("BookRaven quick settings"),
+        general = true,
     })
 
     -- The file browser is titled after the app it belongs to.
@@ -198,6 +213,11 @@ function BookRaven:onBookRavenOpenLibrary()
     return true
 end
 
+function BookRaven:onBookRavenQuickSettings()
+    require("br_quick").show(self.ui)
+    return true
+end
+
 local function askRestart()
     UIManager:askForRestart(_("KOReader needs to restart to change the theme."))
 end
@@ -225,6 +245,65 @@ function BookRaven:themeMenu()
             choice(_("KOReader (original)"), "original"),
             choice(_("BookRaven (bookraven.cloud)"), "bookraven"),
             choice(_("Cyberdeck (neon noir)"), "cyberdeck"),
+            choice(_("Classic e-reader (Kindle-style)"), "classic"),
+        },
+    }
+end
+
+--- Text on the plugin's screens: size, bold and font (the quick settings have the same).
+function BookRaven:textMenu()
+    local function changed()
+        UIManager:broadcastEvent(require("ui/event"):new("BookRavenTextChanged"))
+        if Theme.textPending() then
+            UIManager:askForRestart(_("KOReader's menus and dialogs use the new text after a restart."))
+        end
+    end
+    local sizes = {}
+    for _, v in ipairs(Settings.TEXT_SCALES) do
+        table.insert(sizes, {
+            text = string.format("%d%%", v),
+            radio = true,
+            checked_func = function() return Settings.text().scale == v end,
+            callback = function()
+                Settings.set("text_scale", v)
+                changed()
+            end,
+        })
+    end
+    local fonts = {}
+    for _, fam in ipairs(Theme.FAMILIES) do
+        table.insert(fonts, {
+            text = fam.label,
+            radio = true,
+            checked_func = function() return Settings.text().font == fam.key end,
+            callback = function()
+                Settings.set("text_font", fam.key)
+                changed()
+            end,
+        })
+    end
+    return {
+        text = _("Text"),
+        sub_item_table = {
+            {
+                text_func = function() return T(_("Text size: %1%"), Settings.text().scale) end,
+                sub_item_table = sizes,
+            },
+            {
+                text = _("Bold text"),
+                checked_func = function() return Settings.text().bold end,
+                callback = function()
+                    Settings.set("text_bold", not Settings.text().bold)
+                    changed()
+                end,
+            },
+            {
+                text_func = function()
+                    local fam = Theme.family(Settings.text().font)
+                    return T(_("Font: %1"), fam and fam.label or _("Theme's own"))
+                end,
+                sub_item_table = fonts,
+            },
         },
     }
 end
@@ -290,6 +369,7 @@ function BookRaven:addToMainMenu(menu_items)
         text = "BookRaven",
         sub_item_table = {
             self:themeMenu(),
+            self:textMenu(),
             self:viewMenu(),
             {
                 text = _("Start with the BookRaven library"),
@@ -322,6 +402,11 @@ function BookRaven:addToMainMenu(menu_items)
                 text = _("Open the BookRaven library"),
                 enabled_func = function() return not self.ui.document end,
                 callback = function() self:openLibrary() end,
+            },
+            {
+                text = _("Quick settings…"),
+                help_text = _("Brightness, warmth, dark mode, text size, bold and font. On the BookRaven screens, swipe down from the top edge to open them."),
+                callback = function() require("br_quick").show(self.ui) end,
             },
         },
     }

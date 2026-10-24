@@ -7,6 +7,11 @@ Shelves you add from folders on the device.
   * ShelfMenu: every shelf on one page (the catalog's and yours, and "Add a shelf"), for when the
     home has no room left to show them all.
 
+Both have a magnifier in the title bar (br_search): the gallery searches its folder and all the
+folders in it, and shows the books found in the same grid (the back arrow, or "Clear search",
+returns to the shelf); All shelves searches every shelf (your folders and the catalog) at once.
+A swipe down from the top edge opens the quick settings (br_quick).
+
 Folder shelves are kept in the plugin settings under "local_shelves" ({ path, title }).
 ]]
 
@@ -106,6 +111,7 @@ local function describe(path)
     end
     return title, author
 end
+Shelves.describe = describe
 
 local function natural(a, b)
     return a:lower() < b:lower()
@@ -197,9 +203,64 @@ end
 function Gallery:onReturn()
     local back = table.remove(self.paths)
     if not back then return true end
+    self.query, self.show_where = nil, false -- leaving the search results, if they were shown
     self.current = back.path
     self:switchItemTable(back.title, self:list(back.path))
     return true
+end
+
+--- The magnifier: search this shelf's folder and every folder in it.
+function Gallery:_br_title_search()
+    return function()
+        local Search = require("br_search")
+        Search.prompt{
+            title = T(_("Search in %1"), Shelves.folderName(self.root)),
+            query = self.query,
+            on_clear = self.query and function() self:onReturn() end or nil,
+            on_search = function(query) self:search(query) end,
+        }
+    end
+end
+
+function Gallery:search(query)
+    local Search = require("br_search")
+    local root = self.root
+    local function where(path)
+        -- the folder it is in, inside the shelf ("Gothic/Deep"), or the shelf itself
+        local dir = path:match("^(.*)/[^/]+$") or root
+        local inside = dir:sub(#root + 2)
+        return inside ~= "" and inside or Shelves.folderName(root)
+    end
+    local found
+    local ok, err = pcall(function() found = Search.inFolders({ root }, query, where) end)
+    if not ok then
+        logger.err("BookRaven: shelf search failed", err)
+        return
+    end
+    if #found == 0 then
+        UIManager:show(InfoMessage:new{
+            text = T(_("Nothing in “%1” matches “%2”."), Shelves.folderName(root), query), timeout = 3,
+        })
+        return
+    end
+    if not self.query then
+        table.insert(self.paths, { path = self.current, title = self.title_bar and self.title_bar.title or self.title })
+    end
+    self.query, self.show_where = query, true
+    self:switchItemTable(T(_("Search: %1"), query), found)
+end
+
+function Gallery:onSwipe(arg, ges_ev)
+    local Quick = require("br_quick")
+    if Quick.fromTop(ges_ev) then
+        Quick.show(self)
+        return true
+    end
+    return Menu.onSwipe(self, arg, ges_ev)
+end
+
+function Gallery:onBookRavenTextChanged()
+    self:updateItems()
 end
 
 function Gallery:onCloseWidget()
@@ -244,6 +305,41 @@ end
 function ShelfMenu:onMenuHold(entry)
     self.home:shelfHold(entry, self)
     return true
+end
+
+--- The magnifier: every shelf at once (your folders, and the catalog when it is on them).
+function ShelfMenu:_br_title_search()
+    return function()
+        local roots, catalog, public = {}, false, false
+        for _, entry in ipairs(self.home:shelfEntries()) do
+            if entry.kind == "folder" then
+                table.insert(roots, entry.local_path)
+            elseif entry.kind == "catalog" then
+                catalog = true
+                if entry.url and entry.url:match("/public/?$") then public = true end
+            end
+        end
+        require("br_search").start{
+            ui = self.home.ui,
+            home = self.home,
+            title = _("Search all shelves"),
+            scope = { roots = roots, catalog = catalog, public = public },
+            close_also = { self },
+        }
+    end
+end
+
+function ShelfMenu:onSwipe(arg, ges_ev)
+    local Quick = require("br_quick")
+    if Quick.fromTop(ges_ev) then
+        Quick.show(self)
+        return true
+    end
+    return Menu.onSwipe(self, arg, ges_ev)
+end
+
+function ShelfMenu:onBookRavenTextChanged()
+    self:updateItems()
 end
 
 return Shelves
