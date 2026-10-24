@@ -4,6 +4,10 @@ Shelves you add from folders on the device.
   * Gallery: a folder's books as cards with their covers (and its sub-folders as cards you can
     open), like the catalog's "My library". Tap a book to open it. The arrow at the bottom left
     goes back up to the parent folder, down to the shelf's own folder.
+  * DeviceGallery: every book on the device in one gallery, "On this Kindle": the home's only
+    shelf while it is offline (see br_home). The books come from the search's list of the
+    device's books (br_search.deviceIndex: KOReader's home folder, the folder shelves, the
+    download folder, the last folder and the books you opened).
   * ShelfMenu: every shelf on one page (the catalog's and yours, and "Add a shelf"), for when the
     home has no room left to show them all.
 
@@ -15,6 +19,7 @@ A swipe down from the top edge opens the quick settings (br_quick).
 Folder shelves are kept in the plugin settings under "local_shelves" ({ path, title }).
 ]]
 
+local Device = require("device")
 local DocumentRegistry = require("document/documentregistry")
 local InfoMessage = require("ui/widget/infomessage")
 local Menu = require("ui/widget/menu")
@@ -266,6 +271,87 @@ end
 function Gallery:onCloseWidget()
     self._br_closed = true
     return Menu.onCloseWidget(self)
+end
+
+-- ------------------------------------------------------------------ On this Kindle
+
+--- The name of the shelf with every book on the device.
+function Shelves.deviceTitle()
+    return Device:isKindle() and _("On this Kindle") or _("On this device")
+end
+
+--- Its note on the home: how many books, once they have been counted (counting walks the
+--- folders, so the home never does it itself).
+function Shelves.deviceNote()
+    local idx = require("br_search").index
+    local n = idx and idx.files and #idx.files
+    if not n then return _("Every book on this device") end
+    if n == 0 then return _("No books on this device yet") end
+    if n == 1 then return _("1 book on this device") end
+    return T(_("%1 books on this device"), n)
+end
+
+local DeviceGallery = Gallery:extend{
+    empty_text = _("No books on this device yet."),
+}
+Shelves.DeviceGallery = DeviceGallery
+
+function DeviceGallery:init()
+    local Search = require("br_search")
+    if not Search.index then -- the first time, the folders are walked (a few seconds at most)
+        local msg = InfoMessage:new{ text = _("Looking for the books on this device…") }
+        UIManager:show(msg)
+        UIManager:forceRePaint()
+        local ok, err = pcall(Search.deviceIndex)
+        if not ok then logger.err("BookRaven: could not list the books on the device", err) end
+        UIManager:close(msg)
+    end
+    if (self.title or "") == "" then self.title = Shelves.deviceTitle() end -- Menu's default is ""
+    Gallery.init(self)
+end
+
+--- Every book on the device, by title (the folder is ignored: there is only one shelf).
+function DeviceGallery:list()
+    local ok, idx = pcall(function() return require("br_search").deviceIndex() end)
+    local books = {}
+    for _, entry in ipairs(ok and idx and idx.files or {}) do
+        table.insert(books, entry) -- the search's own entries: covers found are kept for it too
+    end
+    table.sort(books, function(a, b) return natural(a.title or "", b.title or "") end)
+    return books
+end
+
+--- The magnifier: the books on the device whose title, author or file name match.
+function DeviceGallery:_br_title_search()
+    return function()
+        require("br_search").prompt{
+            title = Device:isKindle() and _("Search this Kindle") or _("Search this device"),
+            query = self.query,
+            on_clear = self.query and function() self:onReturn() end or nil,
+            on_search = function(query) self:search(query) end,
+        }
+    end
+end
+
+function DeviceGallery:search(query)
+    local Search = require("br_search")
+    local found
+    local ok, err = pcall(function() found = Search.filter(Search.deviceIndex().files, query) end)
+    if not ok then
+        logger.err("BookRaven: device search failed", err)
+        return
+    end
+    if #found == 0 then
+        UIManager:show(InfoMessage:new{
+            text = T(_("No book on this device matches “%1”."), query), timeout = 3,
+        })
+        return
+    end
+    if not self.query then
+        table.insert(self.paths, { title = self.title_bar and self.title_bar.title or self.title })
+    end
+    self.query, self.show_where = query, true
+    self:switchItemTable(T(_("Search: %1"), query), found)
 end
 
 -- ------------------------------------------------------------------ All shelves
