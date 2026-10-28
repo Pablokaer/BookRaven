@@ -107,6 +107,17 @@ describe("upload queue", () => {
     expect(noQuota.item().message).toBe("Storage limit reached");
   });
 
+  it("says when the virus check refused a file, or could not run", async () => {
+    const q = setup();
+    q.queue.add([file("a.cbz"), file("b.epub")]);
+    await q.finish({ ok: false, error: "infected" });
+    await q.finish({ ok: false, error: "scanner_unavailable" });
+    expect(q.queue.items().map((u) => [u.status, u.message])).toEqual([
+      ["error", "Refused: this file looks malicious"],
+      ["error", "Virus check unavailable, try again in a minute"],
+    ]);
+  });
+
   it("shows progress at most once per interval, and new states at once", async () => {
     const q = setup();
     const heard = vi.fn();

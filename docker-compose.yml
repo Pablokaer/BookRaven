@@ -34,11 +34,36 @@ services:
       NODE_ENV: production
       PORT: 3000
       STORAGE_DIR: /data
+      # Uploads are checked for viruses by the clamav service. CLAMAV_HOST= (empty) in .env turns it off.
+      CLAMAV_HOST: ${CLAMAV_HOST-clamav}
     volumes:
       - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy
+      # Started, not healthy: the first signature download takes minutes, and the API should not
+      # wait for it. Until clamd answers, uploads are refused with 503 (scanner_unavailable).
+      clamav:
+        condition: service_started
+
+  # Virus scanning of uploads with ClamAV (README → Virus scanning). Official image, "1.5_base":
+  # the 1.5 feature-version tag, which ClamAV's image docs recommend for stability and security
+  # (it moves to each 1.5.x patch release and base-image fix, never to a new feature version);
+  # "_base" because it carries no signatures, which live in the clamav_db volume instead: the
+  # first start downloads them (~250 MB, a few minutes), then freshclam inside the container
+  # updates them. clamd keeps the signatures in memory: about 1-1.5 GB of RAM. Move the tag to a
+  # newer feature version before ClamAV ends 1.5's support (its freshclam then stops updating).
+  clamav:
+    image: clamav/clamav:1.5_base
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # freshclam's update checks per day (the image's default is 1): every 4 hours.
+      FRESHCLAM_CHECKS: 6
+    volumes:
+      - clamav_db:/var/lib/clamav
+      - ./infra/clamav/clamd.conf:/etc/clamav/clamd.conf:ro
+    # Not published to the host: only the api reaches clamd, on port 3310 of the compose network.
 
   # Daily database dump + book files into ./backups, kept for BACKUP_KEEP_DAYS (see infra/backup.sh).
   backup:
@@ -92,5 +117,6 @@ services:
 
 volumes:
   pgdata:
+  clamav_db:
   caddy_data:
   caddy_config:

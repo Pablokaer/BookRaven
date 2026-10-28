@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-28-virus-check",
+    date: "2026-10-28",
+    title: "Virus check",
+    items: [
+      "Uploaded files are now checked for viruses; a file that looks malicious is refused and never reaches your library.",
+      "If the check is briefly unavailable, the upload is refused with a message: try again in a minute.",
+    ],
+  },
+  {
     id: "2026-10-28-storage-limits",
     date: "2026-10-28",
     title: "Storage limits",

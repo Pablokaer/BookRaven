@@ -61,6 +61,11 @@ export const config = {
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
+  /**
+   * The ClamAV daemon (clamd) that checks uploaded files for viruses. An empty host turns
+   * scanning off (local development, tests); docker-compose.yml sets it to the clamav service.
+   */
+  clamav: { host: (process.env.CLAMAV_HOST ?? "").trim(), port: Number(process.env.CLAMAV_PORT || 3310) },
   /** Origins used by the Capacitor Android/iOS shells. */
   nativeOrigins: ["https://localhost", "http://localhost", "capacitor://localhost"],
 };

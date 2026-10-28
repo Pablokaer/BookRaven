@@ -14,6 +14,8 @@ async function main() {
   await app.listen({ port: config.port, host: config.host });
   void backfillKoreaderHashes((m) => app.log.info(m));
   app.log.info(`Google sign-in ${googleEnabled ? "enabled" : "disabled"}; sign-up ${config.allowSignup ? "open" : "closed"}`);
+  const { host, port } = config.clamav;
+  app.log.info(host ? `Virus scanning on (clamd at ${host}:${port})` : "Virus scanning off (CLAMAV_HOST is empty)");
 
   const shutdown = async () => {
     await app.close();

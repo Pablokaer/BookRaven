@@ -4,10 +4,11 @@ import fs from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { query } from "../db.js";
+import { InfectedFileError, scanFile } from "./antivirus.js";
 import { catalogTransaction } from "./publicCatalog.js";
 import { DETECT_BYTES, detectFormat, MIME_TYPES } from "./formats.js";
 import { partialMd5OfFile } from "./koreader.js";
-import { log } from "./log.js";
+import { audit, log } from "./log.js";
 import { isFileBlocked } from "./moderation.js";
 import {
   catalogEntries,
@@ -119,6 +120,15 @@ export async function storePublicBook(
   const author = b.authors.map((a) => displayName(a.name)).join(", ").slice(0, 500) || null;
   const filename = `${title.replace(/[\\/:*?"<>|]+/g, " ").slice(0, 120).trim() || `${b.source}-${b.sourceId}`}.epub`;
   const existingId = (await query<{ id: string }>("SELECT id FROM book WHERE user_id = $1 AND sha256 = $2", [ownerId, file.sha256])).rows[0]?.id;
+  // Checked for viruses like an upload, before anything is stored. An unavailable scanner fails
+  // the book (a later run tries it again).
+  if (!existingId) {
+    const verdict = await scanFile(file.tmpPath);
+    if (!verdict.clean) {
+      audit("import.infected", { source: b.source, sourceId: b.sourceId, signature: verdict.signature, sha256: file.sha256 }, "warn");
+      throw new InfectedFileError(verdict.signature);
+    }
+  }
   // A new book's files are stored before its transaction (a cover upload to S3 then holds no
   // database connection), the cover under the id the book gets, and removed again if it fails.
   let added: { id: string; koreaderMd5: string; hasCover: boolean } | null = null;
@@ -129,7 +139,7 @@ export async function storePublicBook(
       added = { id: randomUUID(), koreaderMd5, hasCover: false };
       const cover = coverUrls.length ? await downloadFirst(get, coverUrls, 16) : null;
       try {
-        if (cover && ((cover.head[0] === 0xff && cover.head[1] === 0xd8) || (pngCovers && cover.head[0] === 0x89))) {
+        if (cover && (await scanFile(cover.tmpPath)).clean && ((cover.head[0] === 0xff && cover.head[1] === 0xd8) || (pngCovers && cover.head[0] === 0x89))) {
           await commitCover(cover.tmpPath, added.id);
           added.hasCover = true;
         }

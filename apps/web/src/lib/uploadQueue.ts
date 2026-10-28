@@ -50,6 +50,8 @@ const UPLOAD_ERRORS: Record<string, string> = {
   unsupported_format: "Unsupported or DRM-protected file",
   file_too_large: "File is too large",
   network: "Network error, try again",
+  infected: "Refused: this file looks malicious",
+  scanner_unavailable: "Virus check unavailable, try again in a minute",
   quota_exceeded: "Storage limit reached",
 };
 
