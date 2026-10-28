@@ -34,6 +34,10 @@ services:
       NODE_ENV: production
       PORT: 3000
       STORAGE_DIR: /data
+      # The site's limits: 800 MB per account, files smaller than 100 MB. Set here, they win over the
+      # values in .env (servers set up from an older .env.example have 2048 and 200 there).
+      UPLOAD_QUOTA_MB: "800"
+      MAX_UPLOAD_MB: "100"
       # Uploads are checked for viruses by the clamav service. CLAMAV_HOST= (empty) in .env turns it off.
       CLAMAV_HOST: ${CLAMAV_HOST-clamav}
     volumes:
