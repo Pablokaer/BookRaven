@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-28-storage-limits",
+    date: "2026-10-28",
+    title: "Storage limits",
+    items: [
+      "Each account can keep up to 800 MB of books; the storage meter in the side menu shows how much you use.",
+      "Files must be smaller than 100 MB: bigger ones are refused before they are sent.",
+    ],
+  },
+  {
     id: "2026-10-23-koreader-folder-shelves",
     date: "2026-10-23",
     title: "Folder shelves in KOReader",

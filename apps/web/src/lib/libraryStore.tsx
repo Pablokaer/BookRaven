@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { loadSnapshot, openAccount, saveSnapshot } from "./accountData";
-import { ApiError, type Book, type Folder } from "./api";
+import { ApiError, serverConfig, type Book, type Folder } from "./api";
 import { deleteBook, listBooks, SUPPORTED_EXTENSIONS, uploadBook } from "./books";
 import { forgetDeviceBook, makeRoom, pruneDeviceBooks } from "./deviceStorage";
 import { eventsConnected, onServerEvent } from "./events";
@@ -131,6 +131,12 @@ function connect(userId: { current: string }) {
     },
   );
 
+  // The server's size limit for one file, so a file too large is refused before it is sent.
+  let maxUploadBytes: number | undefined;
+  void serverConfig()
+    .then((c) => (maxUploadBytes = c.maxUploadMb * 1024 * 1024))
+    .catch(() => {});
+
   const uploads = createUploadQueue({
     uploader: { upload: uploadBook, update: updateBook },
     hooks: {
@@ -142,6 +148,7 @@ function connect(userId: { current: string }) {
       moved: (book) => library.dispatch({ type: "book.replaced", book }),
       settled: refreshMe,
       quotaBytes: () => library.get().me?.quotaBytes,
+      maxUploadBytes: () => maxUploadBytes,
     },
   });
 
