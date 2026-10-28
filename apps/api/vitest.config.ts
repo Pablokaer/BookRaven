@@ -12,6 +12,7 @@ process.env.PUBLIC_URL ??= "http://localhost:5173";
 process.env.BETTER_AUTH_SECRET ??= "test-secret-test-secret-test-secret-00";
 process.env.ADMIN_EMAILS = "admin@test.local";
 process.env.UPLOAD_QUOTA_MB = "1"; // small, so the quota is easy to hit
+process.env.CLAMAV_HOST = ""; // no virus scanning, except where a test points it at a fake clamd
 
 export default defineConfig({
   test: {

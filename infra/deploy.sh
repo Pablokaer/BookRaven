@@ -51,6 +51,9 @@ echo "deploy: build cache before the build: $(cache_usage)"
 build_start=$SECONDS
 docker compose build
 echo "deploy: images built in $((SECONDS - build_start)) s; build cache now $(cache_usage)"
+# The clamav image is not built here: fetch its tag's latest patch release (clamd restarts when
+# it changed, and uploads wait for it to load its signatures again).
+docker compose pull --quiet clamav || echo "deploy: could not pull the clamav image, keeping the current one" >&2
 docker compose up -d --remove-orphans
 
 echo "deploy: waiting for the API"

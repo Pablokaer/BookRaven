@@ -2,11 +2,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireUser } from "../auth.js";
 import { query } from "../db.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
+import { scanFile, ScannerUnavailableError, type ScanResult } from "../lib/antivirus.js";
 import { aboutFile } from "../lib/bookAbout.js";
 import { bookDto, SELECT_BOOK, toBookDto, type BookDto, type BookRow } from "../lib/bookDto.js";
 import { comicAsCbz, CONVERTED_FORMATS } from "../lib/comicConvert.js";
 import { publish } from "../lib/events.js";
 import { partialMd5OfFile } from "../lib/koreader.js";
+import { audit } from "../lib/log.js";
 import { BlockedFileError, isFileBlocked } from "../lib/moderation.js";
 import { catalogChanged, catalogTransaction } from "../lib/publicCatalog.js";
 import { QuotaExceededError, quotaBody, quotaFor, storageUsed, withQuota } from "../lib/quota.js";
@@ -206,6 +208,26 @@ export async function bookRoutes(app: FastifyInstance) {
           ? await query("SELECT 1 FROM folder WHERE id = $1 AND user_id = $2", [folderId, request.user.id])
           : { rowCount: 0 };
         if (!owned.rowCount) return reply.code(400).send({ error: "invalid_folder" });
+      }
+
+      // Virus check, before anything is stored or counted. While scanning is on and clamd gives
+      // no verdict (starting up, down), uploads are refused: security over availability.
+      let verdicts: ScanResult[];
+      try {
+        verdicts = [await scanFile(book.tmpPath), ...(cover ? [await scanFile(cover.tmpPath)] : [])];
+      } catch (err) {
+        if (!(err instanceof ScannerUnavailableError)) throw err;
+        request.log.error({ err }, "upload refused: the virus scanner is unavailable");
+        return reply.code(503).header("Retry-After", "60").send({ error: "scanner_unavailable" });
+      }
+      const infected = verdicts.find((v): v is Extract<ScanResult, { clean: false }> => !v.clean);
+      if (infected) {
+        audit(
+          "upload.infected",
+          { userId: request.user.id, signature: infected.signature, sha256: book.sha256, part: infected === verdicts[0] ? "file" : "cover", ip: request.ip },
+          "warn",
+        );
+        return reply.code(422).send({ error: "infected" });
       }
 
       const coverOk = cover && !cover.truncated && cover.size <= MAX_COVER_BYTES && imageMime(cover.head);
