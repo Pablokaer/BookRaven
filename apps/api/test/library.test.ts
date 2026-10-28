@@ -96,6 +96,17 @@ describe("library", () => {
     expect((await api(admin, "GET", "/api/me")).json().usedBytes - before).toBeGreaterThan(1024 * 1024);
     expect((await api(admin, "GET", "/api/me")).json()).toMatchObject({ isAdmin: true, quotaBytes: null });
   });
+
+  it("refuses a file of MAX_UPLOAD_MB (100 MB) or more, even for administrators", async () => {
+    const admin = await adminSession();
+    const header = "%PDF-1.4\n".length;
+    const atLimit = fakePdf(100 * 1024 * 1024 - header); // exactly 100 MB
+    const res = await upload(admin, "huge.pdf", atLimit);
+    expect(res.statusCode).toBe(413);
+    expect(res.json().error).toBe("file_too_large");
+    expect(await stored(atLimit)).toBeNull();
+    expect((await upload(admin, "big.pdf", fakePdf(100 * 1024 * 1024 - header - 1))).statusCode).toBe(201);
+  });
 });
 
 describe("sharing and the public library", () => {

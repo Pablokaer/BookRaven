@@ -32,11 +32,11 @@ function fakeUploader() {
   };
 }
 
-function setup(quota: number | null = null) {
+function setup(quota: number | null = null, maxUpload: number | null = null) {
   const fake = fakeUploader();
   const uploaded: Book[] = [];
   const moved: Book[] = [];
-  const hooks: UploadHooks = { uploaded: (b) => uploaded.push(b), moved: (b) => moved.push(b), settled: vi.fn(), quotaBytes: () => quota };
+  const hooks: UploadHooks = { uploaded: (b) => uploaded.push(b), moved: (b) => moved.push(b), settled: vi.fn(), quotaBytes: () => quota, maxUploadBytes: () => maxUpload };
   const queue = createUploadQueue({ uploader: fake.uploader, hooks });
   const item = (i = 0) => queue.items()[i]!;
   return { ...fake, queue, hooks, uploaded, moved, item };
@@ -67,6 +67,18 @@ describe("upload queue", () => {
     const q = setup();
     q.queue.add([file("notes.txt")]);
     expect(q.item()).toMatchObject({ status: "error", message: "Unsupported file type" });
+  });
+
+  it("refuses files of the server's size limit or bigger without sending them", async () => {
+    const MB = 1024 * 1024;
+    const q = setup(null, 100 * MB);
+    const sized = (name: string, size: number) => Object.defineProperty(file(name), "size", { value: size });
+    q.queue.add([sized("limit.pdf", 100 * MB), sized("huge.epub", 300 * MB), sized("ok.pdf", 100 * MB - 1)]);
+    expect(q.item(0)).toMatchObject({ status: "error", message: "Too large: files must be smaller than 100 MB" });
+    expect(q.item(1)).toMatchObject({ status: "error", message: "Too large: files must be smaller than 100 MB" });
+    expect(q.item(2).status).toBe("queued");
+    await q.finish({ ok: false, error: "file_too_large" });
+    expect(q.item(2)).toMatchObject({ status: "error", message: "Too large: files must be smaller than 100 MB" });
   });
 
   it("moves a duplicate dropped on a collection into it", async () => {

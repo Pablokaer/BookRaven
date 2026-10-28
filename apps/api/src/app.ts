@@ -58,7 +58,11 @@ export async function buildServer() {
   await app.register(rateLimit, { max: 600, timeWindow: "1 minute" });
   await app.register(multipart, {
     // fieldSize fits a book description (4000 characters, up to 4 bytes each in UTF-8).
-    limits: { fileSize: config.maxUploadBytes, files: 2, fields: 10, fieldSize: 16 * 1024 },
+    // A file must be smaller than MAX_UPLOAD_MB: one of exactly that size is cut short too, and refused.
+    limits: { fileSize: config.maxUploadBytes - 1, files: 2, fields: 10, fieldSize: 16 * 1024 },
+    // A file over the limit is only marked as cut short, so the upload route answers with its own
+    // error ("file_too_large", which the app shows) instead of the plugin's generic 413.
+    throwFileSizeLimit: false,
   });
 
   app.get("/api/health", async () => {

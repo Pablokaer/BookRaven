@@ -41,7 +41,7 @@ export const config = {
     /** Garage and MinIO need path-style URLs (endpoint/bucket/key). */
     forcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? "true").toLowerCase() !== "false",
   },
-  maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 200) * 1024 * 1024,
+  maxUploadBytes: Number(process.env.MAX_UPLOAD_MB ?? 100) * 1024 * 1024,
   /** SMTP connection URL for outgoing email, e.g. smtps://user:pass@smtp.example.com:465 */
   smtpUrl: process.env.SMTP_URL ?? "",
   mailFrom: process.env.MAIL_FROM ?? "BookRaven <no-reply@localhost>",
@@ -55,7 +55,7 @@ export const config = {
   /** Optional: MyMemory allows more translations per day to requests that include an email. */
   myMemoryEmail: process.env.MYMEMORY_EMAIL ?? "",
   /** Total size of the books each account may keep. Administrators have no limit. */
-  quotaBytes: Number(process.env.UPLOAD_QUOTA_MB ?? 2048) * 1024 * 1024,
+  quotaBytes: Number(process.env.UPLOAD_QUOTA_MB ?? 800) * 1024 * 1024,
   /** Emails of administrator accounts (comma-separated): unlimited storage, can moderate the public library. */
   adminEmails: (process.env.ADMIN_EMAILS ?? "")
     .split(",")

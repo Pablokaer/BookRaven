@@ -41,6 +41,8 @@ export type UploadHooks = {
   settled: () => void;
   /** The account's storage limit, for the "limit reached" message. */
   quotaBytes: () => number | null | undefined;
+  /** The server's size limit for one file (files of this size or bigger are refused), once known. */
+  maxUploadBytes?: () => number | null | undefined;
 };
 
 const UPLOAD_ERRORS: Record<string, string> = {
@@ -50,6 +52,9 @@ const UPLOAD_ERRORS: Record<string, string> = {
   network: "Network error, try again",
   quota_exceeded: "Storage limit reached",
 };
+
+/** The message for a file at or over the server's size limit. */
+const tooLarge = (max: number) => `Too large: files must be smaller than ${Math.round(max / 1024 / 1024)} MB`;
 
 /** Upload progress is shown at most this often (the browser reports it many times a second). */
 export const PROGRESS_INTERVAL = 100;
@@ -122,9 +127,15 @@ export function createUploadQueue({ uploader, hooks, progressInterval = PROGRESS
           patch(key, { status: "duplicate", progress: 1, bookId: result.bookId, message });
         } else {
           const quota = hooks.quotaBytes();
+          const max = hooks.maxUploadBytes?.();
           patch(key, {
             status: "error",
-            message: result.error === "quota_exceeded" && quota ? `Storage limit reached (${fileSize(quota)})` : (UPLOAD_ERRORS[result.error] ?? result.error),
+            message:
+              result.error === "quota_exceeded" && quota
+                ? `Storage limit reached (${fileSize(quota)})`
+                : result.error === "file_too_large" && max
+                  ? tooLarge(max)
+                  : (UPLOAD_ERRORS[result.error] ?? result.error),
           });
         }
       }
@@ -140,7 +151,7 @@ export function createUploadQueue({ uploader, hooks, progressInterval = PROGRESS
       listeners.add(listener);
       return () => void listeners.delete(listener);
     },
-    /** Queues files (into a collection when `folderId` is given); unsupported ones are listed as failed at once. */
+    /** Queues files (into a collection when `folderId` is given); unsupported or too large ones are listed as failed at once. */
     add(files: FileList | (File | UploadEntry)[], folderId: string | null = null) {
       const added: UploadItem[] = Array.from(files as ArrayLike<File | UploadEntry>).map((entry, i) => {
         const { file, meta, tags } = entry instanceof File ? { file: entry, meta: undefined, tags: undefined } : entry;
@@ -148,6 +159,10 @@ export function createUploadQueue({ uploader, hooks, progressInterval = PROGRESS
         const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
         if (!SUPPORTED_EXTENSIONS.includes(ext)) {
           return { key, name: file.name, size: file.size, status: "error", progress: 0, message: "Unsupported file type", folderId };
+        }
+        const max = hooks.maxUploadBytes?.();
+        if (max && file.size >= max) {
+          return { key, name: file.name, size: file.size, status: "error", progress: 0, message: tooLarge(max), folderId };
         }
         jobs.push({ key, file, folderId, meta, tags });
         return { key, name: file.name, size: file.size, status: "queued", progress: 0, folderId };
