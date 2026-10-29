@@ -118,6 +118,7 @@ function Nav.goHome()
     end
     if home then
         -- What changed meanwhile (a book read or downloaded), then the server if it is due.
+        if home.resetToHome then home:resetToHome() end -- CyberUI: its home screen
         home:rebuild(true)
         UIManager:nextTick(function() home:refresh() end)
     elseif fm.bookraven and fm.bookraven.openLibrary then

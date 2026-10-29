@@ -8,7 +8,8 @@ Interface themes for KOReader. "original" leaves KOReader untouched; the others 
   cyberdeck  Neon noir, after the console cowboys of 1980s cyberpunk fiction: angular Chakra Petch
              type, a monospace status line, black HUD title bars with a cut corner and uppercase
              titles, angular icons, dashed rules, square dialogs, a glitched raven as the home
-             button and scanlined engravings. On a colour screen it stays in greys.
+             button and scanlined engravings. KOReader's menus stay in greys; its library is
+             CyberUI (cy_app), which has colour schemes and a light and a dark mode.
   classic    A classic e-reader, inspired by the Kindle's stock look: white pages, black Noto Sans
              type, title bars with the title on the left and a hairline under them, thin line
              icons, covers in a grid with their titles below, and no ornaments. Nothing of

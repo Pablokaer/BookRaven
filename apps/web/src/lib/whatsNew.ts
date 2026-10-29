@@ -20,6 +20,17 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-28-koreader-cyberui",
+    date: "2026-10-28",
+    title: "CyberUI for your Kindle",
+    items: [
+      "The KOReader plugin's Cyberdeck theme now has its own cyberpunk library, CyberUI: a home with your streak and the book you are reading, a library with filters and ASCII-art covers, collections, reading telemetry and device diagnostics.",
+      "Long-press a book for its dossier: synopsis, highlights, collections, and rename, move or delete.",
+      "Pick a colour scheme and a light or dark mode in System; colour screens show the colours, other Kindles use greys tuned for e-ink.",
+      "Update the plugin from Profile → Other apps, then choose Settings → BookRaven → Theme → Cyberdeck.",
+    ],
+  },
+  {
     id: "2026-10-28-virus-check",
     date: "2026-10-28",
     title: "Virus check",

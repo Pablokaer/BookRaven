@@ -6,7 +6,10 @@ BookRaven for KOReader.
     Kindle's stock look). Themes restyle fonts, icons, menus, dialogs, title bars and the file
     browser.
   * The BookRaven library home (br_home): continue reading, illustrated shelves, new books;
-    offline, a single shelf with every book on the device.
+    offline, a single shelf with every book on the device. With the Cyberdeck theme, CyberUI
+    (cy_app and the other cy_* modules) takes its place: a cyberpunk library app with its own
+    screens (home, library, collections, telemetry, diagnostics, a book's dossier, settings)
+    and the deck as its quick settings.
     Settings → BookRaven → Start with the BookRaven library (also offered in "Start with").
   * The raven at the top left of every plugin screen and of the catalog goes back to the home;
     screens come and go with a full-screen refresh (br_nav).
@@ -90,6 +93,22 @@ if Theme then
             "br_search", "br_quick", "br_home" }) do
         loadModule(mod)
     end
+    -- CyberUI, the Cyberdeck theme's library (only loaded with that theme)
+    if Theme.applied == "cyberdeck" then
+        for _, mod in ipairs({ "cy_palette", "cy_ui", "cy_data", "cy_ascii", "cy_cover", "cy_app", "cy_home",
+                "cy_library", "cy_caches", "cy_log", "cy_diag", "cy_dossier", "cy_system", "cy_deck" }) do
+            loadModule(mod)
+        end
+    end
+end
+
+--- Whether CyberUI loaded whole (else the Cyberdeck theme keeps the library home).
+local function cyberReady()
+    if not (Theme and Theme.applied == "cyberdeck") then return false end
+    for _, name in ipairs(failed) do
+        if name:match("^cy_") then return false end
+    end
+    return true
 end
 if #failed > 0 then logger.err("BookRaven: modules left out:", table.concat(failed, ", ")) end
 
@@ -308,7 +327,10 @@ function BookRaven:init()
         start_done = true
         UIManager:scheduleIn(5, function() if Covers then pcall(Covers.prune, Covers) end end)
     end
-    if not self.ui.document and G_reader_settings:readSetting("start_with") == Settings.START_WITH then
+    -- (open_library_next: the deck's "back to the library" in a book, whatever the start screen)
+    local asked = Settings.open_library_next
+    if not self.ui.document then Settings.open_library_next = nil end
+    if not self.ui.document and (asked or G_reader_settings:readSetting("start_with") == Settings.START_WITH) then
         -- At start-up, and when coming back from a book: the home, over the file browser, as soon
         -- as the file browser is shown (onShow, before anything is painted: the file browser never
         -- flashes by). If it is never shown that way, on the next tick.
@@ -356,7 +378,8 @@ end
 function BookRaven:openLibrary()
     if self.ui.document then return end
     if self.home and not self.home._closed then return end
-    local ok, Home = pcall(require, "br_home")
+    -- The Cyberdeck theme has its own library, CyberUI (cy_app); the others the library home.
+    local ok, Home = pcall(require, cyberReady() and "cy_app" or "br_home")
     if not ok then
         logger.err("BookRaven: home unavailable", Home)
         UIManager:show(InfoMessage:new{ text = _("The BookRaven library could not open. See crash.log for details.") })
@@ -379,6 +402,15 @@ function BookRaven:onCloseWidget()
         UIManager:close(self.home)
     end
     self.home = nil
+end
+
+--- The device goes to sleep: CyberUI's diagnostics count it.
+function BookRaven:onSuspend()
+    local D = package.loaded["cy_data"]
+    if type(D) == "table" and D.sleeps then
+        D.sleeps = D.sleeps + 1
+        D.slept_at = os.time()
+    end
 end
 
 function BookRaven:onBookRavenOpenLibrary()
