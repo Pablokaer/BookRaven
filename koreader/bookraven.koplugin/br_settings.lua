@@ -11,6 +11,23 @@ BookRaven plugin settings, kept in G_reader_settings under "bookraven".
     text_font   "theme" or a key of br_theme's FAMILIES (font of the plugin's screens)
     last_search the last search, offered again next time
 
+CyberUI (the Cyberdeck theme's library, cy_*.lua):
+
+    cyber_scheme        "neon" | "mono" | "graphite" | "synthwave" | "bloodline" | "terminal" | "amber"
+    cyber_mode          "dark" | "light"
+    cyber_progress      "heartbeat" | "blocks" | "bar"
+    cyber_cover         "ascii" | "image" | "card"
+    cyber_ascii         a key of cy_ascii's STYLES ("braille" by default)
+    cyber_ascii_size    "fine" | "medium" | "coarse"
+    cyber_grid_cols     3 | 4 | 5 (books per row in the library)
+    cyber_library_view  "grid" | "list"
+    cyber_sort          "title" | "author" | "recent" | "added" | "progress"
+    cyber_goal          daily reading goal, in minutes (30)
+    cyber_home_recent   recent files on the home (true)
+    cyber_telemetry     CPU and memory in the status bar (true)
+    cyber_flash         a full refresh when turning library pages (true)
+    cyber_charged_at    when the battery was last seen charging (diagnostics)
+
 The three text settings also restyle KOReader's menus and dialogs when a theme other than the
 original look is on; that part is applied at start-up, like the theme itself.
 ]]

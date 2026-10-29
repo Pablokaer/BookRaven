@@ -575,6 +575,12 @@ end
 --- Opens the panel (once: a second call while it is open does nothing).
 function Quick.show(owner)
     if Quick.open and not Quick.open._closed then return end
+    -- The Cyberdeck theme's own panel: the deck (cy_deck).
+    local Theme = require("br_theme")
+    if Theme.applied == "cyberdeck" and package.loaded["cy_deck"] then
+        local ok, Deck = pcall(require, "cy_deck")
+        if ok and Deck.show then return Deck.show(owner) end
+    end
     local panel = Panel:new{ owner = owner }
     Quick.open = panel
     UIManager:show(panel, "ui", panel.panel_dimen)
