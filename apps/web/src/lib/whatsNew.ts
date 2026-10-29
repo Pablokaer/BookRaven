@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-10-29-koreader-cover-art",
+    date: "2026-10-29",
+    title: "Plain covers in CyberUI",
+    items: [
+      "In the Kindle plugin's CyberUI, System → Covers → Theme art can now be turned off: every cover shows as it is, without ASCII art or the cut frame, so books are easier to tell apart.",
+    ],
+  },
+  {
     id: "2026-10-28-koreader-cyberui",
     date: "2026-10-28",
     title: "CyberUI for your Kindle",

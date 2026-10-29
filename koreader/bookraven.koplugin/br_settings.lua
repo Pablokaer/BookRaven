@@ -17,6 +17,7 @@ CyberUI (the Cyberdeck theme's library, cy_*.lua):
     cyber_mode          "dark" | "light"
     cyber_progress      "heartbeat" | "blocks" | "bar"
     cyber_cover         "ascii" | "image" | "card"
+    cyber_cover_art     false: every cover as the plain image, no ASCII or cut frame (true)
     cyber_ascii         a key of cy_ascii's STYLES ("braille" by default)
     cyber_ascii_size    "fine" | "medium" | "coarse"
     cyber_grid_cols     3 | 4 | 5 (books per row in the library)
