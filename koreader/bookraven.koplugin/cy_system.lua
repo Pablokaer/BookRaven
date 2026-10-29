@@ -132,21 +132,27 @@ end
 
 local function covers(app, w)
     local style = Cover.style()
-    local items = { heading("Style", w),
-        U.segmented{ width = w, items = { { key = "ascii", text = "ASCII" }, { key = "image", text = "Image" }, { key = "card", text = "Card" } },
-            selected = style, on_select = function(k) set(app, "cyber_cover", k) end },
-        U.vspace(s(10)),
-    }
+    local art = Cover.art()
     local chars = Ascii.style()
-    table.insert(items, row("Characters", _("What ASCII covers are drawn with."), value(labelOf(Ascii.STYLES, chars), function()
-        U.popup{ title = "Characters", choices = Ascii.STYLES, selected = chars,
-            on_select = function(k) set(app, "cyber_ascii", k) end }
-    end), w))
-    local density = Settings.get("cyber_ascii_size") or "medium"
-    table.insert(items, row("Density", _("Smaller cells show more detail."), value(labelOf(DENSITY, density), function()
-        U.popup{ title = "Density", choices = DENSITY, selected = density,
-            on_select = function(k) set(app, "cyber_ascii_size", k) end }
-    end), w))
+    local items = {
+        row("Theme art", _("Off shows every cover as it is, without ASCII or the cut frame, so books are easy to tell apart."),
+            toggle(art, function() set(app, "cyber_cover_art", not art) end), w),
+    }
+    if art then
+        table.insert(items, heading("Style", w))
+        table.insert(items, U.segmented{ width = w, items = { { key = "ascii", text = "ASCII" }, { key = "image", text = "Image" }, { key = "card", text = "Card" } },
+            selected = style, on_select = function(k) set(app, "cyber_cover", k) end })
+        table.insert(items, U.vspace(s(10)))
+        table.insert(items, row("Characters", _("What ASCII covers are drawn with."), value(labelOf(Ascii.STYLES, chars), function()
+            U.popup{ title = "Characters", choices = Ascii.STYLES, selected = chars,
+                on_select = function(k) set(app, "cyber_ascii", k) end }
+        end), w))
+        local density = Settings.get("cyber_ascii_size") or "medium"
+        table.insert(items, row("Density", _("Smaller cells show more detail."), value(labelOf(DENSITY, density), function()
+            U.popup{ title = "Density", choices = DENSITY, selected = density,
+                on_select = function(k) set(app, "cyber_ascii_size", k) end }
+        end), w))
+    end
     table.insert(items, heading("Books per row", w))
     table.insert(items, U.segmented{ width = w, items = { { key = "3", text = "3" }, { key = "4", text = "4" }, { key = "5", text = "5" } },
         selected = tostring(Settings.get("cyber_grid_cols") or 4), on_select = function(k) set(app, "cyber_grid_cols", tonumber(k)) end })
@@ -158,8 +164,8 @@ local function covers(app, w)
         local cover = Cover.framed(file, app.current.title, app.current.authors, pw, math.floor(pw * 1.5), {})
         local note = U.column({
             U.text{ text = app.current.title, kind = "semi", size = 15, color = "fg", max_width = w - pw - s(16) },
-            U.text{ text = U.upper(labelOf({ { key = "ascii", text = "ASCII // " .. labelOf(Ascii.STYLES, chars) },
-                { key = "image", text = "Image" }, { key = "card", text = "Card" } }, style)), kind = "mono", size = 12, color = "muted" },
+            U.text{ text = U.upper(art and labelOf({ { key = "ascii", text = "ASCII // " .. labelOf(Ascii.STYLES, chars) },
+                { key = "image", text = "Image" }, { key = "card", text = "Card" } }, style) or "Original"), kind = "mono", size = 12, color = "muted" },
         }, s(4))
         table.insert(items, U.row({ cover, note }, s(16), "top"))
     end

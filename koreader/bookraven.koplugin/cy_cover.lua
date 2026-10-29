@@ -7,6 +7,9 @@ Covers on the CyberUI screens: framed in the theme's colour with a cut corner, a
 
 after System → Covers → Style (cyber_cover), or always as the image (home, dossier: style =
 "image"). A book without a cover gets the card. Tags ("NEW", "42%") sit on the top edge.
+
+With System → Covers → Theme art off (cyber_cover_art = false) every cover is the plain image in a
+thin frame, without ASCII or the cut corner, so books are easy to tell apart.
 ]]
 
 local Geom = require("ui/geometry")
@@ -21,7 +24,12 @@ local s = U.s
 
 local C = {}
 
+function C.art()
+    return Settings.get("cyber_cover_art") ~= false
+end
+
 function C.style()
+    if not C.art() then return "image" end
     return Settings.get("cyber_cover") or "ascii"
 end
 
@@ -43,7 +51,7 @@ end
 
 --- The picture of a book in a w x h box (the box is filled; the image keeps its proportions).
 function C.picture(file, path, title, author, w, h, style)
-    style = style or C.style()
+    style = C.art() and style or C.style()
     if path and style == "ascii" then
         return require("cy_ascii").AsciiCover:new{ width = w, height = h, path = path, title = title }
     end
@@ -90,14 +98,15 @@ end
 --- A framed cover. opts: style ("image" | "ascii" | "card"), tag (a widget), line (a role).
 function C.framed(file, title, author, w, h, opts)
     opts = opts or {}
-    local t = math.max(2, s(1.5))
-    local cut = math.max(s(6), math.floor(w * 0.08))
+    local art = C.art()
+    local t = art and math.max(2, s(1.5)) or math.max(1, s(1))
+    local cut = art and math.max(s(6), math.floor(w * 0.08)) or 0
     local path = opts.path
     if path == nil and file then
         path = opts.cached_only and require("cy_data").cachedCover(file) or require("cy_data").cover(file)
     end
     local pic = C.picture(file, path, title, author, w - 2 * t, h - 2 * t, opts.style)
-    return Framed:new{ width = w, height = h, t = t, cut = cut, tag = opts.tag, line = opts.line or "fg", pic }, path
+    return Framed:new{ width = w, height = h, t = t, cut = cut, tag = opts.tag, line = art and (opts.line or "fg") or "rule", pic }, path
 end
 
 return C
