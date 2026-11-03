@@ -242,6 +242,8 @@ export type ServerConfig = {
   maxUploadMb: number;
   passwordResetEnabled: boolean;
   requireEmailVerification: boolean;
+  /** Cloudflare Turnstile's public key, when sign-up and password reset need the check. */
+  turnstileSiteKey?: string | null;
   dictionaryEnabled: boolean;
   translateEnabled: boolean;
 };
