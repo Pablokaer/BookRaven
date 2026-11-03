@@ -2,7 +2,7 @@ import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
-import { allowedOrigins, config, googleEnabled } from "./config.js";
+import { allowedOrigins, config, googleEnabled, turnstileEnabled } from "./config.js";
 import { pool } from "./db.js";
 import { mailEnabled } from "./lib/mailer.js";
 import { connectionCount } from "./lib/events.js";
@@ -78,6 +78,8 @@ export async function buildServer() {
       googleEnabled,
       allowSignup: config.allowSignup,
       requireEmailVerification: config.requireEmailVerification,
+      // The public key of the Cloudflare Turnstile widget on sign-up and password reset (null: off).
+      turnstileSiteKey: turnstileEnabled ? config.turnstile.siteKey : null,
       maxUploadMb: Math.round(config.maxUploadBytes / 1024 / 1024),
       // Without SMTP in production nobody would receive the link, so the option is hidden.
       passwordResetEnabled: mailEnabled || !config.isProd,

@@ -36,6 +36,9 @@ importers:
       better-auth:
         specifier: 1.7.7
         version: 1.7.7(pg@8.23.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@3.2.4(@types/node@22.20.5)(happy-dom@18.0.1)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15))
+      disposable-email-domains-js:
+        specifier: 1.26.0
+        version: 1.26.0
       fastify:
         specifier: ^5.12.7
         version: 5.12.7
@@ -1819,6 +1822,9 @@ packages:
   dicer@0.3.0:
     resolution: {integrity: sha512-MdceRRWqltEG2dZqO769g27N/3PXfcKl04VhYnBlo2YhH7zPi88VebsjTKclaOyiuMaGU72hTfw3VkUitGcVCA==}
     engines: {node: '>=4.5.0'}
+
+  disposable-email-domains-js@1.26.0:
+    resolution: {integrity: sha512-pSqALZAiuw6HDC1HqhhtvShRnniUNObQ6kzwa5N280XbyxxCPBZnQQ7fO6Uk/CNTi4cAaKE1UZl3Mc30Zfj4UA==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -4803,6 +4809,8 @@ snapshots:
   dicer@0.3.0:
     dependencies:
       streamsearch: 0.1.2
+
+  disposable-email-domains-js@1.26.0: {}
 
   dunder-proto@1.0.1:
     dependencies:

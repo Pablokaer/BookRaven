@@ -5,6 +5,7 @@ import logoIcon from "../assets/logo.webp";
 import wordmark from "../assets/wordmark.webp";
 import { Field, PasswordField } from "../components/ui/Field";
 import { ArchedPlate, Fleuron } from "../components/ui/Ornaments";
+import { Turnstile } from "../components/Turnstile";
 import { API_BASE, apiJson, isNative, type ServerConfig } from "../lib/api";
 import { authClient } from "../lib/auth";
 
@@ -110,6 +111,9 @@ export function LoginPage({
   const [sent, setSent] = useState(false);
   const [verify, setVerify] = useState(false);
   const [cfg, setCfg] = useState<ServerConfig | null>(null);
+  // Cloudflare Turnstile on sign-up and password reset, when the server has it on.
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
 
   useEffect(() => {
     apiJson<ServerConfig>("/api/config").then(setCfg).catch(() => setError("Cannot reach the server"));
@@ -129,13 +133,27 @@ export function LoginPage({
     if (signupClosed && mode === "signup") switchMode("signin");
   }, [signupClosed, mode]);
 
+  const captchaKey = mode !== "signin" ? cfg?.turnstileSiteKey : null;
+  const waitingForCaptcha = Boolean(captchaKey) && !captcha;
+  const captchaWidget = captchaKey ? (
+    <Turnstile
+      key={captchaRound}
+      siteKey={captchaKey}
+      onToken={setCaptcha}
+      onError={() => setError("We could not check that you are not a robot. Reload the page and try again.")}
+    />
+  ) : null;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const fetchOptions = captchaKey && captcha ? { headers: { "x-captcha-response": captcha } } : undefined;
+    // A token works once: a new check for the next attempt.
+    if (captchaKey) setCaptchaRound((n) => n + 1);
     if (mode === "forgot") {
       // The link must open the web app, also when requested from the Android app.
-      const res = await authClient.requestPasswordReset({ email, redirectTo: `${API_BASE || window.location.origin}/reset-password` });
+      const res = await authClient.requestPasswordReset({ email, redirectTo: `${API_BASE || window.location.origin}/reset-password`, fetchOptions });
       setBusy(false);
       if (res.error) setError(res.error.message ?? "Something went wrong");
       else setSent(true);
@@ -144,7 +162,7 @@ export function LoginPage({
     const res =
       mode === "signin"
         ? await authClient.signIn.email({ email, password })
-        : await authClient.signUp.email({ email, password, name: name || email.split("@")[0]! });
+        : await authClient.signUp.email({ email, password, name: name || email.split("@")[0]!, fetchOptions });
     setBusy(false);
     if (res.error) {
       // Signing in before verifying the email: Better Auth sends a 403.
@@ -191,9 +209,10 @@ export function LoginPage({
           <form onSubmit={submit} className="space-y-4">
             <p className="text-sm text-muted">Enter your email and we will send you a link.</p>
             {emailInput}
+            {captchaWidget}
             {error && <p className="text-sm text-rose-300">{error}</p>}
-            <button className="btn h-11 w-full" disabled={busy}>
-              {busy ? "Please wait…" : "Send reset link"}
+            <button className="btn h-11 w-full" disabled={busy || waitingForCaptcha}>
+              {busy || waitingForCaptcha ? "Please wait…" : "Send reset link"}
             </button>
           </form>
         )}
@@ -242,9 +261,10 @@ export function LoginPage({
             </button>
           </div>
         )}
+        {captchaWidget}
         {error && <p className="text-sm text-rose-300">{error}</p>}
-        <button className="btn h-11 w-full" disabled={busy}>
-          {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+        <button className="btn h-11 w-full" disabled={busy || waitingForCaptcha}>
+          {busy || waitingForCaptcha ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
         </button>
       </form>
 

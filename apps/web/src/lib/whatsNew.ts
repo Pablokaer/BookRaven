@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-03-bot-protection",
+    date: "2026-11-03",
+    title: "Fewer fake accounts",
+    items: [
+      "Creating an account or asking for a password reset may now include a quick \"not a robot\" check; most of the time you will not even see it.",
+      "Temporary email addresses (such as mailinator) can no longer be used to sign up.",
+    ],
+  },
+  {
     id: "2026-10-28-koreader-cyberui",
     date: "2026-10-28",
     title: "CyberUI for your Kindle",

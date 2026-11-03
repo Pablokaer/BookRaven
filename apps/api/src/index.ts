@@ -1,9 +1,10 @@
 import { buildServer } from "./app.js";
 import { runAuthMigrations } from "./auth.js";
-import { config, googleEnabled } from "./config.js";
+import { config, googleEnabled, turnstileEnabled } from "./config.js";
 import { pool, runAppMigrations } from "./db.js";
 import { backfillKoreaderHashes } from "./lib/koreader.js";
 import { log } from "./lib/log.js";
+import { schedulePurge } from "./lib/signups.js";
 import { ensureStorageDirs } from "./lib/storage.js";
 
 async function main() {
@@ -13,7 +14,9 @@ async function main() {
   await runAppMigrations((m) => app.log.info(m));
   await app.listen({ port: config.port, host: config.host });
   void backfillKoreaderHashes((m) => app.log.info(m));
+  schedulePurge();
   app.log.info(`Google sign-in ${googleEnabled ? "enabled" : "disabled"}; sign-up ${config.allowSignup ? "open" : "closed"}`);
+  app.log.info(`Captcha (Turnstile) ${turnstileEnabled ? "on" : "off"}; email verification ${config.requireEmailVerification ? "required" : "optional"}`);
   const { host, port } = config.clamav;
   app.log.info(host ? `Virus scanning on (clamd at ${host}:${port})` : "Virus scanning off (CLAMAV_HOST is empty)");
 
