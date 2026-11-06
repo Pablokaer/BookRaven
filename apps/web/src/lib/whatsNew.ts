@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-06-not-found",
+    date: "2026-11-06",
+    title: "Clearer broken links",
+    items: [
+      "A mistyped or broken address now shows a \"Not found\" page with a link home, instead of quietly opening the library.",
+    ],
+  },
+  {
     id: "2026-11-03-bot-protection",
     date: "2026-11-03",
     title: "Fewer fake accounts",
