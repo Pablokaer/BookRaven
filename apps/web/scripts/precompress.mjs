@@ -12,7 +12,7 @@ import { brotliCompress, constants, gzip } from "node:zlib";
 const dir = process.argv[2];
 if (!dir) throw new Error("usage: node scripts/precompress.mjs DIST_DIR");
 
-const TEXT = /\.(js|mjs|css|html|svg|json|webmanifest|wasm|txt|xml)$/;
+const TEXT = /\.(js|mjs|css|html|svg|json|webmanifest|wasm|txt|md|xml)$/;
 const br = promisify(brotliCompress);
 const gz = promisify(gzip);
 

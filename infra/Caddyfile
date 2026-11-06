@@ -66,16 +66,32 @@
 	# Static frontend (SPA)
 	handle {
 		root * /srv
-		# A visitor without a session cookie gets the landing page already rendered
-		# (apps/web/scripts/prerender.mjs), for search engines and a faster first view; with one,
-		# the app as usual. The answer depends on the cookie, so caches are told so.
+		# An agent that asks for Markdown (Accept: text/markdown) gets the front page as Markdown
+		# (apps/web/public/index.md). Otherwise a visitor without a session cookie gets the landing
+		# page already rendered (apps/web/scripts/prerender.mjs), for search engines and a faster
+		# first view; with one, the app as usual. The answer depends on both headers, so caches are
+		# told so. Only the first matching rewrite applies.
+		@markdown {
+			path /
+			header Accept *text/markdown*
+		}
+		rewrite @markdown /index.md
 		@landing {
 			path /
 			not header Cookie *session_token*
 		}
 		rewrite @landing /landing.html
-		header / Vary Cookie
-		try_files {path} /index.html
+		header / Vary "Cookie, Accept"
+		header @markdown Content-Type "text/markdown; charset=utf-8"
+		@mdfile path *.md
+		header @mdfile Content-Type "text/markdown; charset=utf-8"
+		# The app's own routes (apps/web/src/App.tsx) fall back to index.html; any other address that
+		# isn't a file is a real 404 (below), not the app shell answering 200 for everything.
+		@app {
+			not file
+			path /login /signup /reset-password /read/* /public /public/* /search /books/* /discover /shared /reading /uploads /import /collections /collections/* /favorites /profile /stats /admin /download /clubs /clubs/* /share/*
+		}
+		rewrite @app /index.html
 		# .br/.gz copies made when the image is built (apps/web/scripts/precompress.mjs)
 		file_server {
 			precompressed br gzip
@@ -90,7 +106,30 @@
 		header @revalidate Cache-Control "no-cache"
 	}
 
-	# Every address falls back to index.html, so the sign-in form, the reader and share links would
+	# An address that is neither a file, an app route nor the API: a real 404, with a short Markdown
+	# or HTML body (agents ask for Markdown) pointing back to the front page.
+	handle_errors 404 {
+		@wantsMarkdown header Accept *text/markdown*
+		handle @wantsMarkdown {
+			header Content-Type "text/markdown; charset=utf-8"
+			respond <<MD
+				Not found
+				=========
+
+				There is no page at this address on this BookRaven server. See the [front page](/), or [llms.txt](/llms.txt) for what this server offers.
+				MD 404
+		}
+		handle {
+			header Content-Type "text/html; charset=utf-8"
+			respond <<HTML
+				<!doctype html>
+				<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Not found · BookRaven</title></head>
+				<body style="margin:0;padding:15vh 16px;background:#071521;color:#e8e2d4;font:16px/1.5 Georgia,serif;text-align:center"><h1>Not found</h1><p>There is no page at this address.</p><p><a href="/" style="color:#d9b46a">Go to BookRaven</a></p></body></html>
+				HTML 404
+		}
+	}
+
+	# The app's routes all answer with index.html, so the sign-in form, the reader and share links would
 	# all look like pages to a crawler: only the front page may be indexed, under one address
 	# (PUBLIC_URL), whatever query string a link added.
 	@noindex not path / /robots.txt /sitemap.xml
