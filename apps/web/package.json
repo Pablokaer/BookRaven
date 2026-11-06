@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node scripts/prerender.mjs dist",
+    "build": "tsc -b && vite build && node scripts/prerender.mjs dist && node scripts/legal-pages.mjs dist",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "android:sync": "vite build --mode native && cap sync android",

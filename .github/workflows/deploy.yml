@@ -44,9 +44,10 @@ jobs:
         run: ssh vps bash -s -- "$APP_DIR" "$COMMIT" < infra/deploy.sh
 
   # Android app (README → Android app): a signed APK and a live-update bundle of the web app,
-  # built while the server deploys and published under /downloads once it is up. Skipped
-  # until the ANDROID_KEYSTORE_BASE64 secret exists, and when nothing that goes into the app
-  # changed since the published release.
+  # built while the server deploys and published under /downloads once it is up, and the Google
+  # Play build as an Android App Bundle (README → Google Play), sent to Google Play when the
+  # PLAY_SERVICE_ACCOUNT_JSON secret exists. Skipped until the ANDROID_KEYSTORE_BASE64 secret
+  # exists, and when nothing that goes into the app changed since the published release.
   android-build:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
@@ -59,6 +60,7 @@ jobs:
       APP_DIR: ${{ vars.VPS_APP_DIR || '/opt/mico-livrao' }}
       SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
       KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - name: Signing key
         id: key
@@ -69,6 +71,8 @@ jobs:
           fi
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "enabled=true" >> "$GITHUB_OUTPUT"
+          # Secrets can't be read in a job's "if": the android-play job reads this output instead.
+          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then echo "play=true" >> "$GITHUB_OUTPUT"; fi
 
       - uses: actions/checkout@v7
         if: steps.key.outputs.enabled
@@ -151,21 +155,32 @@ jobs:
           export VERSION_CODE=$(git rev-list --count HEAD)
           export VERSION_NAME="1.$VERSION_CODE"
           export BUNDLE_VERSION=$(git rev-parse --short=12 HEAD)
-          pnpm install --frozen-lockfile
-          cd apps/web
-          pnpm exec vite build --mode native
-          pnpm exec cap sync android
           # Downloads from dl.google.com sometimes time out, so a failed Gradle build is tried again.
           # --build-cache and --parallel are set here, not in android/gradle.properties: android/ is
           # part of the app's native fingerprint (scripts/native-version.mjs), and changing it would
           # make every installed app ask for a new APK.
-          for attempt in 1 2 3; do
-            (cd android && ./gradlew --no-daemon --build-cache --parallel assembleRelease -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME") && break
-            if [ "$attempt" = 3 ]; then exit 1; fi
-            echo "::warning::Gradle build failed (attempt $attempt of 3), trying again"
-            sleep 20
-          done
+          gradle() {
+            for attempt in 1 2 3; do
+              (cd android && ./gradlew --no-daemon --build-cache --parallel "$1" -PversionCode="$VERSION_CODE" -PversionName="$VERSION_NAME") && return 0
+              if [ "$attempt" = 3 ]; then return 1; fi
+              echo "::warning::Gradle build failed (attempt $attempt of 3), trying again"
+              sleep 20
+            done
+          }
+          pnpm install --frozen-lockfile
+          cd apps/web
+          # The site build: the APK on our server, which updates itself (also its live-update bundle).
+          pnpm exec vite build --mode native
+          pnpm exec cap sync android
+          gradle assembleSiteRelease
           node scripts/android-release.mjs "$RUNNER_TEMP/android-release"
+          # The Google Play build: the same app without self-updates (VITE_STORE=play), as an
+          # Android App Bundle, signed with the same key (Google Play's upload key).
+          VITE_STORE=play pnpm exec vite build --mode native
+          pnpm exec cap copy android
+          gradle bundlePlayRelease
+          mkdir -p "$RUNNER_TEMP/android-play"
+          cp android/app/build/outputs/bundle/playRelease/app-play-release.aab "$RUNNER_TEMP/android-play/bookraven-$VERSION_NAME.aab"
 
       - uses: actions/upload-artifact@v7
         if: steps.changes.outputs.build
@@ -173,8 +188,16 @@ jobs:
           name: android-release
           path: ${{ runner.temp }}/android-release
           retention-days: 7
+      # Also there to download by hand (the first upload to Google Play is done in Play Console).
+      - uses: actions/upload-artifact@v7
+        if: steps.changes.outputs.build
+        with:
+          name: android-play
+          path: ${{ runner.temp }}/android-play
+          retention-days: 30
     outputs:
       built: ${{ steps.changes.outputs.build }}
+      play: ${{ steps.key.outputs.play }}
 
   android-publish:
     needs: [deploy, android-build]
@@ -209,3 +232,26 @@ jobs:
         run: |
           tar -C android-release -czf - . | ssh vps "rm -rf '$APP_DIR/downloads/.incoming' && mkdir -p '$APP_DIR/downloads/.incoming' && tar -C '$APP_DIR/downloads/.incoming' -xzf -"
           ssh vps bash -s -- "$APP_DIR" < infra/publish-android.sh
+
+  # The Google Play build goes to Google Play (README → Google Play), once the server is deployed:
+  # to the PLAY_TRACK variable's track ("internal" by default), as a release with the status in
+  # PLAY_RELEASE_STATUS ("completed" by default; "draft" while the app was never published).
+  android-play:
+    needs: [deploy, android-build]
+    if: needs.android-build.outputs.built == 'true' && needs.android-build.outputs.play == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: android-play
+          path: android-play
+
+      - uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: app.readsync
+          releaseFiles: android-play/*.aab
+          track: ${{ vars.PLAY_TRACK || 'internal' }}
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}

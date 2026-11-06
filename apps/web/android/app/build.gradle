@@ -30,6 +30,14 @@ android {
             }
         }
     }
+    // Where the app is installed from: "site" is the APK on our own server, which updates itself
+    // (README → Android app); "play" is the Google Play build, without the APK installer and its
+    // permission (README → Google Play). Same app id and signing key, so either can update the other.
+    flavorDimensions = ["store"]
+    productFlavors {
+        site { dimension "store" }
+        play { dimension "store" }
+    }
     buildTypes {
         release {
             if (releaseKeystore) signingConfig signingConfigs.release

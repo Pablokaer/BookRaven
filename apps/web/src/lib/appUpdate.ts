@@ -2,10 +2,11 @@ import { App as CapApp } from "@capacitor/app";
 import { registerPlugin } from "@capacitor/core";
 import { LiveUpdate } from "@capawesome/capacitor-live-update";
 import { useSyncExternalStore } from "react";
-import { API_BASE, isNative } from "./api";
+import { API_BASE, isNative, isPlayStore } from "./api";
 
 /**
- * Android app updates from our own server (no Play Store). Each deploy publishes, under
+ * Android app updates from our own server, for the APK installed from our site (the Google Play
+ * build, isPlayStore, is updated by Google Play and never checks). Each deploy publishes, under
  * /downloads, a signed APK, a zip of the web bundle and android.json describing both
  * (.github/workflows/deploy.yml). The app checks that file when it starts and resumes:
  * - same native layer: the web bundle is downloaded quietly and used from the next start;
@@ -88,7 +89,7 @@ export function useAppUpdate() {
 let lastCheck = 0;
 
 export async function checkForUpdates() {
-  if (!isNative || state.checking) return;
+  if (!isNative || isPlayStore || state.checking) return;
   set({ checking: true });
   try {
     const release = await fetchRelease();
@@ -131,6 +132,7 @@ export function startAppUpdates() {
   started = true;
   void LiveUpdate.ready().catch(() => {});
   void CapApp.getInfo().then(({ version }) => set({ installedVersion: version }));
+  if (isPlayStore) return;
   void checkForUpdates();
   void CapApp.addListener("resume", () => {
     if (Date.now() - lastCheck > CHECK_EVERY_MS) void checkForUpdates();

@@ -1,6 +1,6 @@
 import { Preferences } from "@capacitor/preferences";
 import { isOfflineCopy, keptForAccount, withOfflineCopy } from "./accountData";
-import { isNative } from "./platform";
+import { isNative, isPlayStore } from "./platform";
 
 /**
  * On the web the app and API share an origin (Caddy proxies /api), so requests are
@@ -8,7 +8,7 @@ import { isNative } from "./platform";
  * Inside the Capacitor app the API is remote, so we use an absolute URL and a
  * bearer token (cookies across origins are unreliable in Android WebViews).
  */
-export { isNative };
+export { isNative, isPlayStore };
 export const API_BASE: string = isNative ? (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "") : "";
 
 const TOKEN_KEY = "readsync.authToken";

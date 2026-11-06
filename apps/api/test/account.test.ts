@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { outbox } from "../src/lib/mailer.js";
-import { api, getApp, ORIGIN, signUp } from "./helpers.js";
+import { query } from "../src/db.js";
+import { adminSession, api, fakePdf, getApp, ORIGIN, signUp, upload } from "./helpers.js";
 
 async function signIn(email: string, password: string) {
   const a = await getApp();
@@ -59,5 +60,35 @@ describe("passwords", () => {
   it("does not reveal whether an email has an account", async () => {
     const res = await api(null, "POST", "/api/auth/request-password-reset", { email: "nobody@test.local", redirectTo: `${ORIGIN}/reset-password` });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+describe("deleting your own account", () => {
+  it("asks for the password, then deletes the account and its books", async () => {
+    const u = await signUp();
+    const book = (await upload(u, "mine.pdf", fakePdf())).json();
+    expect((await api(u, "DELETE", "/api/me", {})).statusCode).toBe(403);
+    expect((await api(u, "DELETE", "/api/me", { password: "wrong-password" })).statusCode).toBe(403);
+    expect((await api(u, "DELETE", "/api/me", { password: "password123" })).statusCode).toBe(204);
+
+    expect((await query(`SELECT 1 FROM "user" WHERE id = $1`, [u.id])).rowCount).toBe(0);
+    expect((await query("SELECT 1 FROM book WHERE id = $1", [book.id])).rowCount).toBe(0);
+    // Its session went with it, and the email can sign up again.
+    expect((await api(u, "GET", "/api/me")).statusCode).toBe(401);
+    expect((await signIn(u.email, "password123")).statusCode).toBe(401);
+    await expect(signUp(u.email)).resolves.toBeTruthy();
+  });
+
+  it("has an account without a password (Google) type its email", async () => {
+    const u = await signUp();
+    await query(`UPDATE account SET "providerId" = 'google', password = NULL WHERE "userId" = $1`, [u.id]);
+    expect((await api(u, "DELETE", "/api/me", { confirm: "someone@else.example" })).statusCode).toBe(400);
+    expect((await api(u, "DELETE", "/api/me", { confirm: u.email.toUpperCase() })).statusCode).toBe(204);
+    expect((await query(`SELECT 1 FROM "user" WHERE id = $1`, [u.id])).rowCount).toBe(0);
+  });
+
+  it("refuses an administrator", async () => {
+    const admin = await adminSession();
+    expect((await api(admin, "DELETE", "/api/me", { password: "password123" })).json()).toEqual({ error: "cannot_delete_admin" });
   });
 });

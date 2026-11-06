@@ -98,6 +98,8 @@ services:
       args:
         PUBLIC_URL: ${PUBLIC_URL}
         ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+        # Written into the privacy policy and account-deletion pages (/privacy, /delete-account)
+        CONTACT_EMAIL: ${CONTACT_EMAIL:-}
     restart: unless-stopped
     logging: *logging
     environment:

@@ -287,6 +287,11 @@ export function LoginPage({
           </button>
         </p>
       )}
+      <p className="mt-4 text-center text-xs text-muted">
+        <a className="hover:text-accent" href={`${API_BASE}/privacy`} target="_blank" rel="noreferrer">
+          Privacy policy
+        </a>
+      </p>
     </AuthLayout>
   );
 }
