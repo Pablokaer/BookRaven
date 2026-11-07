@@ -11,6 +11,7 @@ import { audit, log } from "../lib/log.js";
 import { quotaOf } from "../lib/quota.js";
 import { unpublishFile } from "../lib/publicCatalog.js";
 import { deleteAccount, deleteBooks } from "../lib/accounts.js";
+import { subscriptionBytes } from "../lib/billing.js";
 
 async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
@@ -46,6 +47,8 @@ type UserRow = {
   books: string;
   used: string;
   quota_bytes: string | null;
+  plan: string | null;
+  status: string | null;
   blocked: boolean | null;
   blocked_reason: string | null;
 };
@@ -74,8 +77,8 @@ export async function adminRoutes(app: FastifyInstance) {
       `SELECT u.id, u.name, u.email, u."createdAt",
               (SELECT count(*) FROM book b WHERE b.user_id = u.id) AS books,
               (SELECT COALESCE(SUM(size_bytes), 0) FROM book b WHERE b.user_id = u.id) AS used,
-              a.quota_bytes, a.blocked, a.blocked_reason
-       FROM "user" u LEFT JOIN account_admin a ON a.user_id = u.id
+              a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status
+       FROM "user" u LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
        WHERE lower(u.email) LIKE $1 OR lower(u.name) LIKE $1
        ORDER BY u."createdAt" DESC
        LIMIT 500`,
@@ -89,7 +92,9 @@ export async function adminRoutes(app: FastifyInstance) {
       books: Number(r.books),
       usedBytes: Number(r.used),
       isAdmin: isAdmin(r),
-      quotaBytes: quotaOf(r, r.quota_bytes),
+      quotaBytes: quotaOf(r, r.quota_bytes, r),
+      // The paid plan, while its subscription gives storage.
+      plan: subscriptionBytes(r) ? r.plan : null,
       quotaOverride: r.quota_bytes != null ? Number(r.quota_bytes) : null,
       blocked: r.blocked === true,
       blockedReason: r.blocked_reason,

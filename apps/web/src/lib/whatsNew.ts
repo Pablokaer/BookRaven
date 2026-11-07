@@ -21,11 +21,37 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     id: "2026-11-06-delete-account",
-    date: "2026-11-06",
+    date: "2026-11-07",
     title: "Your account, your choice",
     items: [
       "You can now delete your account, with all your books, notes and reading history, from Profile → Delete account.",
       "The privacy policy is linked from the sign-in screen and your profile: it explains what BookRaven keeps and why.",
+    ],
+  },
+  {
+    id: "2026-10-29-koreader-cover-art",
+    date: "2026-11-07",
+    title: "Plain covers in CyberUI",
+    items: [
+      "In the Kindle plugin's CyberUI, System → Covers → Theme art can now be turned off: every cover shows as it is, without ASCII art or the cut frame, so books are easier to tell apart.",
+    ],
+  },
+  {
+    id: "2026-11-07-new-logo",
+    date: "2026-11-07",
+    title: "A new look for the raven",
+    items: [
+      "BookRaven has a new logo: an engraved raven perched on an open book, in ivory and gold.",
+      "The app icon, the browser tab icon and the preview shown when you share a link to BookRaven use it too.",
+    ],
+  },
+  {
+    id: "2026-11-07-storage-plans",
+    date: "2026-11-07",
+    title: "More room for your books",
+    items: [
+      "Need more than the free space? Storage plans of 2, 5 or 10 GB are now in Profile → Storage plans, monthly or yearly.",
+      "Change or cancel any time; your books stay with you either way.",
     ],
   },
   {

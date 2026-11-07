@@ -1,5 +1,6 @@
 import { forgetSessions } from "../auth.js";
 import { query } from "../db.js";
+import { cancelBilling } from "./billing.js";
 import { forgetAppPasswords } from "./devices.js";
 import { publish } from "./events.js";
 import { log } from "./log.js";
@@ -21,7 +22,8 @@ export async function deleteBooks(books: { id: string; user_id: string; sha256: 
 }
 
 /**
- * Deletes an account: its books (and every file nobody else has), then the account, whose
+ * Deletes an account: its paid plan's subscription (cancelled in Stripe right away), its books
+ * (and every file nobody else has), then the account, whose
  * progress, highlights, sessions, app passwords and the rest go with it (ON DELETE CASCADE).
  * Returns how many books it had.
  */
@@ -30,6 +32,7 @@ export async function deleteAccount(userId: string) {
     "SELECT id, user_id, sha256, is_public FROM book WHERE user_id = $1",
     [userId],
   );
+  await cancelBilling(userId);
   await deleteBooks(books);
   await query(`DELETE FROM "user" WHERE id = $1`, [userId]);
   forgetSessions(userId);

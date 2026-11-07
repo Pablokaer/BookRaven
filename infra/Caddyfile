@@ -134,8 +134,9 @@
 
 	# The app's routes all answer with index.html, so the sign-in form, the reader and share links would
 	# all look like pages to a crawler: only the front page may be indexed, under one address
-	# (PUBLIC_URL), whatever query string a link added.
-	@noindex not path / /robots.txt /sitemap.xml
+	# (PUBLIC_URL), whatever query string a link added. The link-preview image stays fetchable
+	# without a noindex header for the chat apps and search engines that show it.
+	@noindex not path / /robots.txt /sitemap.xml /og-image.png
 	header @noindex X-Robots-Tag "noindex, nofollow"
 	header / Link `<{$PUBLIC_URL}/>; rel="canonical"`
 

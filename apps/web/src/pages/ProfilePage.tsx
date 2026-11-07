@@ -2,6 +2,7 @@ import { ArrowRight, HardDriveDownload, Import, KeyRound, LogOut, ShieldCheck, T
 import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
+import { StoragePlans } from "../components/StoragePlans";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { PasswordField } from "../components/ui/Field";
@@ -253,6 +254,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       <section className="surface p-6">
         <StorageMeter />
       </section>
+
+      <StoragePlans />
 
       <DeviceStorage />
 
