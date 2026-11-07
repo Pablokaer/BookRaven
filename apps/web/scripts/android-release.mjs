@@ -1,5 +1,5 @@
 // Collects an Android release into OUT_DIR for the Deploy workflow, after `vite build --mode
-// native` and `gradlew assembleRelease`:
+// native` and `gradlew assembleSiteRelease` (the "site" build, which updates itself from our server):
 //   bookraven-<versionName>.apk   the signed APK
 //   bundles/<bundle id>.zip       the web bundle, for live updates of installed apps
 //   android.json                  what the app and the download page read (src/lib/appUpdate.ts)
@@ -21,7 +21,7 @@ if (!VERSION_CODE || !VERSION_NAME || !BUNDLE_VERSION) throw new Error("VERSION_
 mkdirSync(join(out, "bundles"), { recursive: true });
 
 const apkName = `bookraven-${VERSION_NAME}.apk`;
-copyFileSync(join(webDir, "android/app/build/outputs/apk/release/app-release.apk"), join(out, apkName));
+copyFileSync(join(webDir, "android/app/build/outputs/apk/site/release/app-site-release.apk"), join(out, apkName));
 
 // index.html at the root of the zip, as the live-update plugin expects.
 const zipName = `${BUNDLE_VERSION}.zip`;

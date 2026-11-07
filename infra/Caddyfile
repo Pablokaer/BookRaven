@@ -92,6 +92,9 @@
 			path /login /signup /reset-password /read/* /public /public/* /search /books/* /discover /shared /reading /uploads /import /collections /collections/* /favorites /profile /stats /admin /download /clubs /clubs/* /share/*
 		}
 		rewrite @app /index.html
+		# The privacy policy and how to delete an account (apps/web/legal), linked from app stores
+		rewrite /privacy /privacy.html
+		rewrite /delete-account /delete-account.html
 		# .br/.gz copies made when the image is built (apps/web/scripts/precompress.mjs)
 		file_server {
 			precompressed br gzip

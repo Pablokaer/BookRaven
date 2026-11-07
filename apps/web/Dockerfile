@@ -17,12 +17,14 @@ COPY packages/locator packages/locator
 COPY koreader koreader
 COPY apps/web apps/web
 # CI already typechecks (pnpm build), so only Vite runs here, then the prerendered landing page
-# (with the site's address and whether it takes sign-ups, docker-compose.yml) and .br/.gz copies
-# for Caddy.
+# (with the site's address and whether it takes sign-ups, docker-compose.yml), the privacy policy
+# and account-deletion pages (with the contact address) and .br/.gz copies for Caddy.
 ARG PUBLIC_URL=""
 ARG ALLOW_SIGNUP=""
+ARG CONTACT_EMAIL=""
 RUN pnpm --filter web exec vite build \
   && PUBLIC_URL="$PUBLIC_URL" ALLOW_SIGNUP="$ALLOW_SIGNUP" node apps/web/scripts/prerender.mjs apps/web/dist \
+  && PUBLIC_URL="$PUBLIC_URL" CONTACT_EMAIL="$CONTACT_EMAIL" node apps/web/scripts/legal-pages.mjs apps/web/dist \
   && node apps/web/scripts/precompress.mjs apps/web/dist
 
 FROM caddy:2-alpine

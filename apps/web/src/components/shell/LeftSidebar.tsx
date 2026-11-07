@@ -1,7 +1,7 @@
 import { BookOpen, Compass, Download, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Share2, ShieldCheck, Upload, User, UsersRound } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
-import { isNative } from "../../lib/api";
+import { isNative, isPlayStore } from "../../lib/api";
 import { collectionColor, isInProgress } from "../../lib/bookStats";
 import { fileSize } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
@@ -39,7 +39,8 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
     { to: "/favorites", label: "Favorites", icon: <Heart />, count: counts.favorites },
     { to: "/profile", label: "Profile", icon: <User /> },
     ...(me?.isAdmin ? [{ to: "/admin", label: "Admin", icon: <ShieldCheck /> }] : []),
-    { to: "/download", label: isNative ? "App updates" : "Download APK", icon: <Download /> },
+    // The Google Play build gets its updates from Google Play.
+    ...(isPlayStore ? [] : [{ to: "/download", label: isNative ? "App updates" : "Download APK", icon: <Download /> }]),
   ];
 
   // Labels are hidden when compact; `hide` is the class for that.

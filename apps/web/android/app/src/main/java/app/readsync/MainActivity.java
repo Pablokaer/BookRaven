@@ -7,7 +7,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        registerPlugin(ApkInstallerPlugin.class);
+        // The site build's APK installer; nothing in the Google Play build (src/site, src/play).
+        StorePlugins.register(this);
         super.onCreate(savedInstanceState);
     }
 }

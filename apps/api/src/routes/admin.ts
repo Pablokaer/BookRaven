@@ -9,9 +9,9 @@ import { publish } from "../lib/events.js";
 import { findOr404, obj, UUID_RE } from "../lib/http.js";
 import { audit, log } from "../lib/log.js";
 import { quotaOf } from "../lib/quota.js";
-import { cancelBilling, subscriptionBytes } from "../lib/billing.js";
-import { removeBookFile, removeCover } from "../lib/storage.js";
-import { catalogChanged, unpublishFile } from "../lib/publicCatalog.js";
+import { unpublishFile } from "../lib/publicCatalog.js";
+import { deleteAccount, deleteBooks } from "../lib/accounts.js";
+import { subscriptionBytes } from "../lib/billing.js";
 
 async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
@@ -22,20 +22,6 @@ export async function adminUserIds() {
   if (!config.adminEmails.length) return [];
   const { rows } = await query<{ id: string }>(`SELECT id FROM "user" WHERE lower(email) = ANY($1)`, [config.adminEmails]);
   return rows.map((r) => r.id);
-}
-
-/** Deletes the given books and any stored file no other book uses any more. */
-async function deleteBooks(books: { id: string; user_id: string; sha256: string }[]) {
-  if (!books.length) return;
-  await query("DELETE FROM book WHERE id = ANY($1)", [books.map((b) => b.id)]);
-  await Promise.all(books.map((b) => removeCover(b.id).catch((err) => log.warn({ err, bookId: b.id }, "could not remove a deleted book's cover"))));
-  for (const b of books) publish(b.user_id, "book.deleted", { id: b.id });
-  const shas = [...new Set(books.map((b) => b.sha256))];
-  const { rows } = await query<{ sha256: string }>("SELECT DISTINCT sha256 FROM book WHERE sha256 = ANY($1)", [shas]);
-  const still = new Set(rows.map((r) => r.sha256));
-  await Promise.all(
-    shas.filter((sha) => !still.has(sha)).map((sha) => removeBookFile(sha).catch((err) => log.warn({ err, sha256: sha }, "could not remove a deleted book's file"))),
-  );
 }
 
 /**
@@ -185,21 +171,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const target = await loadTarget(request, reply);
     if (!target) return;
     if (isAdmin(target) || target.id === request.user.id) return reply.code(400).send({ error: "cannot_delete_admin" });
-    const { rows: books } = await query<{ id: string; user_id: string; sha256: string; is_public: boolean }>(
-      "SELECT id, user_id, sha256, is_public FROM book WHERE user_id = $1",
-      [target.id],
-    );
     // With the email: once the account is gone, its id leads nowhere.
-    const fields = { adminId: request.user.id, userId: target.id, email: target.email, books: books.length, ip: request.ip };
+    const fields = { adminId: request.user.id, userId: target.id, email: target.email, books: 0, ip: request.ip };
     await audited("admin.user_deleted", fields, async () => {
-      await cancelBilling(target.id);
-      await deleteBooks(books);
-      await query(`DELETE FROM "user" WHERE id = $1`, [target.id]);
-      // Its sessions and app passwords went with it (ON DELETE CASCADE).
-      forgetSessions(target.id);
-      forgetAppPasswords(target.id);
+      fields.books = await deleteAccount(target.id);
     });
-    if (books.some((b) => b.is_public)) catalogChanged({});
     return reply.code(204).send();
   });
 

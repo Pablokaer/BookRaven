@@ -1,4 +1,4 @@
-import { ArrowRight, HardDriveDownload, Import, KeyRound, LogOut, ShieldCheck, Target } from "lucide-react";
+import { ArrowRight, HardDriveDownload, Import, KeyRound, LogOut, ShieldCheck, Target, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
@@ -6,6 +6,7 @@ import { StoragePlans } from "../components/StoragePlans";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Avatar } from "../components/ui/Avatar";
 import { PasswordField } from "../components/ui/Field";
+import { API_BASE, ApiError, apiOk } from "../lib/api";
 import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
 import { clearDeviceBooks, deviceUsage } from "../lib/deviceStorage";
@@ -62,6 +63,93 @@ function ChangePassword() {
           {message && <p className={`text-sm ${message.ok ? "text-accent" : "text-rose-300"}`}>{message.text}</p>}
         </div>
       </form>
+    </section>
+  );
+}
+
+/**
+ * Deletes the account and everything in it (DELETE /api/me). An account with a password confirms
+ * with it; one that only signs in with Google types its email.
+ */
+function DeleteAccount({ email }: { email: string }) {
+  const [open, setOpen] = useState(false);
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || hasPassword !== null) return;
+    authClient
+      .listAccounts()
+      .then((res) => setHasPassword(res.data ? res.data.some((a) => a.providerId === "credential") : true))
+      .catch(() => setHasPassword(true));
+  }, [open, hasPassword]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await apiOk("/api/me", { method: "DELETE", body: JSON.stringify(hasPassword ? { password: answer } : { confirm: answer }) });
+    } catch (err) {
+      setBusy(false);
+      const code = err instanceof ApiError ? err.body?.error : null;
+      setError(
+        code === "wrong_password"
+          ? "The password is wrong."
+          : code === "confirm_email"
+            ? "Type your email address exactly as shown."
+            : code === "cannot_delete_admin"
+              ? "Administrator accounts can't be deleted here: remove the address from ADMIN_EMAILS first."
+              : "Could not delete the account. Check your connection and try again.",
+      );
+      return;
+    }
+    await signOut();
+  };
+
+  return (
+    <section className="surface p-6">
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-medium">
+        <Trash2 className="h-4 w-4 text-rose-300" /> Delete account
+      </h2>
+      <p className="text-xs text-muted">
+        Deletes your account, your books and their files, reading progress, highlights, notes, bookmarks, collections and app passwords, for
+        good. Books you added to the Public Library leave it too. This can't be undone.{" "}
+        <a className="text-accent hover:underline" href={`${API_BASE}/privacy`} target="_blank" rel="noreferrer">
+          Privacy policy
+        </a>
+      </p>
+      {!open ? (
+        <button className="btn-outline mt-4 border-rose-300/40 text-rose-300" onClick={() => setOpen(true)}>
+          Delete my account…
+        </button>
+      ) : (
+        <form onSubmit={submit} className="mt-4 space-y-3">
+          {hasPassword === null ? (
+            <p className="text-sm text-muted">Please wait…</p>
+          ) : hasPassword ? (
+            <PasswordField label="Your password" className="input w-full sm:w-80" value={answer} onValue={setAnswer} autoComplete="current-password" />
+          ) : (
+            <label className="block">
+              <span className="text-sm">
+                Type <span className="font-medium">{email}</span> to confirm
+              </span>
+              <input className="input mt-1 w-full sm:w-80" value={answer} onChange={(e) => setAnswer(e.target.value)} autoComplete="off" />
+            </label>
+          )}
+          {error && <p className="text-sm text-rose-300">{error}</p>}
+          <div className="flex flex-wrap gap-3">
+            <button className="btn bg-rose-600 hover:bg-rose-500" disabled={busy || hasPassword === null || !answer}>
+              {busy ? "Deleting…" : "Delete my account for good"}
+            </button>
+            <button type="button" className="btn-outline" onClick={() => (setOpen(false), setAnswer(""), setError(null))}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
@@ -209,6 +297,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
           </button>
         </form>
       </section>
+
+      <DeleteAccount email={user.email} />
     </div>
   );
 }

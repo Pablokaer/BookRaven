@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { ApkUpdateButton } from "../components/AppUpdate";
 import { CopyField } from "../components/ui/CopyField";
 import { PageHeader } from "../components/ui/PageHeader";
-import { isNative } from "../lib/api";
+import { isNative, isPlayStore } from "../lib/api";
+import { PLAY_STORE_URL } from "../lib/platform";
 import { APK_URL, BUNDLE_VERSION, checkForUpdates, fetchRelease, restartWithUpdate, useAppUpdate, type AndroidRelease } from "../lib/appUpdate";
 import { fileSize, timeAgo } from "../lib/format";
 
@@ -66,6 +67,22 @@ function InstalledApp() {
       <button className="btn-outline" disabled={checking} onClick={() => void checkForUpdates()}>
         {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Check for updates
       </button>
+    </section>
+  );
+}
+
+/** In the Google Play build: Google Play keeps it up to date. */
+function PlayStoreApp() {
+  const { installedVersion } = useAppUpdate();
+  return (
+    <section className="surface space-y-4 p-6">
+      <h2 className="font-display text-xl font-semibold">You are using the Android app</h2>
+      <p className="text-sm text-muted">
+        Installed version {installedVersion || "…"}. Google Play keeps it up to date.
+      </p>
+      <a className="btn-outline" href={PLAY_STORE_URL}>
+        Open in Google Play
+      </a>
     </section>
   );
 }
@@ -163,7 +180,7 @@ export function DownloadPage() {
   return (
     <>
       <PageHeader title="Android app" subtitle="Read on your phone and tablet, with your library and reading progress in sync." />
-      {isNative ? <InstalledApp /> : <GetTheApp />}
+      {isPlayStore ? <PlayStoreApp /> : isNative ? <InstalledApp /> : <GetTheApp />}
     </>
   );
 }

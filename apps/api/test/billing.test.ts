@@ -214,6 +214,17 @@ describe("paid storage plans", () => {
     expect(s.status).toBe("canceled");
   });
 
+  it("cancels the subscription of an account its owner deletes", async () => {
+    const u = await signUp();
+    stripe.calls.length = 0;
+    await api(u, "POST", "/api/billing/checkout", { plan: "reader", interval: "month" });
+    const customerId = stripe.calls.find((c) => c.path === "/checkout/sessions")!.body.get("customer")!;
+    const s = subscribe(customerId, "bookraven_reader_month_599");
+    await webhook({ id: "evt_6", type: "customer.subscription.created", data: { object: { id: s.id } } });
+    expect((await api(u, "DELETE", "/api/me", { password: "password123" })).statusCode).toBe(204);
+    expect(s.status).toBe("canceled");
+  });
+
   it("has nothing to sell to administrators", async () => {
     const admin = await adminSession();
     expect((await api(admin, "GET", "/api/billing")).json().enabled).toBe(false);

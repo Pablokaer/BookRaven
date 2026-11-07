@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-06-delete-account",
+    date: "2026-11-07",
+    title: "Your account, your choice",
+    items: [
+      "You can now delete your account, with all your books, notes and reading history, from Profile → Delete account.",
+      "The privacy policy is linked from the sign-in screen and your profile: it explains what BookRaven keeps and why.",
+    ],
+  },
+  {
     id: "2026-10-29-koreader-cover-art",
     date: "2026-11-07",
     title: "Plain covers in CyberUI",
