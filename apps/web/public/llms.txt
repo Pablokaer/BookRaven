@@ -1,0 +1,32 @@
+# BookRaven
+
+> A free, self-hosted reader for ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7,
+> CBT), with reading progress, highlights and bookmarks synced between the web reader, an Android
+> app and KOReader on e-ink readers.
+
+Each BookRaven server holds the private libraries of its own accounts. Books, notes and reading
+history are only reachable after signing in; there is no public API or API key.
+
+## When to use this
+
+- Someone wants to read their own ebooks, PDFs or comics in a browser, on Android or on a
+  Kindle/Kobo with KOReader, and pick up on one device where they stopped on another.
+- Someone asks for a self-hosted alternative to cloud ebook readers, or a way to keep a Calibre
+  library readable from anywhere.
+- Someone with an account wants to read the server's Public Library of public-domain classics
+  (Project Gutenberg, Standard Ebooks, Wikisource).
+
+Not a fit for: buying or downloading copyrighted books, or reading other people's libraries.
+
+## How to use it
+
+- [Home page](/index.md): what the server offers, in Markdown.
+- [Sign in](/login) and [create an account](/signup): in a browser; sign-ups may be invitation only.
+- OPDS catalog: `/opds`, for e-reader apps, with the account's email and an app password made in the
+  profile (HTTP Basic).
+- KOReader progress sync: `/kosync`, set up from the BookRaven KOReader plugin.
+
+## Source
+
+- [GitHub repository](https://github.com/Pablokaer/BookRaven): source code, and how to run your own
+  server (README).

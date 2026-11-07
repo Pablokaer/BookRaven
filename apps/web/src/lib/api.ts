@@ -242,8 +242,12 @@ export type ServerConfig = {
   maxUploadMb: number;
   passwordResetEnabled: boolean;
   requireEmailVerification: boolean;
+  /** Cloudflare Turnstile's public key, when sign-up and password reset need the check. */
+  turnstileSiteKey?: string | null;
   dictionaryEnabled: boolean;
   translateEnabled: boolean;
+  /** Paid storage plans on sale (Profile → Storage plans). */
+  billingEnabled?: boolean;
 };
 
 let config: Promise<ServerConfig> | null = null;

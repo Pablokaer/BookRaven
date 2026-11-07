@@ -29,6 +29,27 @@ export const config = {
   allowSignup: (process.env.ALLOW_SIGNUP ?? "true").toLowerCase() !== "false",
   /** Require a verified email before signing in (opt-in; needs SMTP, or nobody can verify). */
   requireEmailVerification: (process.env.REQUIRE_EMAIL_VERIFICATION ?? "false").toLowerCase() === "true",
+  /**
+   * Days an account that never confirmed its email is kept (with REQUIRE_EMAIL_VERIFICATION on;
+   * 0 keeps them). Only accounts that never signed in and have no books are deleted.
+   */
+  unverifiedAccountDays: Math.max(0, Number(process.env.UNVERIFIED_ACCOUNT_DAYS ?? 7) || 0),
+  /** Refuse sign-ups from throwaway email services (mailinator, 10minutemail...). */
+  blockDisposableEmails: (process.env.BLOCK_DISPOSABLE_EMAILS ?? "true").toLowerCase() !== "false",
+  /**
+   * Cloudflare Turnstile on sign-up and "Forgot password?": both keys set turns it on. The site
+   * key is public (the web app shows the widget with it); the secret key stays on the server.
+   */
+  turnstile: { siteKey: (process.env.TURNSTILE_SITE_KEY ?? "").trim(), secretKey: (process.env.TURNSTILE_SECRET_KEY ?? "").trim() },
+  /**
+   * Paid storage plans (apps/api/src/lib/billing.ts) through Stripe: both keys set turns them on.
+   * STRIPE_AUTOMATIC_TAX=true lets Stripe Tax work out the VAT (needs Stripe Tax set up).
+   */
+  stripe: {
+    secretKey: (process.env.STRIPE_SECRET_KEY ?? "").trim(),
+    webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET ?? "").trim(),
+    automaticTax: (process.env.STRIPE_AUTOMATIC_TAX ?? "").toLowerCase() === "true",
+  },
   storageDir: path.resolve(process.env.STORAGE_DIR ?? "./data"),
   /** "local" keeps files in STORAGE_DIR; "s3" uses an S3-compatible bucket (STORAGE_DIR then only holds temp uploads). */
   storageDriver: (process.env.STORAGE_DRIVER ?? "local") === "s3" ? ("s3" as const) : ("local" as const),
@@ -73,6 +94,8 @@ export const config = {
 export const isAdmin = (user: { email: string }) => config.adminEmails.includes(user.email.toLowerCase());
 
 export const googleEnabled = Boolean(config.google.clientId && config.google.clientSecret);
+
+export const turnstileEnabled = Boolean(config.turnstile.siteKey && config.turnstile.secretKey);
 
 export const allowedOrigins = Array.from(
   new Set([

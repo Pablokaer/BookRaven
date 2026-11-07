@@ -21,10 +21,45 @@ export type ReleaseNote = {
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
     id: "2026-10-29-koreader-cover-art",
-    date: "2026-10-29",
+    date: "2026-11-07",
     title: "Plain covers in CyberUI",
     items: [
       "In the Kindle plugin's CyberUI, System → Covers → Theme art can now be turned off: every cover shows as it is, without ASCII art or the cut frame, so books are easier to tell apart.",
+    ],
+  },
+  {
+    id: "2026-11-07-new-logo",
+    date: "2026-11-07",
+    title: "A new look for the raven",
+    items: [
+      "BookRaven has a new logo: an engraved raven perched on an open book, in ivory and gold.",
+      "The app icon, the browser tab icon and the preview shown when you share a link to BookRaven use it too.",
+    ],
+  },
+  {
+    id: "2026-11-07-storage-plans",
+    date: "2026-11-07",
+    title: "More room for your books",
+    items: [
+      "Need more than the free space? Storage plans of 2, 5 or 10 GB are now in Profile → Storage plans, monthly or yearly.",
+      "Change or cancel any time; your books stay with you either way.",
+    ],
+  },
+  {
+    id: "2026-11-06-not-found",
+    date: "2026-11-06",
+    title: "Clearer broken links",
+    items: [
+      "A mistyped or broken address now shows a \"Not found\" page with a link home, instead of quietly opening the library.",
+    ],
+  },
+  {
+    id: "2026-11-03-bot-protection",
+    date: "2026-11-03",
+    title: "Fewer fake accounts",
+    items: [
+      "Creating an account or asking for a password reset may now include a quick \"not a robot\" check; most of the time you will not even see it.",
+      "Temporary email addresses (such as mailinator) can no longer be used to sign up.",
     ],
   },
   {

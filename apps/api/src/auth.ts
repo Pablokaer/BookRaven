@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { APIError, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { fromNodeHeaders } from "better-auth/node";
-import { bearer } from "better-auth/plugins";
+import { bearer, captcha } from "better-auth/plugins";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { allowedOrigins, config, googleEnabled } from "./config.js";
+import { allowedOrigins, config, googleEnabled, turnstileEnabled } from "./config.js";
 import { pool } from "./db.js";
 import { TtlCache } from "./lib/cache.js";
 import { forgetAppPasswords } from "./lib/devices.js";
@@ -12,6 +12,7 @@ import { resetPasswordEmail, verifyEmailEmail, welcomeEmail } from "./lib/emails
 import { audit, log } from "./lib/log.js";
 import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
+import { isDisposableEmail } from "./lib/signups.js";
 
 /** The client's address: routes/auth.ts hands Better Auth Fastify's request.ip as X-Forwarded-For. */
 const clientIp = (from: { headers?: Headers } | null | undefined) => from?.headers?.get("x-forwarded-for") ?? "";
@@ -66,6 +67,16 @@ export const auth = betterAuth({
     // Welcome email for every new account, from the email form or Google.
     user: {
       create: {
+        // Throwaway addresses (mailinator, 10minutemail...) are a bot's way past email verification.
+        before: async (user, ctx) => {
+          if (config.blockDisposableEmails && isDisposableEmail(user.email)) {
+            audit("auth.disposable_email_refused", { email: user.email, ip: clientIp(ctx) }, "warn");
+            throw new APIError("BAD_REQUEST", {
+              message: "Please use a permanent email address: temporary email services are not accepted.",
+              code: "DISPOSABLE_EMAIL",
+            });
+          }
+        },
         after: async (user) => {
           audit("auth.account_created", { userId: user.id });
           sendMailInBackground(welcomeEmail(user));
@@ -114,7 +125,21 @@ export const auth = betterAuth({
     },
   },
   // Bearer tokens let the Capacitor app authenticate without third-party cookies.
-  plugins: [bearer()],
+  // Cloudflare Turnstile on sign-up and password reset (TURNSTILE_SITE_KEY and _SECRET_KEY): the
+  // app sends the widget's token in the x-captcha-response header. Signing in is left out; its
+  // tight rate limit already covers password guessing.
+  plugins: [
+    bearer(),
+    ...(turnstileEnabled
+      ? [
+          captcha({
+            provider: "cloudflare-turnstile",
+            secretKey: config.turnstile.secretKey,
+            endpoints: ["/sign-up/email", "/request-password-reset", "/forget-password"],
+          }),
+        ]
+      : []),
+  ],
   telemetry: { enabled: false },
 });
 

@@ -40,6 +40,19 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: bash infra/ci-ssh.sh
 
+      # Settings kept as GitHub secrets reach the server's .env (infra/set-env.sh) before the
+      # deploy restarts the API with it. Empty ones are skipped, so .env keeps what it has.
+      - name: Settings from secrets
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_AUTOMATIC_TAX: ${{ vars.STRIPE_AUTOMATIC_TAX }}
+        run: |
+          for key in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_AUTOMATIC_TAX; do
+            if [ -n "${!key}" ]; then printf '%s=%s\n' "$key" "${!key}"; fi
+          done | ssh vps "umask 077 && cat > '$APP_DIR/.env.incoming'"
+          ssh vps bash -s -- "$APP_DIR" < infra/set-env.sh
+
       - name: Deploy
         run: ssh vps bash -s -- "$APP_DIR" "$COMMIT" < infra/deploy.sh
 

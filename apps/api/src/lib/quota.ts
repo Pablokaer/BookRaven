@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { config, isAdmin } from "../config.js";
 import { pool, withTransaction } from "../db.js";
+import { subscriptionBytes } from "./billing.js";
 
 export class QuotaExceededError extends Error {
   constructor(
@@ -16,18 +17,26 @@ export const quotaBody = (q: { usedBytes: number; quotaBytes: number }) => ({ er
 
 /**
  * Storage limit of an account in bytes, or null when unlimited (administrators).
- * An administrator can set a different limit per account (account_admin.quota_bytes).
+ * An administrator can set a different limit per account (account_admin.quota_bytes), and a paid
+ * plan (billing) raises it while its subscription is active: the larger of the two applies.
  */
 export async function quotaFor(user: { id: string; email: string }, client: pg.PoolClient | pg.Pool = pool) {
   if (isAdmin(user)) return null;
-  const { rows } = await client.query<{ quota_bytes: string | null }>("SELECT quota_bytes FROM account_admin WHERE user_id = $1", [user.id]);
-  return quotaOf(user, rows[0]?.quota_bytes ?? null);
+  const { rows } = await client.query<{ quota_bytes: string | null; plan: string | null; status: string | null }>(
+    `SELECT a.quota_bytes, b.plan, b.status
+     FROM (SELECT $1::text AS id) u
+     LEFT JOIN account_admin a ON a.user_id = u.id
+     LEFT JOIN billing b ON b.user_id = u.id`,
+    [user.id],
+  );
+  return quotaOf(user, rows[0]?.quota_bytes ?? null, rows[0]);
 }
 
-/** quotaFor, when account_admin.quota_bytes is already at hand. */
-export function quotaOf(user: { email: string }, quotaBytes: string | number | null) {
+/** quotaFor, when account_admin.quota_bytes and the billing row are already at hand. */
+export function quotaOf(user: { email: string }, quotaBytes: string | number | null, billing?: { plan: string | null; status: string | null } | null) {
   if (isAdmin(user)) return null;
-  return quotaBytes != null ? Number(quotaBytes) : config.quotaBytes;
+  const base = quotaBytes != null ? Number(quotaBytes) : config.quotaBytes;
+  return Math.max(base, subscriptionBytes(billing));
 }
 
 export async function storageUsed(userId: string, client: pg.PoolClient | pg.Pool = pool) {
