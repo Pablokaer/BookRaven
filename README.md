@@ -202,12 +202,11 @@ Free accounts keep `UPLOAD_QUOTA_MB` of books. With Stripe keys set, *Profile �
 
 The plan's storage replaces the free limit while its subscription is active (also while Stripe retries a failed payment, `past_due`); a per-account limit an administrator set still wins when it is larger. When the plan ends the books stay, but nothing more can be added above the free limit. A first plan goes through Stripe Checkout; changing plan or period happens in place and is prorated (an upgrade is charged right away); *Manage billing* opens Stripe's customer portal (card, invoices, cancelling). Deleting an account cancels its subscription. Administrators have nothing to buy. The Android app built for Google Play shows no plans (Google requires its own billing for that); the website's own APK links to the website.
 
-Setup, in the [Stripe dashboard](https://dashboard.stripe.com/) (try it first in test mode, with test keys):
+Setup (try it first with Stripe's test keys):
 
-1. *Developers → API keys*: copy the secret key (`sk_live_…`, or a restricted key with write access to Customers, Prices, Products, Checkout Sessions, Subscriptions and Customer portal).
-2. *Developers → Webhooks → Add endpoint*: `https://<your site>/api/billing/webhook`, events `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`. Copy its signing secret (`whsec_…`).
-3. *Settings → Billing → Customer portal*: save it once (Stripe needs a saved configuration before the portal opens); allow cancelling and updating the payment method.
-4. Put the keys in `.env` and run `docker compose up -d`:
+1. In the [Stripe dashboard](https://dashboard.stripe.com/), *Developers → API keys*: copy the secret key (`sk_live_…`, or a restricted key with write access to Customers, Prices, Products, Checkout Sessions, Subscriptions, Customer portal and Webhook endpoints).
+2. Create the webhook endpoint (`https://<your site>/api/billing/webhook`, events `checkout.session.completed` and `customer.subscription.created` / `updated` / `deleted`) with `STRIPE_SECRET_KEY=sk_... node infra/stripe-setup.mjs https://<your site>`, which prints its signing secret (`whsec_…`). It replaces an endpoint already there for that address. Or add it by hand in *Developers → Webhooks*.
+3. Give the server both keys, either in `.env` followed by `docker compose up -d`:
 
    ```bash
    STRIPE_SECRET_KEY=sk_live_...
@@ -215,7 +214,9 @@ Setup, in the [Stripe dashboard](https://dashboard.stripe.com/) (try it first in
    STRIPE_AUTOMATIC_TAX=false   # true once Stripe Tax is set up to charge each country's VAT
    ```
 
-The products and prices are created in Stripe on first use, under lookup keys like `bookraven_shelf_month_399`; changing a price in `billing.ts` makes a new Stripe price (existing subscribers keep the old one until they change plan). Stripe's webhook calls are checked against the signing secret (at most 5 minutes old) and each one re-reads the subscription from Stripe, so late or repeated events can't leave an old state. Selling to consumers in the EU means charging the buyer's country's VAT (the OSS scheme); `STRIPE_AUTOMATIC_TAX=true` lets Stripe Tax compute it, prices staying VAT-inclusive.
+   or as GitHub secrets, which the Deploy workflow writes into the server's `.env` before every deploy (`infra/set-env.sh`; empty ones are skipped): `gh secret set STRIPE_SECRET_KEY`, `gh secret set STRIPE_WEBHOOK_SECRET`, and optionally the variable `gh variable set STRIPE_AUTOMATIC_TAX --body true`, then run the Deploy workflow.
+
+The customer portal needs no setup either: the API uses the first active portal configuration, or creates one (card, invoices, billing details, cancelling at the end of the period). The products and prices are created in Stripe on first use, under lookup keys like `bookraven_shelf_month_399`; changing a price in `billing.ts` makes a new Stripe price (existing subscribers keep the old one until they change plan). Stripe's webhook calls are checked against the signing secret (at most 5 minutes old) and each one re-reads the subscription from Stripe, so late or repeated events can't leave an old state. Selling to consumers in the EU means charging the buyer's country's VAT (the OSS scheme); `STRIPE_AUTOMATIC_TAX=true` lets Stripe Tax compute it, prices staying VAT-inclusive.
 
 ### Virus scanning
 

@@ -112,6 +112,33 @@ export async function priceFor(planId: PlanId, interval: Interval) {
   return id;
 }
 
+let portalConfig: string | null = null;
+
+/**
+ * The customer portal's configuration: the first active one, or one made here (card, invoices,
+ * billing details, cancelling at the end of the period), so the portal works without saving it in
+ * Stripe's dashboard first.
+ */
+export async function portalConfiguration() {
+  if (portalConfig) return portalConfig;
+  const found = await stripe<{ data: { id: string }[] }>("GET", "/billing_portal/configurations", { active: true, limit: 1 });
+  portalConfig =
+    found.data[0]?.id ??
+    (
+      await stripe<{ id: string }>("POST", "/billing_portal/configurations", {
+        business_profile: { headline: "BookRaven storage plans" },
+        default_return_url: `${config.publicUrl}/profile#plans`,
+        features: {
+          customer_update: { enabled: true, allowed_updates: ["email", "address", "tax_id"] },
+          invoice_history: { enabled: true },
+          payment_method_update: { enabled: true },
+          subscription_cancel: { enabled: true, mode: "at_period_end" },
+        },
+      })
+    ).id;
+  return portalConfig;
+}
+
 export type BillingRow = {
   user_id: string;
   stripe_customer_id: string;

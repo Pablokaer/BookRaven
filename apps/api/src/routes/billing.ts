@@ -8,6 +8,7 @@ import {
   customerFor,
   type Interval,
   PLANS,
+  portalConfiguration,
   type PlanId,
   priceFor,
   StripeError,
@@ -142,7 +143,11 @@ export async function billingRoutes(app: FastifyInstance) {
       const row = await billingRow(request.user.id);
       if (!row) return reply.code(409).send({ error: "no_subscription" });
       try {
-        const session = await stripe<{ url: string }>("POST", "/billing_portal/sessions", { customer: row.stripe_customer_id, return_url: profileUrl() });
+        const session = await stripe<{ url: string }>("POST", "/billing_portal/sessions", {
+          customer: row.stripe_customer_id,
+          configuration: await portalConfiguration(),
+          return_url: profileUrl(),
+        });
         return { url: session.url };
       } catch (err) {
         log.error({ err, userId: request.user.id }, "billing: could not open the customer portal");

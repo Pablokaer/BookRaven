@@ -49,6 +49,8 @@ beforeAll(() => {
       return Response.json(p);
     }
     if (method === "POST" && path === "/checkout/sessions") return Response.json({ id: id("cs"), url: "https://checkout.stripe.com/c/pay/test" });
+    if (method === "GET" && path === "/billing_portal/configurations") return Response.json({ data: [] });
+    if (method === "POST" && path === "/billing_portal/configurations") return Response.json({ id: "bpc_1" });
     if (method === "POST" && path === "/billing_portal/sessions") return Response.json({ url: "https://billing.stripe.com/p/session/test" });
     const sub = /^\/subscriptions\/(.+)$/.exec(path);
     const s = sub && stripe.subs.get(decodeURIComponent(sub[1]!));
@@ -156,6 +158,10 @@ describe("paid storage plans", () => {
     // The customer portal opens on Stripe.
     const portal = await api(u, "POST", "/api/billing/portal");
     expect(portal.json().url).toBe("https://billing.stripe.com/p/session/test");
+    // Without a saved configuration in Stripe, the API makes one (cancelling at the period's end).
+    const made = stripe.calls.find((c) => c.method === "POST" && c.path === "/billing_portal/configurations")!;
+    expect(made.body.get("features[subscription_cancel][mode]")).toBe("at_period_end");
+    expect(stripe.calls.find((c) => c.path === "/billing_portal/sessions")!.body.get("configuration")).toBe("bpc_1");
 
     // Cancelled (from the portal): back to the free limit; the books stay.
     s.status = "canceled";
