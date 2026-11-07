@@ -32,8 +32,10 @@ async function stripe(method, path, params = []) {
   return json;
 }
 
-const account = await stripe("GET", "/account");
-console.log(`stripe-setup: account ${account.settings?.dashboard?.display_name ?? account.id} (${key.startsWith("sk_live") || key.startsWith("rk_live") ? "live" : "test"} mode)`);
+// A restricted key may not read the account: its name is only shown when it can.
+const account = await stripe("GET", "/account").catch(() => null);
+const mode = key.startsWith("sk_live") || key.startsWith("rk_live") ? "live" : "test";
+console.log(`stripe-setup: ${account ? `account ${account.settings?.dashboard?.display_name ?? account.id}, ` : ""}${mode} mode`);
 
 const { data } = await stripe("GET", "/webhook_endpoints", [["limit", "100"]]);
 for (const old of data.filter((e) => e.url === url)) {
