@@ -41,6 +41,15 @@ export const config = {
    * key is public (the web app shows the widget with it); the secret key stays on the server.
    */
   turnstile: { siteKey: (process.env.TURNSTILE_SITE_KEY ?? "").trim(), secretKey: (process.env.TURNSTILE_SECRET_KEY ?? "").trim() },
+  /**
+   * Paid storage plans (apps/api/src/lib/billing.ts) through Stripe: both keys set turns them on.
+   * STRIPE_AUTOMATIC_TAX=true lets Stripe Tax work out the VAT (needs Stripe Tax set up).
+   */
+  stripe: {
+    secretKey: (process.env.STRIPE_SECRET_KEY ?? "").trim(),
+    webhookSecret: (process.env.STRIPE_WEBHOOK_SECRET ?? "").trim(),
+    automaticTax: (process.env.STRIPE_AUTOMATIC_TAX ?? "").toLowerCase() === "true",
+  },
   storageDir: path.resolve(process.env.STORAGE_DIR ?? "./data"),
   /** "local" keeps files in STORAGE_DIR; "s3" uses an S3-compatible bucket (STORAGE_DIR then only holds temp uploads). */
   storageDriver: (process.env.STORAGE_DRIVER ?? "local") === "s3" ? ("s3" as const) : ("local" as const),
