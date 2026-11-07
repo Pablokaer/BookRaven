@@ -65,7 +65,7 @@ export function AuthLayout({
           <span aria-hidden="true" className="pointer-events-none absolute inset-[6px] rounded-[3px] border border-gold/10" />
           <div className="flex items-center justify-center gap-3">
             <img src={logoIcon} alt="" className="h-11 w-11 rounded-[11px]" />
-            <img src={wordmark} alt="BookRaven" className="h-7 w-auto" />
+            <img src={wordmark} alt="BookRaven" className="h-5 w-auto" />
           </div>
           <h1 className="mt-7 font-literary text-[2.1rem] font-medium leading-[1.05] text-ivory text-balance">{heading}</h1>
           <Fleuron className="mx-auto mt-4 w-20 text-gold/60" />

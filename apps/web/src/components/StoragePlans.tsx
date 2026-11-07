@@ -165,7 +165,7 @@ export function StoragePlans() {
         {billing.plans.map((plan) => {
           const mine = current?.plan === plan.id && current.interval === interval;
           return (
-            <div key={plan.id} className={`flex flex-col rounded-lg border p-4 ${mine ? "border-gold/60 bg-gold/5" : "border-line"}`}>
+            <div key={plan.id} className={`flex flex-col items-center rounded-lg border p-4 text-center ${mine ? "border-gold/60 bg-gold/5" : "border-line"}`}>
               <div className="text-sm font-medium">{plan.name}</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums">{fileSize(plan.bytes)}</div>
               <div className="mt-1 text-sm text-muted">
