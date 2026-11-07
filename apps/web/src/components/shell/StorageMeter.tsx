@@ -1,22 +1,18 @@
 import { HardDrive, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { isNative, serverConfig } from "../../lib/api";
 import { fileSize } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
+import { PLANS_PATH, usePlansOnSale } from "../../lib/upgrade";
 import { ProgressBar } from "../books/ProgressBar";
 
-/** Storage used by the account against its limit (administrators are unlimited). */
-export function StorageMeter() {
+/**
+ * Storage used by the account against its limit (administrators are unlimited). With plans on
+ * sale, a full account is offered more space; `link={false}` where the meter already sits in a
+ * link (the sidebar, which has its own Upgrade button).
+ */
+export function StorageMeter({ link = true }: { link?: boolean }) {
   const { me } = useLibrary();
-  // Paid plans on sale: a full account is offered more space (never in the Google Play build).
-  const [plans, setPlans] = useState(false);
-  useEffect(() => {
-    if (isNative && import.meta.env.VITE_STORE === "play") return;
-    serverConfig()
-      .then((c) => setPlans(Boolean(c.billingEnabled)))
-      .catch(() => {});
-  }, []);
+  const plans = usePlansOnSale() && link;
   if (!me) return <div className="skeleton h-9 rounded-lg" aria-busy="true" />;
 
   if (me.quotaBytes === null) {
@@ -50,7 +46,7 @@ export function StorageMeter() {
             <>
               {" "}
               or{" "}
-              <Link to="/profile#plans" className="font-medium text-accent hover:underline">
+              <Link to={PLANS_PATH} className="font-medium text-accent hover:underline">
                 get more space
               </Link>
             </>

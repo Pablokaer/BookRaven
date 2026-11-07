@@ -5,6 +5,7 @@ import { signOut } from "../../lib/auth";
 import { timeAgo } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
 import { useMediaQuery } from "../../lib/useMediaQuery";
+import { UpgradeButton } from "../UpgradeButton";
 import { Avatar } from "../ui/Avatar";
 import { Menu } from "../ui/Menu";
 
@@ -97,6 +98,7 @@ export function TopBar({
         </label>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
+          <UpgradeButton place="topbar" />
           <button className="btn h-11 px-3 sm:px-4" onClick={() => pickFiles()}>
             <Plus className="h-4 w-4" strokeWidth={2.5} />
             <span className="hidden sm:inline">Upload Book</span>

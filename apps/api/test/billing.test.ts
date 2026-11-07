@@ -135,12 +135,12 @@ describe("paid storage plans", () => {
     expect(stripe.calls.filter((c) => c.method === "POST" && (c.path === "/prices" || c.path === "/customers"))).toEqual([]);
     const customerId = session.body.get("customer")!;
 
-    // Not paid yet: still the free limit.
-    expect((await api(u, "GET", "/api/me")).json().quotaBytes).toBe(1024 * 1024);
+    // Not paid yet: still the free limit, and no plan.
+    expect((await api(u, "GET", "/api/me")).json()).toMatchObject({ quotaBytes: 1024 * 1024, plan: null });
 
     const s = subscribe(customerId, "bookraven_shelf_month_399");
     expect((await webhook({ id: "evt_1", type: "checkout.session.completed", data: { object: { mode: "subscription", subscription: s.id } } })).statusCode).toBe(200);
-    expect((await api(u, "GET", "/api/me")).json().quotaBytes).toBe(2 * GB);
+    expect((await api(u, "GET", "/api/me")).json()).toMatchObject({ quotaBytes: 2 * GB, plan: "shelf" });
     const b = (await api(u, "GET", "/api/billing")).json();
     expect(b.subscription).toMatchObject({ plan: "shelf", interval: "month", status: "active", active: true, cancelAtPeriodEnd: false });
     expect(b.subscription.renewsAt).toBe(new Date(1_900_000_000 * 1000).toISOString());

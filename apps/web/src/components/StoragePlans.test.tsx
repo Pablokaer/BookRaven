@@ -1,5 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Billing } from "./StoragePlans";
 
@@ -41,7 +42,13 @@ async function open() {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(<StoragePlans />));
+  await act(async () =>
+    root.render(
+      <MemoryRouter>
+        <StoragePlans />
+      </MemoryRouter>,
+    ),
+  );
   await act(async () => {});
 }
 const buttons = (name: string) => [...container.querySelectorAll("button")].filter((b) => b.textContent?.trim() === name);

@@ -201,8 +201,11 @@ export type PublicBook = Pick<Book, "id" | "title" | "author" | "format" | "file
 /** A public book's page: also its description (not in the catalog list), how many people have it and its catalog subjects. */
 export type PublicBookDetails = PublicBook & { description: string | null; readers: number; subjects: string[] };
 
-/** The signed-in account. `quotaBytes` is null when storage is unlimited (administrators). */
-export type Me = { isAdmin: boolean; usedBytes: number; quotaBytes: number | null };
+/**
+ * The signed-in account. `quotaBytes` is null when storage is unlimited (administrators); `plan`
+ * is the paid storage plan in force (null or absent on the free storage).
+ */
+export type Me = { isAdmin: boolean; usedBytes: number; quotaBytes: number | null; plan?: string | null };
 
 export type Folder = { id: string; name: string; createdAt: string };
 

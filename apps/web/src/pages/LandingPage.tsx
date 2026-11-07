@@ -135,7 +135,7 @@ function Header({ signupOpen }: { signupOpen: boolean }) {
       <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-4 px-5 sm:h-20 sm:px-8">
         <Link to="/" className="flex items-center gap-3 rounded-[3px]" aria-label="BookRaven home">
           <img src={logoIcon} alt="" width={40} height={40} className="h-10 w-10 rounded-[11px] shadow-[0_6px_18px_-6px_rgb(0_0_0/0.8)] sm:h-11 sm:w-11" />
-          <img src={wordmark} alt="" width={110} height={26} className="h-[24px] w-auto sm:h-[26px]" />
+          <img src={wordmark} alt="" width={111} height={18} className="h-[17px] w-auto sm:h-[19px]" />
         </Link>
         <nav aria-label="Main" className="flex items-center gap-1 sm:gap-2">
           <ul className="mr-3 hidden items-center gap-7 text-[14px] text-silver lg:flex">
@@ -665,7 +665,7 @@ function Colophon({ signupOpen }: { signupOpen: boolean }) {
           <div className="text-center lg:col-span-4 lg:text-left">
             <p className="flex items-center justify-center gap-3 lg:justify-start">
               <img src={logoIcon} alt="" width={32} height={32} loading="lazy" className="h-8 w-8 rounded-[9px]" />
-              <img src={wordmark} alt="BookRaven" width={110} height={26} loading="lazy" className="h-[22px] w-auto" />
+              <img src={wordmark} alt="BookRaven" width={98} height={16} loading="lazy" className="h-4 w-auto" />
             </p>
             <p className="mx-auto mt-5 max-w-xs font-literary text-[18px] italic leading-snug text-silver lg:mx-0">
               A self-hosted reader for ebooks, PDFs and comics.

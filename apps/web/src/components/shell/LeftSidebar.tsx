@@ -6,6 +6,7 @@ import { collectionColor, isInProgress } from "../../lib/bookStats";
 import { fileSize } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
 import { StorageMeter } from "./StorageMeter";
+import { UpgradeButton } from "../UpgradeButton";
 import logoIcon from "../../assets/logo.webp";
 import wordmark from "../../assets/wordmark.webp";
 
@@ -55,7 +56,7 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
     <nav className="flex h-full flex-col gap-6 overflow-y-auto overflow-x-hidden px-3 pb-6 pt-5" aria-label="Main">
       <NavLink to="/" onClick={onNavigate} className={`flex items-center gap-2.5 px-2 ${compact ? "justify-center px-0" : ""}`} aria-label="BookRaven">
         <img src={logoIcon} alt="" className="h-9 w-9 shrink-0 rounded-xl" />
-        {!compact && <img src={wordmark} alt="BookRaven" className="h-7 w-auto" />}
+        {!compact && <img src={wordmark} alt="BookRaven" className="h-5 w-auto" />}
       </NavLink>
 
       <ul className="space-y-1">
@@ -119,8 +120,9 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
         className={`mt-auto block rounded-xl border border-line/70 bg-card/50 transition hover:border-accent/30 ${compact ? "p-2" : "p-3"}`}
         title={me ? (me.quotaBytes === null ? `${fileSize(me.usedBytes)} used · unlimited` : `${fileSize(me.usedBytes)} of ${fileSize(me.quotaBytes)} used`) : "Storage"}
       >
-        {compact ? <HardDrive className="mx-auto h-4 w-4 text-muted" /> : <StorageMeter />}
+        {compact ? <HardDrive className="mx-auto h-4 w-4 text-muted" /> : <StorageMeter link={false} />}
       </NavLink>
+      <UpgradeButton place="sidebar" compact={compact} onNavigate={onNavigate} />
     </nav>
   );
 }
