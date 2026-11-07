@@ -67,7 +67,7 @@ const head = [
 let html = await readFile(join(dist, "index.html"), "utf8");
 if (!html.includes('<div id="root"></div>')) throw new Error("prerender: no empty #root in index.html");
 // Link previews (Facebook, LinkedIn…) want the image's full address.
-if (site) html = html.replaceAll('content="/og-image.png"', () => `content="${site}/og-image.png"`);
+if (site) html = html.replaceAll('content="/og-image.png', () => `content="${site}/og-image.png`);
 html = html
   .replace("</head>", () => `  ${head.join("\n    ")}\n  </head>`)
   .replace('<div id="root"></div>', () => `<div id="root" data-landing${signupOpen ? "" : '="signup-closed"'}>${page}</div>`);
