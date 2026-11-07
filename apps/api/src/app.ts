@@ -9,7 +9,9 @@ import { connectionCount } from "./lib/events.js";
 import { jsonEtag } from "./lib/http.js";
 import { learnSecretRoute, log, RequestLogController } from "./lib/log.js";
 import { authRoutes } from "./routes/auth.js";
+import { billingRoutes } from "./routes/billing.js";
 import { bookmarkRoutes } from "./routes/bookmarks.js";
+import { billingEnabled } from "./lib/billing.js";
 import { bookRoutes } from "./routes/books.js";
 import { eventRoutes } from "./routes/events.js";
 import { progressRoutes } from "./routes/progress.js";
@@ -85,6 +87,8 @@ export async function buildServer() {
       passwordResetEnabled: mailEnabled || !config.isProd,
       dictionaryEnabled: config.dictionaryProvider !== "none",
       translateEnabled: config.translateProvider !== "none",
+      // Paid storage plans (Stripe) on sale.
+      billingEnabled,
     };
   });
 
@@ -101,6 +105,7 @@ export async function buildServer() {
   await app.register(inkRoutes);
   await app.register(publicRoutes);
   await app.register(meRoutes);
+  await app.register(billingRoutes);
   await app.register(adminRoutes);
   await app.register(requestRoutes);
   await app.register(lookupRoutes);

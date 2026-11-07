@@ -1,4 +1,7 @@
 import { HardDrive, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import { isNative, serverConfig } from "../../lib/api";
 import { fileSize } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
 import { ProgressBar } from "../books/ProgressBar";
@@ -6,6 +9,14 @@ import { ProgressBar } from "../books/ProgressBar";
 /** Storage used by the account against its limit (administrators are unlimited). */
 export function StorageMeter() {
   const { me } = useLibrary();
+  // Paid plans on sale: a full account is offered more space (never in the Google Play build).
+  const [plans, setPlans] = useState(false);
+  useEffect(() => {
+    if (isNative && import.meta.env.VITE_STORE === "play") return;
+    serverConfig()
+      .then((c) => setPlans(Boolean(c.billingEnabled)))
+      .catch(() => {});
+  }, []);
   if (!me) return <div className="skeleton h-9 rounded-lg" aria-busy="true" />;
 
   if (me.quotaBytes === null) {
@@ -32,7 +43,21 @@ export function StorageMeter() {
         </span>
       </div>
       <ProgressBar value={ratio} className={full ? "[&>div]:from-rose-500 [&>div]:to-rose-300" : ""} />
-      {full && <p className="text-xs text-rose-300">Almost full. Delete books to free up space.</p>}
+      {full && (
+        <p className="text-xs text-rose-300">
+          Almost full. Delete books to free up space
+          {plans ? (
+            <>
+              {" "}
+              or{" "}
+              <Link to="/profile#plans" className="font-medium text-accent hover:underline">
+                get more space
+              </Link>
+            </>
+          ) : null}
+          .
+        </p>
+      )}
     </div>
   );
 }

@@ -29,6 +29,15 @@ export const RELEASE_NOTES: ReleaseNote[] = [
     ],
   },
   {
+    id: "2026-11-07-storage-plans",
+    date: "2026-11-07",
+    title: "More room for your books",
+    items: [
+      "Need more than the free space? Storage plans of 2, 5 or 10 GB are now in Profile → Storage plans, monthly or yearly.",
+      "Change or cancel any time; your books stay with you either way.",
+    ],
+  },
+  {
     id: "2026-11-06-not-found",
     date: "2026-11-06",
     title: "Clearer broken links",

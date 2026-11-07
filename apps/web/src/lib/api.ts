@@ -246,6 +246,8 @@ export type ServerConfig = {
   turnstileSiteKey?: string | null;
   dictionaryEnabled: boolean;
   translateEnabled: boolean;
+  /** Paid storage plans on sale (Profile → Storage plans). */
+  billingEnabled?: boolean;
 };
 
 let config: Promise<ServerConfig> | null = null;
