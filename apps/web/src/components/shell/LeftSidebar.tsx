@@ -6,6 +6,7 @@ import { collectionColor, isInProgress } from "../../lib/bookStats";
 import { fileSize } from "../../lib/format";
 import { useLibrary } from "../../lib/libraryStore";
 import { StorageMeter } from "./StorageMeter";
+import { UpgradeButton } from "../UpgradeButton";
 import logoIcon from "../../assets/logo.webp";
 import wordmark from "../../assets/wordmark.webp";
 
@@ -119,8 +120,9 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
         className={`mt-auto block rounded-xl border border-line/70 bg-card/50 transition hover:border-accent/30 ${compact ? "p-2" : "p-3"}`}
         title={me ? (me.quotaBytes === null ? `${fileSize(me.usedBytes)} used · unlimited` : `${fileSize(me.usedBytes)} of ${fileSize(me.quotaBytes)} used`) : "Storage"}
       >
-        {compact ? <HardDrive className="mx-auto h-4 w-4 text-muted" /> : <StorageMeter />}
+        {compact ? <HardDrive className="mx-auto h-4 w-4 text-muted" /> : <StorageMeter link={false} />}
       </NavLink>
+      <UpgradeButton place="sidebar" compact={compact} onNavigate={onNavigate} />
     </nav>
   );
 }

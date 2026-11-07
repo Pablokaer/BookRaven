@@ -1,8 +1,10 @@
 import { Check, CreditCard, HardDrive } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router";
 import { API_BASE, ApiError, apiJson, apiOk, isNative } from "../lib/api";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
+import { plansHidden as playStore } from "../lib/upgrade";
 
 type Interval = "month" | "year";
 type Plan = { id: string; name: string; bytes: number; month: number; year: number };
@@ -22,8 +24,6 @@ export type Billing = {
   } | null;
 };
 
-/** The Google Play build sells nothing outside Google Play: no plans, no link to them. */
-const playStore = isNative && import.meta.env.VITE_STORE === "play";
 
 const money = (cents: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
@@ -58,8 +58,6 @@ export function StoragePlans() {
     if (result === "canceled") setMessage({ ok: false, text: "Checkout cancelled: nothing was charged." });
     load()
       .then(async (b) => {
-        // Opened from "Get more space" (/profile#plans): bring the plans into view once drawn.
-        if (window.location.hash === "#plans") requestAnimationFrame(() => document.getElementById("plans")?.scrollIntoView({ behavior: "smooth" }));
         if (result !== "success") return;
         setMessage({ ok: true, text: "Thank you! Your plan is being activated…" });
         // Stripe tells the server in a few seconds: look again until the plan shows up.
@@ -73,6 +71,14 @@ export function StoragePlans() {
       .catch(() => {});
     if (result) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
   }, []);
+
+  // Opened from an Upgrade button (/profile#plans), also when already on the profile: bring the
+  // plans into view once drawn.
+  const { hash, key } = useLocation();
+  const drawn = Boolean(billing?.enabled);
+  useEffect(() => {
+    if (drawn && hash === "#plans") requestAnimationFrame(() => document.getElementById("plans")?.scrollIntoView({ behavior: "smooth" }));
+  }, [drawn, hash, key]);
 
   if (playStore || !billing?.enabled) return null;
 

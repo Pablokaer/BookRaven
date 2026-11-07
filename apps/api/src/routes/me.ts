@@ -6,15 +6,19 @@ import { query } from "../db.js";
 import { deleteAccount } from "../lib/accounts.js";
 import { obj } from "../lib/http.js";
 import { audit } from "../lib/log.js";
+import { billingRow, subscriptionBytes } from "../lib/billing.js";
 import { quotaFor, storageUsed } from "../lib/quota.js";
 
 export async function meRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
 
-  /** The signed-in account's role and storage use. `quotaBytes` is null when unlimited. */
+  /**
+   * The signed-in account's role, storage use and paid plan. `quotaBytes` is null when unlimited;
+   * `plan` is the storage plan whose subscription is active (null on the free storage).
+   */
   app.get("/api/me", async (request) => {
-    const [usedBytes, quotaBytes] = await Promise.all([storageUsed(request.user.id), quotaFor(request.user)]);
-    return { isAdmin: isAdmin(request.user), usedBytes, quotaBytes };
+    const [usedBytes, quotaBytes, billing] = await Promise.all([storageUsed(request.user.id), quotaFor(request.user), billingRow(request.user.id)]);
+    return { isAdmin: isAdmin(request.user), usedBytes, quotaBytes, plan: subscriptionBytes(billing) ? billing!.plan : null };
   });
 
   /**

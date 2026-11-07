@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-07-upgrade-button",
+    date: "2026-11-07",
+    title: "Upgrade in one click",
+    items: [
+      "On the free storage, an Upgrade button next to Upload Book and under the storage meter takes you straight to the storage plans.",
+    ],
+  },
+  {
     id: "2026-11-06-delete-account",
     date: "2026-11-07",
     title: "Your account, your choice",

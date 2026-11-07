@@ -192,7 +192,7 @@ Three defences against accounts made by scripts, besides the rate limits (`apps/
 
 ### Paid storage plans
 
-Free accounts keep `UPLOAD_QUOTA_MB` of books. With Stripe keys set, *Profile → Storage plans* sells more (prices in euros, VAT included, defined in `apps/api/src/lib/billing.ts`):
+Free accounts keep `UPLOAD_QUOTA_MB` of books. With Stripe keys set, *Profile → Storage plans* sells more (accounts on the free storage also get an **Upgrade** button next to *Upload Book* and under the storage meter in the sidebar) (prices in euros, VAT included, defined in `apps/api/src/lib/billing.ts`):
 
 | Plan | Storage | Monthly | Yearly |
 |---|---|---|---|
@@ -462,7 +462,7 @@ JSON answers to `GET /api/...` carry a weak `ETag` with `Cache-Control: private,
 |---|---|---|
 | GET | `/api/config` | public: Google enabled, sign-up open, max upload, password reset / dictionary / translation / storage plans available |
 | * | `/api/auth/*` | Better Auth (sign-up/in/out, Google callback, session, change/reset password) |
-| GET | `/api/me` | role and storage use |
+| GET | `/api/me` | role, storage use and the active storage plan (`plan`, null when free) |
 | DELETE | `/api/me` | delete the account and everything in it (`{ password }`, or `{ confirm: <email> }` without a password; 403 `wrong_password`, 400 `confirm_email`, 400 `cannot_delete_admin`) |
 | GET | `/api/billing` | storage plans on sale, the free limit and the account's subscription |
 | POST | `/api/billing/checkout`, `/change`, `/portal` | `{plan, interval}`: Stripe Checkout URL for a first plan (409 `already_subscribed`), prorated plan change (204), customer portal URL |
