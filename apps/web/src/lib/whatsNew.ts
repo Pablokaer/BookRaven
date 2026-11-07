@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-07-profile-phone-fields",
+    date: "2026-11-07",
+    title: "Tidier profile on phones",
+    items: [
+      "In Profile → Other apps, the username and password to type in KOReader now fit the screen on phones, with long email addresses wrapping instead of running off the edge.",
+    ],
+  },
+  {
     id: "2026-11-07-upgrade-button",
     date: "2026-11-07",
     title: "Upgrade in one click",
