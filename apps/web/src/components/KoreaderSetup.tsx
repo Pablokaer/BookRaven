@@ -6,13 +6,14 @@ import { useCopy } from "./ui/CopyField";
 function TypeValue({ label, value, hint, big = false }: { label: string; value: string | null; hint?: string; big?: boolean }) {
   const { copied, copy } = useCopy(value ?? "");
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-line bg-app/40 px-3 py-2">
+    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-line bg-app/40 px-3 py-2">
       <div className="min-w-0 flex-1">
         <div className="eyebrow">{label}</div>
         {value === null ? (
           <div className="mt-0.5 text-sm italic text-muted">{hint}</div>
         ) : (
-          <div className={`mt-0.5 break-words font-mono ${big ? "text-xl tracking-wide text-accent" : "text-base text-fg"}`}>{value}</div>
+          // A long email or URL breaks anywhere instead of pushing the box past a phone's screen.
+          <div className={`mt-0.5 font-mono [overflow-wrap:anywhere] ${big ? "text-xl tracking-wide text-accent" : "text-base text-fg"}`}>{value}</div>
         )}
       </div>
       {value !== null && (
@@ -102,7 +103,8 @@ export function KoreaderSetup({
             BookRaven and enter:
           </p>
           <TypeValue label="Catalog URL" value={`${origin}/opds`} />
-          <div className="grid gap-2 sm:grid-cols-2">
+          {/* minmax(0, 1fr): the column fits the screen instead of growing to the email's width. */}
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
             <TypeValue label="Username" value={email} />
             <TypeValue label="Password" value={created?.password ?? null} hint="Your app password" />
           </div>
