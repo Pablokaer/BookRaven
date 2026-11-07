@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-07-new-logo",
+    date: "2026-11-07",
+    title: "A new look for the raven",
+    items: [
+      "BookRaven has a new logo: an engraved raven perched on an open book, in ivory and gold.",
+      "The app icon, the browser tab icon and the preview shown when you share a link to BookRaven use it too.",
+    ],
+  },
+  {
     id: "2026-11-07-storage-plans",
     date: "2026-11-07",
     title: "More room for your books",
