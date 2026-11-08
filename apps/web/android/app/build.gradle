@@ -32,11 +32,15 @@ android {
     }
     // Where the app is installed from: "site" is the APK on our own server, which updates itself
     // (README → Android app); "play" is the Google Play build, without the APK installer and its
-    // permission (README → Google Play). Same app id and signing key, so either can update the other.
+    // permission (README → Google Play). The Play listing is registered as cloud.bookraven.app, so
+    // the play flavor has its own app id: the two are separate apps that can be installed side by side.
     flavorDimensions = ["store"]
     productFlavors {
         site { dimension "store" }
-        play { dimension "store" }
+        play {
+            dimension "store"
+            applicationId "cloud.bookraven.app"
+        }
     }
     buildTypes {
         release {
