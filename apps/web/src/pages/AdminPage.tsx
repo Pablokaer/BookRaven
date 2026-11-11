@@ -45,11 +45,11 @@ function Stat({ label, value, to }: { label: string; value: string | number | un
     </>
   );
   return to ? (
-    <Link to={to} className="surface block p-4 transition hover:border-accent/40">
+    <Link to={to} className="surface block p-4 text-center transition hover:border-accent/40">
       {body}
     </Link>
   ) : (
-    <div className="surface p-4">{body}</div>
+    <div className="surface p-4 text-center">{body}</div>
   );
 }
 
