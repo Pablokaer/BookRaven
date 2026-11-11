@@ -243,7 +243,7 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {stats.map((s) => (
-            <div key={s.label} className="surface p-4">
+            <div key={s.label} className="surface p-4 text-center">
               <div className="text-2xl font-semibold tabular-nums">{books ? s.value : "–"}</div>
               <div className="mt-0.5 text-xs text-muted">{s.label}</div>
             </div>

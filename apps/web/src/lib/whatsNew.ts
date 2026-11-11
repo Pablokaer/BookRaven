@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-11-upgrade-above-storage",
+    date: "2026-11-11",
+    title: "Tidier menu and profile",
+    items: [
+      "In the side menu, the Upgrade storage button now sits right above the storage meter.",
+      "In Profile, the Your reading numbers (books, in progress, finished…) are now centred in their cards.",
+    ],
+  },
+  {
     id: "2026-11-11-centered-stat-cards",
     date: "2026-11-11",
     title: "Tidier library numbers",
