@@ -1,4 +1,4 @@
-import { BookOpen, Compass, Download, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Share2, ShieldCheck, Upload, User, UsersRound } from "lucide-react";
+import { BookOpen, Compass, Download, Folder, FolderPlus, Globe, HardDrive, Heart, Layers, Library, Plus, Share2, ShieldCheck, Upload, User, UsersRound } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { isNative, isPlayStore } from "../../lib/api";
@@ -12,9 +12,13 @@ import wordmark from "../../assets/wordmark.webp";
 
 type NavItem = { to: string; label: string; icon: ReactNode; count?: number; end?: boolean };
 
-/** App navigation. `compact` shows icons only (collapsed by the user, or on tablets). */
+/**
+ * App navigation. `compact` shows icons only (collapsed by the user, or on tablets). With
+ * `onNavigate` it is the phone's slide-in menu, which opens with an Upload Book button: the top bar
+ * only has room for a "+" there.
+ */
 export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavigate?: () => void }) {
-  const { books, folders, addFolder, me } = useLibrary();
+  const { books, folders, addFolder, me, pickFiles } = useLibrary();
   const navigate = useNavigate();
 
   const counts = useMemo(() => {
@@ -58,6 +62,18 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
         <img src={logoIcon} alt="" className="h-9 w-9 shrink-0 rounded-xl" />
         {!compact && <img src={wordmark} alt="BookRaven" className="h-5 w-auto" />}
       </NavLink>
+
+      {onNavigate && (
+        <button
+          className="btn h-12 w-full"
+          onClick={() => {
+            pickFiles(); // still inside the tap, so the file picker opens
+            onNavigate();
+          }}
+        >
+          <Plus className="h-4 w-4" strokeWidth={2.5} /> Upload Book
+        </button>
+      )}
 
       <ul className="space-y-1">
         {nav.map((item) => (

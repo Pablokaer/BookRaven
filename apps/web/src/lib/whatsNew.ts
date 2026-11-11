@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-11-upload-first",
+    date: "2026-11-11",
+    title: "Uploading, front and centre",
+    items: [
+      "On phones and in the Android app, the menu now opens with an Upload Book button at the top.",
+      "In the top bar, the upload button comes first, before Upgrade.",
+    ],
+  },
+  {
     id: "2026-11-10-welcome-tour",
     date: "2026-11-10",
     title: "A warm welcome for new readers",
