@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-10-welcome-tour",
+    date: "2026-11-10",
+    title: "A warm welcome for new readers",
+    items: [
+      "New accounts now get a short tour on their first visit: how to upload books, how your place follows you to every device, and how to share a book with just a link.",
+    ],
+  },
+  {
     id: "2026-11-07-profile-phone-fields",
     date: "2026-11-07",
     title: "Tidier profile on phones",

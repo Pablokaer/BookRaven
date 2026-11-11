@@ -7,7 +7,10 @@ import { startAppUpdates } from "./lib/appUpdate";
 import { authClient, flushChanges } from "./lib/auth";
 import { retryEvents, startEvents, stopEvents } from "./lib/events";
 import { saveData } from "./lib/network";
+import { createdAtMs, markWelcomeSeen, shouldWelcome, welcomeSeen } from "./lib/welcome";
+import { markNotesSeen } from "./lib/whatsNew";
 import { AppLoading } from "./components/AppLoading";
+import { WelcomeTour } from "./components/WelcomeTour";
 import { WhatsNew } from "./components/WhatsNew";
 import { Toaster } from "./components/ui/Toaster";
 import { AppShell } from "./components/shell/AppShell";
@@ -252,24 +255,33 @@ export function App() {
     return <SignedOutApp onSignedIn={() => void refetch()} />;
   }
 
-  return <SignedInApp userId={user.id} name={user.name} email={user.email} />;
+  const createdAt = createdAtMs((user as { createdAt?: unknown }).createdAt);
+  return <SignedInApp userId={user.id} name={user.name} email={user.email} createdAt={createdAt} />;
 }
 
 /**
  * The app once signed in. It takes the user's fields one by one, so a session refetch (on every
  * return to the tab) that changes none of them doesn't re-render the app.
  */
-const SignedInApp = memo(function SignedInApp({ userId, name, email }: { userId: string; name: string; email: string }) {
+const SignedInApp = memo(function SignedInApp({ userId, name, email, createdAt }: { userId: string; name: string; email: string; createdAt: number | null }) {
   const user = useMemo(() => ({ name, email }), [name, email]);
   useEffect(() => prefetchPages(userId), [userId]);
+  // A new account gets the welcome tour instead of "What's new": the release notes would only
+  // describe changes to an app they haven't used yet, so they count as seen.
+  const [welcome, setWelcome] = useState(() => shouldWelcome(createdAt, welcomeSeen(userId)));
+  const closeWelcome = () => {
+    markWelcomeSeen(userId);
+    markNotesSeen();
+    setWelcome(false);
+  };
 
   return (
     <SettingsProvider enabled>
       <LibraryProvider userId={userId}>
         <BrowserRouter>
           <NativeBackButton />
-          {/* After an update: what changed, once. */}
-          <WhatsNew />
+          {/* A new account: what BookRaven does, once. After an update: what changed, once. */}
+          {welcome ? <WelcomeTour onClose={closeWelcome} /> : <WhatsNew />}
           <Toaster />
           <Routes>
             {/* The reader is full screen, outside the library layout. */}
