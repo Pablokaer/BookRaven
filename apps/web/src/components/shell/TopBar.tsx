@@ -98,11 +98,12 @@ export function TopBar({
         </label>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <UpgradeButton place="topbar" />
-          <button className="btn h-11 px-3 sm:px-4" onClick={() => pickFiles()}>
+          {/* Uploading comes first: on phones it is the only primary action in the bar. */}
+          <button className="btn h-11 px-3 sm:px-4" onClick={() => pickFiles()} aria-label="Upload Book" title="Upload Book">
             <Plus className="h-4 w-4" strokeWidth={2.5} />
             <span className="hidden sm:inline">Upload Book</span>
           </button>
+          <UpgradeButton place="topbar" />
 
           <div onClickCapture={markActivityRead}>
             <Menu
