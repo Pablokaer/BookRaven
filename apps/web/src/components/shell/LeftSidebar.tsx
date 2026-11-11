@@ -129,16 +129,18 @@ export function LeftSidebar({ compact, onNavigate }: { compact: boolean; onNavig
         )}
       </div>
 
-      {/* Storage use, pinned to the bottom */}
-      <NavLink
-        to="/profile"
-        onClick={onNavigate}
-        className={`mt-auto block rounded-xl border border-line/70 bg-card/50 transition hover:border-accent/30 ${compact ? "p-2" : "p-3"}`}
-        title={me ? (me.quotaBytes === null ? `${fileSize(me.usedBytes)} used · unlimited` : `${fileSize(me.usedBytes)} of ${fileSize(me.quotaBytes)} used`) : "Storage"}
-      >
-        {compact ? <HardDrive className="mx-auto h-4 w-4 text-muted" /> : <StorageMeter link={false} />}
-      </NavLink>
-      <UpgradeButton place="sidebar" compact={compact} onNavigate={onNavigate} />
+      {/* Pinned to the bottom: the way to more storage, above the storage it adds to. */}
+      <div className="mt-auto">
+        <UpgradeButton place="sidebar" compact={compact} onNavigate={onNavigate} />
+        <NavLink
+          to="/profile"
+          onClick={onNavigate}
+          className={`block rounded-xl border border-line/70 bg-card/50 transition hover:border-accent/30 ${compact ? "p-2" : "p-3"}`}
+          title={me ? (me.quotaBytes === null ? `${fileSize(me.usedBytes)} used · unlimited` : `${fileSize(me.usedBytes)} of ${fileSize(me.quotaBytes)} used`) : "Storage"}
+        >
+          {compact ? <HardDrive className="mx-auto h-4 w-4 text-muted" /> : <StorageMeter link={false} />}
+        </NavLink>
+      </div>
     </nav>
   );
 }

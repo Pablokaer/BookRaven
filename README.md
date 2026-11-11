@@ -193,7 +193,7 @@ Three defences against accounts made by scripts, besides the rate limits (`apps/
 
 ### Paid storage plans
 
-Free accounts keep `UPLOAD_QUOTA_MB` of books. With Stripe keys set, *Profile → Storage plans* sells more (accounts on the free storage also get an **Upgrade** button next to *Upload Book* and under the storage meter in the sidebar) (prices in euros, VAT included, defined in `apps/api/src/lib/billing.ts`):
+Free accounts keep `UPLOAD_QUOTA_MB` of books. With Stripe keys set, *Profile → Storage plans* sells more (accounts on the free storage also get an **Upgrade** button next to *Upload Book* and above the storage meter in the sidebar) (prices in euros, VAT included, defined in `apps/api/src/lib/billing.ts`):
 
 | Plan | Storage | Monthly | Yearly |
 |---|---|---|---|
