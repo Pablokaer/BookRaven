@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-11-welcome-tour-phone-buttons",
+    date: "2026-11-11",
+    title: "A neater welcome on phones",
+    items: [
+      "On phones, the last step of the welcome tour now shows Upload a book across the width, with Back and Explore lined up beneath it.",
+    ],
+  },
+  {
     id: "2026-11-11-upload-first",
     date: "2026-11-11",
     title: "Uploading, front and centre",

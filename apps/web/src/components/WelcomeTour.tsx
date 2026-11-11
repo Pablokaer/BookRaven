@@ -42,37 +42,44 @@ export function WelcomeTour({ onClose }: { onClose: () => void }) {
       title="Welcome to BookRaven"
       onClose={onClose}
       footer={
-        <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          {index > 0 ? (
-            <button className="btn-ghost" onClick={() => setIndex(index - 1)}>
-              <ArrowLeft className="h-4 w-4" /> Back
-            </button>
-          ) : (
-            <button className="btn-ghost" onClick={onClose}>
-              Skip
-            </button>
-          )}
-          {last ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              <button className="btn-ghost" onClick={onClose}>
+        last ? (
+          // Phones: Upload a book across the width, with Back and Explore on one row under it.
+          // Wider: one row, Back on the left and the two actions on the right.
+          <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:items-center">
+            <div className="flex items-center justify-between sm:contents">
+              <button className="btn-ghost" onClick={() => setIndex(index - 1)}>
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+              <button className="btn-ghost sm:ml-auto" onClick={onClose}>
                 Explore
               </button>
-              <button
-                className="btn"
-                onClick={() => {
-                  pickFiles(); // still inside the click, so the browser opens the file picker
-                  onClose();
-                }}
-              >
-                <Upload className="h-4 w-4" /> Upload a book
-              </button>
             </div>
-          ) : (
+            <button
+              className="btn w-full sm:w-auto"
+              onClick={() => {
+                pickFiles(); // still inside the click, so the browser opens the file picker
+                onClose();
+              }}
+            >
+              <Upload className="h-4 w-4" /> Upload a book
+            </button>
+          </div>
+        ) : (
+          <div className="flex w-full items-center justify-between gap-2">
+            {index > 0 ? (
+              <button className="btn-ghost" onClick={() => setIndex(index - 1)}>
+                <ArrowLeft className="h-4 w-4" /> Back
+              </button>
+            ) : (
+              <button className="btn-ghost" onClick={onClose}>
+                Skip
+              </button>
+            )}
             <button className="btn" onClick={() => setIndex(index + 1)}>
               Next <ArrowRight className="h-4 w-4" />
             </button>
-          )}
-        </div>
+          </div>
+        )
       }
     >
       <section aria-live="polite" aria-label={step.title} className="flex flex-col items-center text-center">
