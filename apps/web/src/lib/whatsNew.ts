@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-11-centered-admin-cards",
+    date: "2026-11-11",
+    title: "Tidier admin numbers",
+    items: [
+      "For administrators: the numbers at the top of the Admin page (accounts, books, storage, public books, open requests) are now centred in their cards.",
+    ],
+  },
+  {
     id: "2026-11-11-upgrade-above-storage",
     date: "2026-11-11",
     title: "Tidier menu and profile",
