@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-11-centered-stat-cards",
+    date: "2026-11-11",
+    title: "Tidier library numbers",
+    items: [
+      "On the library's home, the Books, Reading, Shared and Favorites cards now show their icon and number centred.",
+    ],
+  },
+  {
     id: "2026-11-11-welcome-tour-phone-buttons",
     date: "2026-11-11",
     title: "A neater welcome on phones",
