@@ -2,6 +2,7 @@ import { buildServer } from "./app.js";
 import { runAuthMigrations } from "./auth.js";
 import { config, googleEnabled, turnstileEnabled } from "./config.js";
 import { pool, runAppMigrations } from "./db.js";
+import { markInterruptedCampaigns } from "./lib/campaigns.js";
 import { backfillKoreaderHashes } from "./lib/koreader.js";
 import { log } from "./lib/log.js";
 import { schedulePurge } from "./lib/signups.js";
@@ -12,6 +13,7 @@ async function main() {
   const app = await buildServer();
   await runAuthMigrations();
   await runAppMigrations((m) => app.log.info(m));
+  await markInterruptedCampaigns();
   await app.listen({ port: config.port, host: config.host });
   void backfillKoreaderHashes((m) => app.log.info(m));
   schedulePurge();

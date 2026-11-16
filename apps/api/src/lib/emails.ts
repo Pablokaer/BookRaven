@@ -1,81 +1,30 @@
 import { config } from "../config.js";
+import { brandedEmail, card, esc, numbered, P, para, SERIF, smallCaps } from "./emailLayout.js";
 import type { Mail } from "./mailer.js";
 
-/** The emails (welcome, password reset, new book request): plain text plus HTML in the app's colours. */
+/**
+ * The account emails (welcome, email confirmation, password reset) and the book-request email to
+ * administrators: plain text plus HTML in the same look as the promotional emails (lib/emailLayout.ts).
+ * Admin → Emails previews them (`accountEmailPreviews`).
+ */
 
 const APP = "BookRaven";
-// Email clients ignore stylesheets and CSS variables: inline values from apps/web/src/index.css.
-const C = { page: "#eef3f2", card: "#ffffff", fg: "#102327", muted: "#5b6f73", line: "#d9e3e2", button: "#087f78", brand: "#071315", accent: "#16c9b2" };
-
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const greeting = (name: string) => (name.trim() ? `Hi ${name.trim()},` : "Hi,");
-
-type Layout = {
-  /** Hidden preview line shown next to the subject in the inbox. */
-  preheader: string;
-  title: string;
-  /** Paragraphs and list items, already HTML-escaped where they contain user data. */
-  bodyHtml: string;
-  button: { label: string; url: string };
-  footer: string;
-};
-
-function layout({ preheader, title, bodyHtml, button, footer }: Layout) {
-  const host = new URL(config.publicUrl).host;
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light only">
-<title>${escapeHtml(title)}</title>
-</head>
-<body style="margin:0;padding:0;background:${C.page};">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.page};">
-<tr><td align="center" style="padding:32px 16px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
-  <tr><td style="background:${C.brand};border-radius:12px 12px 0 0;padding:20px 28px;font:600 20px/1.2 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#ffffff;">
-    <span style="color:${C.accent};">&#9679;</span>&nbsp;${APP}
-  </td></tr>
-  <tr><td style="background:${C.card};border-radius:0 0 12px 12px;padding:28px;font:16px/1.55 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${C.fg};">
-    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;">${escapeHtml(title)}</h1>
-    ${bodyHtml}
-    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr>
-      <td style="background:${C.button};border-radius:8px;">
-        <a href="${escapeHtml(button.url)}" style="display:inline-block;padding:12px 22px;font-weight:600;color:#ffffff;text-decoration:none;">${escapeHtml(button.label)}</a>
-      </td>
-    </tr></table>
-    <p style="margin:0;font-size:13px;color:${C.muted};">If the button does not work, copy this link into your browser:<br>
-      <a href="${escapeHtml(button.url)}" style="color:${C.button};word-break:break-all;">${escapeHtml(button.url)}</a></p>
-    <hr style="border:none;border-top:1px solid ${C.line};margin:24px 0 16px;">
-    <p style="margin:0;font-size:13px;color:${C.muted};">${footer}</p>
-  </td></tr>
-  <tr><td align="center" style="padding:16px;font:12px/1.4 -apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${C.muted};">
-    ${APP} · <a href="${escapeHtml(config.publicUrl)}" style="color:${C.muted};">${escapeHtml(host)}</a>
-  </td></tr>
-  </table>
-</td></tr>
-</table>
-</body>
-</html>`;
-}
-
-const p = (html: string) => `<p style="margin:0 0 14px;">${html}</p>`;
 
 /** Sent once, right after an account is created (email and password or Google). */
 export function welcomeEmail(user: { email: string; name: string }): Mail {
   const url = config.publicUrl;
   const features = [
-    ["Your library", "upload ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT)."],
-    ["Pick up where you stopped", "your reading position syncs between the browser, the Android app and KOReader."],
-    ["Public Library", "hundreds of public-domain classics, organised by theme, ready to read."],
+    ["Your library", "Upload ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT)."],
+    ["Pick up where you stopped", "Your reading position syncs between the browser, the Android app and KOReader."],
+    ["The Public Library", "Hundreds of public-domain classics, organised by theme, ready to read."],
   ] as const;
+  const preheader = `Your ${APP} account is ready. Here is what you can do.`;
   return {
     to: user.email,
     subject: `Welcome to ${APP}`,
+    preheader,
     text: [
       greeting(user.name),
       "",
@@ -85,44 +34,73 @@ export function welcomeEmail(user: { email: string; name: string }): Mail {
       "",
       `Open your library: ${url}`,
       "",
+      "Happy reading,",
+      `the ${APP} team`,
+      "",
+      "---",
       `Forgot your password later? Use "Forgot password?" on the sign-in screen.`,
       `You received this email because an account was created with ${user.email}. If that wasn't you, you can ignore it.`,
     ].join("\n"),
-    html: layout({
-      preheader: `Your ${APP} account is ready.`,
+    html: brandedEmail({
       title: `Welcome to ${APP}`,
+      preheader,
+      hero: "door",
+      eyebrow: "Your account is ready",
+      headline: `Welcome to ${APP}`,
       bodyHtml:
-        p(escapeHtml(greeting(user.name))) +
-        p(`Your account is ready. Here is what you can do:`) +
-        `<ul style="margin:0 0 14px;padding-left:20px;">${features
-          .map(([title, desc]) => `<li style="margin:0 0 8px;"><strong>${title}:</strong> ${escapeHtml(desc)}</li>`)
-          .join("")}</ul>`,
+        para(esc(greeting(user.name))) +
+        para("Your library has a new home, and it keeps your place on every device. Here is what you can do:") +
+        numbered(features),
       button: { label: "Open your library", url },
-      footer: `You received this email because an account was created with ${escapeHtml(user.email)}. If that wasn't you, you can ignore it. Forgot your password later? Use “Forgot password?” on the sign-in screen.`,
+      signoff: true,
+      footerHtml: `You received this email because an account was created with ${esc(user.email)}. If that wasn't you, you can ignore it.<br>Forgot your password later? Use “Forgot password?” on the sign-in screen.`,
+    }),
+  };
+}
+
+/** With REQUIRE_EMAIL_VERIFICATION: `url` confirms the address and finishes setting up the account. */
+export function verifyEmailEmail(user: { email: string; name: string }, url: string): Mail {
+  const preheader = `Confirm your email to start using ${APP}.`;
+  return {
+    to: user.email,
+    subject: `Confirm your ${APP} email`,
+    preheader,
+    text: [
+      greeting(user.name),
+      "",
+      `Confirm this email to finish setting up your ${APP} account:`,
+      "",
+      url,
+      "",
+      "If you did not create an account, ignore this email.",
+    ].join("\n"),
+    html: brandedEmail({
+      title: "Confirm your email",
+      preheader,
+      hero: "none",
+      eyebrow: "One last step",
+      headline: "Confirm your email",
+      bodyHtml:
+        para(esc(greeting(user.name))) +
+        para(`Confirm this email address to finish setting up your ${APP} account. Your library will be waiting on the other side.`) +
+        card(
+          `<p style="margin:0;text-align:center;font:italic 18px/1.45 ${SERIF};color:${P.sepia};">Confirming <strong style="font-style:normal;color:${P.ink};">${esc(user.email)}</strong></p>`,
+          { center: true },
+        ),
+      button: { label: "Confirm email", url },
+      linkFallback: true,
+      footerHtml: "If you did not create an account, ignore this email.",
     }),
   };
 }
 
 /** "Forgot password?": `url` verifies the one-hour token and opens the app's reset page. */
-export function verifyEmailEmail(user: { email: string; name: string }, url: string): Mail {
-  return {
-    to: user.email,
-    subject: `Confirm your ${APP} email`,
-    text: [greeting(user.name), "", `Confirm this email to finish setting up your ${APP} account:`, "", url, "", "If you did not create an account, ignore this email."].join("\n"),
-    html: layout({
-      preheader: `Confirm your email to start using ${APP}.`,
-      title: "Confirm your email",
-      bodyHtml: p(escapeHtml(greeting(user.name))) + p(`Confirm this email address to finish setting up your ${APP} account.`),
-      button: { label: "Confirm email", url },
-      footer: "If you did not create an account, ignore this email.",
-    }),
-  };
-}
-
 export function resetPasswordEmail(user: { email: string; name: string }, url: string): Mail {
+  const preheader = "Choose a new password within the next hour.";
   return {
     to: user.email,
     subject: `Reset your ${APP} password`,
+    preheader,
     text: [
       greeting(user.name),
       "",
@@ -134,15 +112,26 @@ export function resetPasswordEmail(user: { email: string; name: string }, url: s
       "Choosing a new password signs you out on your other devices.",
       "If you did not ask for this, ignore this email; your password stays the same.",
     ].join("\n"),
-    html: layout({
-      preheader: "Choose a new password within the next hour.",
+    html: brandedEmail({
       title: "Reset your password",
+      preheader,
+      hero: "none",
+      eyebrow: "Account security",
+      headline: "Reset your password",
       bodyHtml:
-        p(escapeHtml(greeting(user.name))) +
-        p(`Someone (hopefully you) asked to reset the password of your ${APP} account. The link below works for <strong>one hour</strong> and only once.`) +
-        p("Choosing a new password signs you out on your other devices."),
+        para(esc(greeting(user.name))) +
+        para(`Someone (hopefully you) asked to reset the password of your ${APP} account.`) +
+        card(
+          `${smallCaps("Good to know")}
+  <ul style="margin:4px 0 0;padding:0 0 0 20px;font-size:15px;line-height:1.6;color:${P.body};">
+    <li style="margin:0 0 6px;">The link works for <strong style="color:${P.ink};">one hour</strong>, and only once.</li>
+    <li style="margin:0;">Choosing a new password signs you out on your other devices.</li>
+  </ul>`,
+          { accent: true },
+        ),
       button: { label: "Choose a new password", url },
-      footer: "If you did not ask for this, ignore this email: your password stays the same.",
+      linkFallback: true,
+      footerHtml: "If you did not ask for this, ignore this email: your password stays the same.",
     }),
   };
 }
@@ -154,9 +143,11 @@ export function bookRequestEmail(
 ): Mail {
   const url = `${config.publicUrl}/public?tab=requests`;
   const book = request.author ? `“${request.title}” by ${request.author}` : `“${request.title}”`;
+  const preheader = `${request.requester} asked for ${book}.`;
   return {
     to,
     subject: `New book request: ${request.title}`,
+    preheader,
     text: [
       `${request.requester} asked for ${book} in the Public Library.`,
       ...(request.note ? ["", `Note: ${request.note}`] : []),
@@ -165,14 +156,54 @@ export function bookRequestEmail(
       "",
       "You received this email because your address is in ADMIN_EMAILS on this server.",
     ].join("\n"),
-    html: layout({
-      preheader: `${request.requester} asked for ${book}.`,
+    html: brandedEmail({
       title: "New book request",
+      preheader,
+      hero: "none",
+      eyebrow: "Public Library",
+      headline: "A reader asked for a book",
       bodyHtml:
-        p(`${escapeHtml(request.requester)} asked for <strong>${escapeHtml(book)}</strong> in the Public Library.`) +
-        (request.note ? p(`<em>${escapeHtml(request.note)}</em>`) : ""),
+        para(`<strong style="color:${P.ink};">${esc(request.requester)}</strong> would like this book in the Public Library:`) +
+        card(
+          `${smallCaps("Requested")}
+  <p style="margin:0;font:600 23px/1.25 ${SERIF};color:${P.ink};">${esc(request.title)}</p>
+  ${request.author ? `<p style="margin:4px 0 0;font:italic 16px/1.4 ${SERIF};color:${P.sepia};">by ${esc(request.author)}</p>` : ""}
+  ${request.note ? `<p style="margin:14px 0 0;padding-top:12px;border-top:1px solid ${P.line};font:italic 16px/1.5 ${SERIF};color:${P.sepia};">“${esc(request.note)}”</p>` : ""}`,
+          { accent: true },
+        ),
       button: { label: "See the requests", url },
-      footer: "You received this email because your address is in ADMIN_EMAILS on this server.",
+      footerHtml: "You received this email because your address is in ADMIN_EMAILS on this server.",
     }),
   };
+}
+
+/** The account emails as `user` would receive them, with sample links, for Admin → Emails. */
+export function accountEmailPreviews(user: { email: string; name: string }) {
+  const list: { id: string; name: string; description: string; mail: Mail }[] = [
+    { id: "welcome", name: "Welcome", description: "Sent once, right after an account is created (email and password or Google).", mail: welcomeEmail(user) },
+    {
+      id: "reset",
+      name: "Password reset",
+      description: "From “Forgot password?” on the sign-in screen: a link that works once, for one hour.",
+      mail: resetPasswordEmail(user, `${config.publicUrl}/reset-password?token=sample-link-for-preview`),
+    },
+    {
+      id: "verify",
+      name: "Confirm email",
+      description: "With REQUIRE_EMAIL_VERIFICATION on: confirms the address before the account can sign in.",
+      mail: verifyEmailEmail(user, `${config.publicUrl}/api/auth/verify-email?token=sample-link-for-preview`),
+    },
+    {
+      id: "book-request",
+      name: "Book request",
+      description: "To every administrator when a reader asks for a book in the Public Library.",
+      mail: bookRequestEmail(user.email, {
+        title: "The Count of Monte Cristo",
+        author: "Alexandre Dumas",
+        note: "The unabridged translation, if possible!",
+        requester: "Sample Reader",
+      }),
+    },
+  ];
+  return list.map(({ mail, ...e }) => ({ ...e, subject: mail.subject, preheader: mail.preheader ?? "", html: mail.html ?? "" }));
 }

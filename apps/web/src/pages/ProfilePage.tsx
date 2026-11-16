@@ -1,4 +1,4 @@
-import { ArrowRight, HardDriveDownload, Import, KeyRound, LogOut, ShieldCheck, Target, Trash2 } from "lucide-react";
+import { ArrowRight, HardDriveDownload, Import, KeyRound, LogOut, Mail, ShieldCheck, Target, Trash2 } from "lucide-react";
 import { Link } from "react-router";
 import { OtherApps } from "../components/OtherApps";
 import { StorageMeter } from "../components/shell/StorageMeter";
@@ -9,6 +9,7 @@ import { PasswordField } from "../components/ui/Field";
 import { API_BASE, ApiError, apiOk } from "../lib/api";
 import { authClient, signOut } from "../lib/auth";
 import { finishedThisYear, isFinished, isInProgress } from "../lib/bookStats";
+import { getEmailPreferences, setEmailPreferences } from "../lib/campaigns";
 import { clearDeviceBooks, deviceUsage } from "../lib/deviceStorage";
 import { fileSize } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
@@ -155,6 +156,48 @@ function DeleteAccount({ email }: { email: string }) {
 }
 
 /** What this device keeps (downloaded books, covers, the library for offline use), and a way to free it. */
+/** News and reading reminders by email (Admin → Emails); the unsubscribe link in them turns this off. */
+function EmailPreferences() {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    getEmailPreferences()
+      .then((p) => setOn(p.promotional))
+      .catch(() => {});
+  }, []);
+
+  const toggle = async (value: boolean) => {
+    setOn(value);
+    try {
+      await setEmailPreferences(value);
+    } catch {
+      setOn(!value);
+      window.alert("That did not work, try again.");
+    }
+  };
+
+  return (
+    <section className="surface flex flex-wrap items-center gap-4 p-6">
+      <label className="mr-auto flex cursor-pointer items-start gap-3" htmlFor="promo-emails">
+        <span>
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Mail className="h-4 w-4 text-accent" /> News and reading reminders
+          </span>
+          <span className="mt-1 block text-xs text-muted">Occasional emails about new books and features. Emails about your account always arrive.</span>
+        </span>
+      </label>
+      <input
+        id="promo-emails"
+        type="checkbox"
+        role="switch"
+        className="h-5 w-5 accent-[var(--color-primary)]"
+        disabled={on === null}
+        checked={on ?? false}
+        onChange={(e) => void toggle(e.target.checked)}
+      />
+    </section>
+  );
+}
+
 function DeviceStorage() {
   const [usage, setUsage] = useState<{ bytes: number | null; books: number } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -260,6 +303,8 @@ export function ProfilePage({ user }: { user: { name: string; email: string } })
       <DeviceStorage />
 
       <ChangePassword />
+
+      <EmailPreferences />
 
       <OtherApps email={user.email} />
 

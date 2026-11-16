@@ -18,6 +18,7 @@ import { progressRoutes } from "./routes/progress.js";
 import { statsRoutes } from "./routes/stats.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { adminRoutes } from "./routes/admin.js";
+import { campaignAdminRoutes, unsubscribeRoutes } from "./routes/campaigns.js";
 import { clubRoutes } from "./routes/clubs.js";
 import { deliveryRoutes } from "./routes/deliveries.js";
 import { deviceRoutes } from "./routes/devices.js";
@@ -107,6 +108,8 @@ export async function buildServer() {
   await app.register(meRoutes);
   await app.register(billingRoutes);
   await app.register(adminRoutes);
+  await app.register(campaignAdminRoutes);
+  await app.register(unsubscribeRoutes);
   await app.register(requestRoutes);
   await app.register(lookupRoutes);
   await app.register(deviceRoutes);

@@ -1,6 +1,7 @@
-import { Ban, BookOpen, Flag, HardDrive, KeyRound, MoreHorizontal, Search, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
+import { Ban, BookOpen, Flag, HardDrive, KeyRound, Mail, MoreHorizontal, Search, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
+import { EmailsTab } from "../components/admin/EmailsTab";
 import { EmptyState } from "../components/books/BookBrowser";
 import { ProgressBar } from "../components/books/ProgressBar";
 import { CopyField } from "../components/ui/CopyField";
@@ -27,7 +28,7 @@ import { fileSize, timeAgo } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { useApi } from "../lib/useApi";
 
-type Tab = "users" | "reports" | "blocked";
+type Tab = "users" | "reports" | "blocked" | "emails";
 
 const REASONS: Record<string, string> = {
   copyright: "Copyright",
@@ -313,11 +314,12 @@ export function AdminPage() {
     { id: "users", label: "Accounts", icon: <Users className="h-4 w-4" /> },
     { id: "reports", label: "Reports", icon: <Flag className="h-4 w-4" />, count: stats?.openReports },
     { id: "blocked", label: "Blocked files", icon: <Ban className="h-4 w-4" /> },
+    { id: "emails", label: "Emails", icon: <Mail className="h-4 w-4" /> },
   ];
 
   return (
     <>
-      <PageHeader title="Admin" icon={ShieldCheck} subtitle="Accounts, storage limits, reports, book requests and content removal." />
+      <PageHeader title="Admin" icon={ShieldCheck} subtitle="Accounts, storage limits, reports, book requests, content removal and emails to readers." />
 
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="Accounts" value={stats?.users} />
@@ -339,6 +341,7 @@ export function AdminPage() {
       {tab === "users" && <UsersTab onChanged={loadStats} />}
       {tab === "reports" && <ReportsTab onChanged={loadStats} />}
       {tab === "blocked" && <BlockedTab />}
+      {tab === "emails" && <EmailsTab />}
     </>
   );
 }
