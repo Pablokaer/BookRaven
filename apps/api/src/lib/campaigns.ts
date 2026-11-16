@@ -1,8 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "../config.js";
 import { query } from "../db.js";
+import { brandedEmail, esc, numbered, P, SANS, SERIF, smallCaps, type Hero } from "./emailLayout.js";
 import { audit, log } from "./log.js";
 import { sendMail, type Mail } from "./mailer.js";
+
+export { HEROES, type Hero } from "./emailLayout.js";
 import { FINISHED_AT } from "./progress.js";
 
 /**
@@ -15,9 +18,6 @@ import { FINISHED_AT } from "./progress.js";
 export const TEMPLATE_IDS = ["missyou", "comeback", "continue", "classics", "recap", "announcement"] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
-/** The engraving at the top of the email (apps/web/public/email/hero-*.jpg), or none. */
-export const HEROES = ["clouds", "door", "scholar", "none"] as const;
-export type Hero = (typeof HEROES)[number];
 
 /**
  * Who receives it. `days` is the quiet period of "inactive" (no reading for that many days, and
@@ -280,25 +280,6 @@ export async function wantsPromotionalEmails(userId: string) {
 // ---------------------------------------------------------------------------------------------
 // Rendering
 
-// The front page's palette (apps/web/src/index.css), inlined: email clients ignore stylesheets' variables.
-const P = {
-  page: "#e6dac4",
-  midnight: "#071521",
-  ivory: "#f5eedf",
-  paper: "#fbf7ee",
-  gold: "#c9a474",
-  goldDeep: "#7a5c34",
-  ink: "#151b23",
-  body: "#2c3038",
-  sepia: "#5a5348",
-  silver: "#aab8c6",
-  line: "#dfd1b8",
-  track: "#e8dcc6",
-};
-const SERIF = "'Cormorant Garamond',Georgia,'Times New Roman',serif";
-const SANS = "-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? "";
 
@@ -351,9 +332,6 @@ function bar(fraction: number) {
 </td></tr></table>`;
 }
 
-const smallCaps = (text: string, color: string = P.goldDeep) =>
-  `<p style="margin:0 0 8px;font:600 11px/1.4 ${SANS};letter-spacing:0.18em;text-transform:uppercase;color:${color};">${esc(text)}</p>`;
-
 type Block = { html: string; text: string };
 
 function bookmarkBlock(b: Bookmark): Block {
@@ -379,18 +357,7 @@ const FEATURES = [
 ] as const;
 
 function featuresBlock(): Block {
-  const rows = FEATURES.map(
-    ([title, desc], i) => `<tr>
-  <td width="46" valign="top" style="padding:2px 0 18px;font:600 24px/1 ${SERIF};color:${P.gold};">${["I", "II", "III"][i]}</td>
-  <td valign="top" style="padding:0 0 18px;font:15px/1.6 ${SANS};color:${P.body};">
-    <span style="display:block;margin:0 0 2px;font:600 19px/1.3 ${SERIF};color:${P.ink};">${title}</span>${desc}
-  </td></tr>`,
-  ).join("");
-  return {
-    html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:6px 0 12px;border-top:1px solid ${P.line};padding-top:22px;">
-<tr><td colspan="2" style="height:22px;line-height:22px;font-size:0;">&nbsp;</td></tr>${rows}</table>`,
-    text: FEATURES.map(([t, d]) => `- ${t}: ${d}`).join("\n"),
-  };
+  return { html: numbered(FEATURES), text: FEATURES.map(([t, d]) => `- ${t}: ${d}`).join("\n") };
 }
 
 function classicsBlock(books: Classic[]): Block {
@@ -486,64 +453,18 @@ function render(template: TemplateId, c: CampaignContent, r: Recipient, shared: 
   else if (template === "recap" && personal.recap) block = recapBlock(personal.recap);
 
   const unsubscribe = unsubscribeUrl(r.id);
-  const host = new URL(config.publicUrl).host;
-  const hero =
-    c.hero === "none"
-      ? ""
-      : `<tr><td style="background:${P.midnight};font-size:0;line-height:0;"><img src="${esc(`${config.publicUrl}/email/hero-${c.hero}.jpg`)}" width="600" alt="" style="display:block;width:100%;max-width:600px;height:auto;border:0;"></td></tr>`;
-
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light only">
-<meta name="supported-color-schemes" content="light only">
-<title>${esc(subject)}</title>
-<style>
-  @media (max-width: 620px) {
-    .pad { padding-left: 24px !important; padding-right: 24px !important; }
-    .headline { font-size: 30px !important; }
-    .stack { display: block !important; width: 100% !important; box-sizing: border-box; }
-  }
-  a { color: ${P.goldDeep}; }
-</style>
-</head>
-<body style="margin:0;padding:0;background:${P.page};-webkit-text-size-adjust:100%;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${esc(preheader)}${"&#847;&zwnj;&nbsp;".repeat(60)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${P.page};">
-<tr><td align="center" style="padding:28px 12px 36px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;">
-  <tr><td class="pad" style="background:${P.midnight};border-radius:6px 6px 0 0;padding:22px 40px;">
-    <a href="${esc(config.publicUrl)}"><img src="${esc(`${config.publicUrl}/email/brand.png`)}" width="220" height="48" alt="BookRaven" style="display:block;border:0;"></a>
-  </td></tr>
-  ${hero}
-  <tr><td style="background:${P.gold};height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>
-  <tr><td class="pad" style="background:${P.ivory};padding:40px 48px 38px;font:16px/1.7 ${SANS};color:${P.body};">
-    <div style="text-align:center;">
-      ${eyebrow ? smallCaps(eyebrow) : ""}
-      <h1 class="headline" style="margin:0;font:600 36px/1.15 ${SERIF};color:${P.ink};">${esc(headline)}</h1>
-      <p style="margin:16px 0 26px;font:20px/1 ${SERIF};color:${P.gold};">&#8213;&nbsp;&#10086;&nbsp;&#8213;</p>
-    </div>
-    ${messageHtml(message)}
-    ${block.html}
-    <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:10px auto 6px;"><tr>
-      <td style="background:${P.midnight};border:1px solid ${P.gold};border-radius:3px;">
-        <a href="${esc(buttonUrl)}" style="display:inline-block;padding:15px 32px;font:600 15px/1 ${SANS};letter-spacing:0.02em;color:${P.ivory};text-decoration:none;">${esc(c.buttonLabel)}&nbsp;&rarr;</a>
-      </td>
-    </tr></table>
-    <p style="margin:30px 0 0;text-align:center;font:italic 19px/1.4 ${SERIF};color:${P.sepia};">Happy reading,<br>the BookRaven team</p>
-  </td></tr>
-  <tr><td class="pad" align="center" style="background:${P.midnight};border-radius:0 0 6px 6px;padding:26px 40px 28px;font:12px/1.65 ${SANS};color:${P.silver};">
-    <p style="margin:0 0 10px;font:italic 16px/1.4 ${SERIF};color:${P.gold};">Ebooks, PDFs and comics, with your place saved on every device.</p>
-    <p style="margin:0;">You are receiving this because you have a BookRaven account (${esc(r.email)}).<br>
-    <a href="${esc(unsubscribe)}" style="color:${P.gold};">Unsubscribe from these emails</a> &nbsp;·&nbsp; <a href="${esc(config.publicUrl)}" style="color:${P.silver};">${esc(host)}</a></p>
-  </td></tr>
-  </table>
-</td></tr>
-</table>
-</body>
-</html>`;
+  const html = brandedEmail({
+    title: subject,
+    preheader,
+    hero: c.hero,
+    eyebrow,
+    headline,
+    bodyHtml: messageHtml(message) + block.html,
+    button: { label: c.buttonLabel, url: buttonUrl },
+    signoff: true,
+    footerHtml: `You are receiving this because you have a BookRaven account (${esc(r.email)}).<br>
+    <a href="${esc(unsubscribe)}" style="color:${P.gold};">Unsubscribe from these emails</a>`,
+  });
 
   const text = [
     headline,

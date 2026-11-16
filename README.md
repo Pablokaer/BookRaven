@@ -162,7 +162,7 @@ The port 80 virtual host just redirects to HTTPS. With nginx use `proxy_pass htt
 
 ### Email
 
-BookRaven sends three account emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`):
+BookRaven sends three account emails, as HTML with a plain-text alternative (templates in `apps/api/src/lib/emails.ts`), in the same look as the promotional emails (midnight, parchment and gold; the shared layout is `apps/api/src/lib/emailLayout.ts`). *Admin → Emails → Account emails* previews each of them as the administrator would receive it, with sample links:
 
 - **Welcome**, once, when an account is created (email form or Google).
 - **Password reset**, from *Forgot password?* on the sign-in screen: a link that works once, for one hour, and signs out the account's other sessions.
@@ -490,7 +490,7 @@ JSON answers to `GET /api/...` carry a weak `ETag` with `Cache-Control: private,
 | GET | `/api/dictionary/word?word=&to=&from=&lang=` | word dictionary: detected language (`from`, `alternatives`), translation into `to` and definitions; `to`/`from` in `en`, `es`, `pt`, `fr`, `it`; `lang` is the book's language (a hint) |
 | * | `/api/app-passwords` | passwords for OPDS / KOReader |
 | * | `/api/admin/*` | administrators: stats, accounts, reports, blocked files |
-| GET | `/api/admin/emails/templates`, `/campaigns` | administrators: the email templates with their default texts (and whether SMTP is set), and the latest campaigns with their progress |
+| GET | `/api/admin/emails/templates`, `/campaigns`, `/account` | administrators: the email templates with their default texts (and whether SMTP is set), the latest campaigns with their progress, and the account emails (welcome, password reset, confirm email, book request) rendered for the administrator with sample links |
 | POST | `/api/admin/emails/audience`, `/preview`, `/test`, `/send` | administrators: `{segment, days}` → `{count}`; `{template, content}` → the email rendered for the administrator; a test to the administrator; `{template, content, audience}` starts sending (202 `{id, recipients}`, 409 `campaign_running`, 400 `no_recipients` / `mail_disabled`) |
 | GET/PUT | `/api/me/email-preferences` | `{ promotional }`: whether the account gets promotional emails |
 | GET/POST | `/api/email/unsubscribe?u=&token=` | the link in promotional emails (no sign-in): GET asks to confirm, POST unsubscribes (also the mail client's one-click unsubscribe) |

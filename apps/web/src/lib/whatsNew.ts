@@ -26,6 +26,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
     items: [
       "Now and then BookRaven may email you news, new classics in the Public Library or a nudge back to the book you left halfway.",
       "Don't want them? Turn them off in Profile → News and reading reminders, or with the unsubscribe link in any of them. Emails about your account always arrive.",
+      "The welcome and password-reset emails have a new look too, in BookRaven's midnight and gold.",
     ],
   },
   {

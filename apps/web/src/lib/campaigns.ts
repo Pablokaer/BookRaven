@@ -45,6 +45,8 @@ export const previewEmail = (template: TemplateId, content: CampaignContent) =>
 export const sendTestEmail = (template: TemplateId, content: CampaignContent) => apiOk("/api/admin/emails/test", post({ template, content }));
 export const sendCampaign = (template: TemplateId, content: CampaignContent, audience: Audience) =>
   apiJson<{ id: string; recipients: number }>("/api/admin/emails/send", post({ template, content, audience }));
+export type AccountEmail = { id: string; name: string; description: string; subject: string; preheader: string; html: string };
+export const listAccountEmails = () => apiJson<AccountEmail[]>("/api/admin/emails/account");
 export const listCampaigns = () => apiJson<Campaign[]>("/api/admin/emails/campaigns");
 
 export const getEmailPreferences = () => apiJson<{ promotional: boolean }>("/api/me/email-preferences");

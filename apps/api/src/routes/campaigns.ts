@@ -21,6 +21,7 @@ import {
   type TemplateId,
 } from "../lib/campaigns.js";
 import { query } from "../db.js";
+import { accountEmailPreviews } from "../lib/emails.js";
 import { requireAdmin } from "./admin.js";
 
 const contentSchema = obj(
@@ -52,6 +53,9 @@ export async function campaignAdminRoutes(app: FastifyInstance) {
     templates: TEMPLATE_IDS.map((id) => ({ id, ...TEMPLATES[id] })),
     mailEnabled,
   }));
+
+  /** The account emails (welcome, password reset...) as the administrator would receive them, with sample links. */
+  app.get("/api/admin/emails/account", async (request) => accountEmailPreviews(request.user));
 
   /** How many accounts an audience reaches right now. */
   app.post<{ Body: Audience }>("/api/admin/emails/audience", { schema: { body: audienceSchema } }, async (request) => {

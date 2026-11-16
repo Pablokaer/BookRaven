@@ -1,9 +1,10 @@
-import { AlertTriangle, Check, Mail, Monitor, Send, Smartphone, Users } from "lucide-react";
+import { AlertTriangle, Check, KeyRound, Mail, Monitor, Send, Smartphone, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../lib/api";
 import {
   audienceSize,
   HERO_LABELS,
+  listAccountEmails,
   listCampaigns,
   listTemplates,
   previewEmail,
@@ -28,11 +29,65 @@ import { Modal } from "../ui/Modal";
 
 const DAYS = [7, 14, 30, 60, 90, 180];
 
-/** Admin → Emails: pick a template, edit it, watch the preview, test it on yourself, then send. */
+/**
+ * Admin → Emails. Promotional: pick a template, edit it, watch the preview, test it on yourself,
+ * then send. Account emails: see the emails the server sends on its own (welcome, password reset…).
+ */
 export function EmailsTab() {
   const { data } = useApi(listTemplates, []);
+  const [view, setView] = useState<"promo" | "account">("promo");
   if (!data) return <div className="h-96 animate-pulse rounded-2xl bg-elevated/50" />;
-  return <Composer templates={data.templates} mailEnabled={data.mailEnabled} />;
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Kind of email">
+        <button type="button" role="tab" aria-selected={view === "promo"} className={`pill ${view === "promo" ? "pill-on" : ""}`} onClick={() => setView("promo")}>
+          <Send className="h-4 w-4" /> Promotional emails
+        </button>
+        <button type="button" role="tab" aria-selected={view === "account"} className={`pill ${view === "account" ? "pill-on" : ""}`} onClick={() => setView("account")}>
+          <KeyRound className="h-4 w-4" /> Account emails
+        </button>
+      </div>
+      {view === "promo" ? <Composer templates={data.templates} mailEnabled={data.mailEnabled} /> : <AccountEmails />}
+    </div>
+  );
+}
+
+/** The emails sent on their own (welcome, password reset, confirm email, book request), previewed for the administrator. */
+function AccountEmails() {
+  const { data: emails } = useApi(listAccountEmails, []);
+  const [id, setId] = useState("welcome");
+  if (!emails) return <div className="h-96 animate-pulse rounded-2xl bg-elevated/50" />;
+  const current = emails.find((e) => e.id === id) ?? emails[0]!;
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+      <div className="min-w-0 space-y-3">
+        <p className="text-sm text-muted">
+          BookRaven sends these on its own, when something happens to an account. They share the look of the promotional emails; their text is fixed, and links in
+          the preview are samples.
+        </p>
+        <div className="grid gap-2">
+          {emails.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              aria-pressed={e.id === current.id}
+              onClick={() => setId(e.id)}
+              className={`rounded-xl border p-3.5 text-left transition ${e.id === current.id ? "border-accent/60 bg-accent/10" : "border-line hover:border-accent/40"}`}
+            >
+              <span className="flex items-center justify-between gap-2 font-display text-lg font-semibold leading-tight">
+                {e.name}
+                {e.id === current.id && <Check className="h-4 w-4 shrink-0 text-accent" />}
+              </span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted">{e.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="min-w-0 lg:sticky lg:top-4 lg:self-start">
+        <PreviewPane preview={{ subject: current.subject, preheader: current.preheader, html: current.html, sample: false, emptyClassics: false }} error={false} />
+      </div>
+    </div>
+  );
 }
 
 function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mailEnabled: boolean }) {

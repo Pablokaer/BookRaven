@@ -47,6 +47,18 @@ describe("promotional emails", () => {
     expect(cont.html).toContain("Currently reading");
   });
 
+  it("previews the account emails in the same look", async () => {
+    const res = await api(await admin(), "GET", "/api/admin/emails/account");
+    expect(res.statusCode).toBe(200);
+    const list = res.json();
+    expect(list.map((e: { id: string }) => e.id)).toEqual(["welcome", "reset", "verify", "book-request"]);
+    for (const e of list) {
+      expect(e.html).toContain("/email/brand.png");
+      expect(e.preheader).toBeTruthy();
+    }
+    expect(list[1].html).toContain("If the button does not work");
+  });
+
   it("refuses links to other sites and unknown templates", async () => {
     const a = await admin();
     expect((await api(a, "POST", "/api/admin/emails/preview", draft("comeback", { buttonPath: "https://evil.example.com" }))).statusCode).toBe(400);

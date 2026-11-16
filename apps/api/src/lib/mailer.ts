@@ -4,9 +4,10 @@ import { log } from "./log.js";
 
 /**
  * `html` is optional; `text` is always sent too, for clients that show plain text. `headers` adds
- * raw headers (List-Unsubscribe on promotional emails).
+ * raw headers (List-Unsubscribe on promotional emails). `preheader` is the inbox preview line the
+ * HTML already carries (for previews in Admin → Emails); it isn't sent as a field of its own.
  */
-export type Mail = { to: string; subject: string; text: string; html?: string; headers?: Record<string, string> };
+export type Mail = { to: string; subject: string; text: string; html?: string; headers?: Record<string, string>; preheader?: string };
 
 /** Mails "sent" while running tests, newest last (tests read the links from here). */
 export const outbox: Mail[] = [];
@@ -39,7 +40,8 @@ export async function sendMail(mail: Mail) {
     else log.info(`[mail to ${mail.to}] ${mail.subject}\n${mail.text}`);
     return;
   }
-  await transport.sendMail({ from: config.mailFrom, ...mail });
+  const { preheader: _preheader, ...message } = mail;
+  await transport.sendMail({ from: config.mailFrom, ...message });
 }
 
 /**
