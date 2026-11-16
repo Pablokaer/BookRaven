@@ -4,6 +4,7 @@ import { requireUser } from "../auth.js";
 import { isAdmin } from "../config.js";
 import { query } from "../db.js";
 import { deleteAccount } from "../lib/accounts.js";
+import { setPromotionalEmails, wantsPromotionalEmails } from "../lib/campaigns.js";
 import { obj } from "../lib/http.js";
 import { audit } from "../lib/log.js";
 import { billingRow, subscriptionBytes } from "../lib/billing.js";
@@ -20,6 +21,18 @@ export async function meRoutes(app: FastifyInstance) {
     const [usedBytes, quotaBytes, billing] = await Promise.all([storageUsed(request.user.id), quotaFor(request.user), billingRow(request.user.id)]);
     return { isAdmin: isAdmin(request.user), usedBytes, quotaBytes, plan: subscriptionBytes(billing) ? billing!.plan : null };
   });
+
+  /** Promotional emails (news, reading reminders): on unless the reader unsubscribed. */
+  app.get("/api/me/email-preferences", async (request) => ({ promotional: await wantsPromotionalEmails(request.user.id) }));
+
+  app.put<{ Body: { promotional: boolean } }>(
+    "/api/me/email-preferences",
+    { schema: { body: obj({ promotional: { type: "boolean" } }, ["promotional"]) } },
+    async (request, reply) => {
+      await setPromotionalEmails(request.user.id, request.body.promotional);
+      return reply.code(204).send();
+    },
+  );
 
   /**
    * Deletes the signed-in account and everything in it (Profile → Delete account; app stores ask

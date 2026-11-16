@@ -13,7 +13,7 @@ import { unpublishFile } from "../lib/publicCatalog.js";
 import { deleteAccount, deleteBooks } from "../lib/accounts.js";
 import { subscriptionBytes } from "../lib/billing.js";
 
-async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
+export async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
 }
 

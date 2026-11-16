@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-16-email-preferences",
+    date: "2026-11-16",
+    title: "Your choice of emails",
+    items: [
+      "Now and then BookRaven may email you news, new classics in the Public Library or a nudge back to the book you left halfway.",
+      "Don't want them? Turn them off in Profile → News and reading reminders, or with the unsubscribe link in any of them. Emails about your account always arrive.",
+    ],
+  },
+  {
     id: "2026-11-11-centered-admin-cards",
     date: "2026-11-11",
     title: "Tidier admin numbers",

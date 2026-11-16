@@ -2,8 +2,11 @@ import nodemailer from "nodemailer";
 import { config } from "../config.js";
 import { log } from "./log.js";
 
-/** `html` is optional; `text` is always sent too, for clients that show plain text. */
-export type Mail = { to: string; subject: string; text: string; html?: string };
+/**
+ * `html` is optional; `text` is always sent too, for clients that show plain text. `headers` adds
+ * raw headers (List-Unsubscribe on promotional emails).
+ */
+export type Mail = { to: string; subject: string; text: string; html?: string; headers?: Record<string, string> };
 
 /** Mails "sent" while running tests, newest last (tests read the links from here). */
 export const outbox: Mail[] = [];
@@ -26,7 +29,7 @@ if (transport && !config.isTest) {
  * server log instead, so password-reset links still work locally. In production the log must
  * not hold reset or verification links (whoever reads it could use them), so only the subject is.
  */
-async function sendMail(mail: Mail) {
+export async function sendMail(mail: Mail) {
   if (config.isTest) {
     outbox.push(mail);
     return;
