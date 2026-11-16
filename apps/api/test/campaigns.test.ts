@@ -25,7 +25,7 @@ describe("promotional emails", () => {
     expect((await api(u, "POST", "/api/admin/emails/send", { ...draft("comeback"), audience: { segment: "all", days: 30 } })).statusCode).toBe(403);
     const res = await api(await admin(), "GET", "/api/admin/emails/templates");
     expect(res.statusCode).toBe(200);
-    expect(res.json().templates.map((t: { id: string }) => t.id)).toEqual(["missyou", "comeback", "continue", "classics", "recap", "announcement"]);
+    expect(res.json().templates.map((t: { id: string }) => t.id)).toEqual(["missyou", "comeback", "continue", "classics", "share", "recap", "announcement"]);
   });
 
   it("previews the email personalised for the administrator", async () => {
@@ -39,6 +39,9 @@ describe("promotional emails", () => {
     expect(body.html).toContain("/email/hero-door.jpg");
     expect(body.html).toContain("/api/email/unsubscribe?u=");
     // nothing in progress: the bookmark shows sample data, and says so
+    const share = (await api(a, "POST", "/api/admin/emails/preview", draft("share"))).json();
+    expect(share.html).toContain("Read together");
+    expect(share.html).toContain("CBZ");
     const miss = (await api(a, "POST", "/api/admin/emails/preview", draft("missyou"))).json();
     expect(miss.subject).toBe("We miss you, Admin");
     expect(miss.html).toContain("Your shelf, as you left it");
