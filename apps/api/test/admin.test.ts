@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { query } from "../src/db.js";
 import { outbox } from "../src/lib/mailer.js";
 import { adminSession, api, fakePdf, signUp, upload, type TestUser } from "./helpers.js";
 
@@ -10,6 +11,34 @@ describe("admin panel", () => {
     const u = await signUp();
     expect((await api(u, "GET", "/api/admin/users")).statusCode).toBe(403);
     expect((await api(await admin(), "GET", "/api/admin/stats")).statusCode).toBe(200);
+  });
+
+  it("filters accounts by books, activity and last use", async () => {
+    const a = await admin();
+    const tag = `flt${Date.now()}`;
+    const reader = await signUp(`${tag}r@test.local`);
+    await upload(reader, "f.pdf", fakePdf());
+    const away = await signUp(`${tag}a@test.local`);
+    const ghost = await signUp(`${tag}g@test.local`);
+    await query(
+      `INSERT INTO user_activity (user_id, last_seen_at) VALUES ($1, now() - interval '40 days')
+       ON CONFLICT (user_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
+      [away.id],
+    );
+    await query(`DELETE FROM user_activity WHERE user_id = $1`, [ghost.id]);
+    const emails = async (params: string) =>
+      ((await api(a, "GET", `/api/admin/users?q=${tag}&${params}`)).json() as { email: string }[]).map((u) => u.email).sort();
+
+    expect(await emails("minBooks=1")).toEqual([reader.email]);
+    expect(await emails("maxBooks=0")).toEqual([away.email, ghost.email].sort());
+    expect(await emails("activity=never")).toEqual([ghost.email]);
+    expect(await emails("activity=active")).toEqual([reader.email, away.email].sort());
+    expect(await emails("activeWithin=7")).toEqual([reader.email]);
+    expect(await emails("inactiveFor=30")).toEqual([away.email, ghost.email].sort());
+    expect(await emails("activity=active&inactiveFor=30")).toEqual([away.email]);
+    const byActivity = ((await api(a, "GET", `/api/admin/users?q=${tag}&sort=lastActive`)).json() as { email: string }[]).map((u) => u.email);
+    expect(byActivity).toEqual([reader.email, away.email, ghost.email]);
+    expect((await api(a, "GET", "/api/admin/users?activity=sometimes")).statusCode).toBe(400);
   });
 
   it("shows when each account last used the app", async () => {

@@ -53,7 +53,22 @@ export type BlockedFile = { sha256: string; title: string; reason: string; block
 export type ReportAction = "dismiss" | "unpublish" | "block" | "purge";
 
 export const getStats = () => apiJson<AdminStats>("/api/admin/stats");
-export const listUsers = (q = "") => apiJson<AdminUser[]>(`/api/admin/users?q=${encodeURIComponent(q)}`);
+/** Filters of Admin → Accounts (see GET /api/admin/users). */
+export type UserFilters = {
+  q?: string;
+  minBooks?: number;
+  maxBooks?: number;
+  activity?: "active" | "never";
+  activeWithin?: number;
+  inactiveFor?: number;
+  sort?: "newest" | "oldest" | "lastActive" | "books";
+};
+export const listUsers = (filters: UserFilters | string = {}) => {
+  const f = typeof filters === "string" ? { q: filters } : filters;
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== "") params.set(k, String(v));
+  return apiJson<AdminUser[]>(`/api/admin/users?${params}`);
+};
 export const updateUser = (id: string, patch: { quotaMb?: number | null; blocked?: boolean; blockedReason?: string | null }) =>
   apiOk(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const resetUserPassword = (id: string) => apiJson<{ password: string }>(`/api/admin/users/${id}/reset-password`, { method: "POST" });

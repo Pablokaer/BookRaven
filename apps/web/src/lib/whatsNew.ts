@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-16-admin-account-filters",
+    date: "2026-11-16",
+    title: "Find accounts faster",
+    items: [
+      "For administrators: Admin → Accounts can now be filtered by number of books, by whether the account was ever active and by when it was last active, and sorted by most recently active or most books.",
+    ],
+  },
+  {
     id: "2026-11-16-admin-last-active",
     date: "2026-11-16",
     title: "When each account was last active",

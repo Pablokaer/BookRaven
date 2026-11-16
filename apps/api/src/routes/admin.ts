@@ -54,6 +54,26 @@ type UserRow = {
   blocked_reason: string | null;
 };
 
+type UsersQuery = {
+  q?: string;
+  minBooks?: number;
+  maxBooks?: number;
+  activity?: "active" | "never";
+  activeWithin?: number;
+  inactiveFor?: number;
+  sort?: "newest" | "oldest" | "lastActive" | "books";
+};
+const days = { type: "integer", minimum: 1, maximum: 36500 };
+const usersQuerySchema = obj({
+  q: { type: "string", maxLength: 200 },
+  minBooks: { type: "integer", minimum: 0 },
+  maxBooks: { type: "integer", minimum: 0 },
+  activity: { enum: ["active", "never"] },
+  activeWithin: days,
+  inactiveFor: days,
+  sort: { enum: ["newest", "oldest", "lastActive", "books"] },
+});
+
 export async function adminRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireUser);
   app.addHook("preHandler", requireAdmin);
@@ -72,19 +92,43 @@ export async function adminRoutes(app: FastifyInstance) {
     return Object.fromEntries(Object.entries(r).map(([k, v]) => [k.replace(/_(\w)/g, (_, c: string) => c.toUpperCase()), Number(v)]));
   });
 
-  app.get<{ Querystring: { q?: string } }>("/api/admin/users", async (request) => {
-    const q = `%${(request.query.q ?? "").trim().toLowerCase()}%`;
+  /**
+   * The accounts, newest first (at most 500). Filters: `q` (name or email), `minBooks`/`maxBooks`,
+   * `activity` ("active": used the app at least once, "never"), `activeWithin` (used it in the last
+   * N days), `inactiveFor` (not in the last N days, never-seen accounts included); `sort` "newest"
+   * (default), "oldest", "lastActive" or "books".
+   */
+  app.get<{ Querystring: UsersQuery }>("/api/admin/users", { schema: { querystring: usersQuerySchema } }, async (request) => {
+    const f = request.query;
+    const where = ["(lower(u.email) LIKE $1 OR lower(u.name) LIKE $1)"];
+    const params: unknown[] = [`%${(f.q ?? "").trim().toLowerCase()}%`];
+    const add = (sql: string, value: unknown) => {
+      params.push(value);
+      where.push(sql.replace("?", `$${params.length}`));
+    };
+    if (f.minBooks != null) add("x.books >= ?", f.minBooks);
+    if (f.maxBooks != null) add("x.books <= ?", f.maxBooks);
+    if (f.activity === "active") where.push("ua.last_seen_at IS NOT NULL");
+    if (f.activity === "never") where.push("ua.last_seen_at IS NULL");
+    if (f.activeWithin != null) add("ua.last_seen_at > now() - make_interval(days => ?)", f.activeWithin);
+    if (f.inactiveFor != null) add("(ua.last_seen_at IS NULL OR ua.last_seen_at < now() - make_interval(days => ?))", f.inactiveFor);
+    const order = {
+      newest: `u."createdAt" DESC`,
+      oldest: `u."createdAt" ASC`,
+      lastActive: `ua.last_seen_at DESC NULLS LAST, u."createdAt" DESC`,
+      books: `x.books DESC, u."createdAt" DESC`,
+    }[f.sort ?? "newest"];
     const { rows } = await query<UserRow>(
-      `SELECT u.id, u.name, u.email, u."createdAt",
-              (SELECT count(*) FROM book b WHERE b.user_id = u.id) AS books,
-              (SELECT COALESCE(SUM(size_bytes), 0) FROM book b WHERE b.user_id = u.id) AS used,
+      `SELECT u.id, u.name, u.email, u."createdAt", x.books, x.used,
               a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status, ua.last_seen_at
-       FROM "user" u LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
+       FROM "user" u
+            CROSS JOIN LATERAL (SELECT count(*) AS books, COALESCE(SUM(size_bytes), 0) AS used FROM book bk WHERE bk.user_id = u.id) x
+            LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
             LEFT JOIN user_activity ua ON ua.user_id = u.id
-       WHERE lower(u.email) LIKE $1 OR lower(u.name) LIKE $1
-       ORDER BY u."createdAt" DESC
+       WHERE ${where.join(" AND ")}
+       ORDER BY ${order}
        LIMIT 500`,
-      [q],
+      params,
     );
     return rows.map((r) => ({
       id: r.id,

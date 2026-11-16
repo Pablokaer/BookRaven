@@ -19,6 +19,7 @@ import {
   unblockFile,
   updateUser,
   type AdminUser,
+  type UserFilters,
   type ContentReport,
   type ReportAction,
 } from "../lib/admin";
@@ -54,16 +55,79 @@ function Stat({ label, value, to }: { label: string; value: string | number | un
   );
 }
 
+type Choice = { label: string; filter: Partial<UserFilters> };
+
+const BOOK_FILTERS = {
+  any: { label: "Any number", filter: {} },
+  none: { label: "No books", filter: { maxBooks: 0 } },
+  some: { label: "1 to 9", filter: { minBooks: 1, maxBooks: 9 } },
+  many: { label: "10 to 49", filter: { minBooks: 10, maxBooks: 49 } },
+  lots: { label: "50 or more", filter: { minBooks: 50 } },
+} satisfies Record<string, Choice>;
+
+const ACTIVITY_FILTERS = {
+  any: { label: "Everyone", filter: {} },
+  active: { label: "Has been active", filter: { activity: "active" } },
+  never: { label: "Never active", filter: { activity: "never" } },
+} satisfies Record<string, Choice>;
+
+const LAST_ACTIVE_FILTERS = {
+  any: { label: "Any time", filter: {} },
+  d1: { label: "In the last 24 hours", filter: { activeWithin: 1 } },
+  d7: { label: "In the last 7 days", filter: { activeWithin: 7 } },
+  d30: { label: "In the last 30 days", filter: { activeWithin: 30 } },
+  i30: { label: "Not in the last 30 days", filter: { inactiveFor: 30 } },
+  i90: { label: "Not in the last 90 days", filter: { inactiveFor: 90 } },
+  i180: { label: "Not in the last 6 months", filter: { inactiveFor: 180 } },
+} satisfies Record<string, Choice>;
+
+const SORTS = {
+  newest: { label: "Newest accounts" },
+  oldest: { label: "Oldest accounts" },
+  lastActive: { label: "Most recently active" },
+  books: { label: "Most books" },
+} satisfies Record<NonNullable<UserFilters["sort"]>, { label: string }>;
+
+function FilterSelect<K extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: K;
+  options: Record<K, { label: string }>;
+  onChange: (value: K) => void;
+}) {
+  return (
+    <label className="block space-y-1 text-left">
+      <span className="text-xs font-medium text-muted">{label}</span>
+      <select className="input block w-full min-w-40 py-1.5" value={value} onChange={(e) => onChange(e.target.value as K)}>
+        {(Object.keys(options) as K[]).map((k) => (
+          <option key={k} value={k}>
+            {options[k].label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function UsersTab({ onChanged }: { onChanged: () => void }) {
   const [q, setQ] = useState("");
+  const [books, setBooks] = useState<keyof typeof BOOK_FILTERS>("any");
+  const [activity, setActivity] = useState<keyof typeof ACTIVITY_FILTERS>("any");
+  const [lastActive, setLastActive] = useState<keyof typeof LAST_ACTIVE_FILTERS>("any");
+  const [sort, setSort] = useState<NonNullable<UserFilters["sort"]>>("newest");
+  const filtered = books !== "any" || activity !== "any" || lastActive !== "any";
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [password, setPassword] = useState<{ email: string; value: string } | null>(null);
 
   const load = useCallback(() => {
-    listUsers(q)
+    listUsers({ q, ...BOOK_FILTERS[books].filter, ...ACTIVITY_FILTERS[activity].filter, ...LAST_ACTIVE_FILTERS[lastActive].filter, sort })
       .then(setUsers)
       .catch(() => setUsers([]));
-  }, [q]);
+  }, [q, books, activity, lastActive, sort]);
   useEffect(() => {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
@@ -113,10 +177,36 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
 
   return (
     <>
-      <label className="relative mb-5 flex max-w-md items-center">
+      <label className="relative mb-3 flex max-w-md items-center">
         <Search className="pointer-events-none absolute left-3 h-4 w-4 text-muted" />
         <input className="input w-full pl-9" placeholder="Search by name or email" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search accounts" />
       </label>
+      <div className="mb-5 flex flex-wrap items-end gap-3">
+        <FilterSelect label="Books" value={books} options={BOOK_FILTERS} onChange={setBooks} />
+        <FilterSelect label="Activity" value={activity} options={ACTIVITY_FILTERS} onChange={setActivity} />
+        <FilterSelect label="Last active" value={lastActive} options={LAST_ACTIVE_FILTERS} onChange={setLastActive} />
+        <FilterSelect label="Sort by" value={sort} options={SORTS} onChange={setSort} />
+        <div className="flex items-center gap-3 pb-2 text-xs text-muted">
+          {users && (
+            <span>
+              {users.length >= 500 ? "500+ accounts (first 500 shown)" : `${users.length} ${users.length === 1 ? "account" : "accounts"}`}
+            </span>
+          )}
+          {filtered && (
+            <button
+              type="button"
+              className="text-accent hover:underline"
+              onClick={() => {
+                setBooks("any");
+                setActivity("any");
+                setLastActive("any");
+              }}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      </div>
       {users === null ? (
         <div className="h-40 animate-pulse rounded-2xl bg-elevated/50" />
       ) : users.length === 0 ? (
