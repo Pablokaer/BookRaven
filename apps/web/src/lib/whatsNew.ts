@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-16-admin-last-active",
+    date: "2026-11-16",
+    title: "When each account was last active",
+    items: [
+      "For administrators: Admin → Accounts now shows when each account last used BookRaven, on the web, the Android app, KOReader or an OPDS reader.",
+    ],
+  },
+  {
     id: "2026-11-16-email-automations",
     date: "2026-11-16",
     title: "Automatic emails for administrators",

@@ -140,7 +140,10 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
                   )}
                 </div>
                 <div className="truncate text-xs text-muted">
-                  {u.email} · joined {shortDate(u.createdAt)}
+                  {u.email} · joined {shortDate(u.createdAt)} ·{" "}
+                  <span title={u.lastSeenAt ? new Date(u.lastSeenAt).toLocaleString() : undefined}>
+                    {u.lastSeenAt ? `last active ${timeAgo(u.lastSeenAt)}` : "no activity yet"}
+                  </span>
                 </div>
               </div>
               {/* On phones these move to a second line so the actions button stays next to the name. */}

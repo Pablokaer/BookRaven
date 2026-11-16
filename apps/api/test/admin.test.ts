@@ -12,6 +12,17 @@ describe("admin panel", () => {
     expect((await api(await admin(), "GET", "/api/admin/stats")).statusCode).toBe(200);
   });
 
+  it("shows when each account last used the app", async () => {
+    const a = await admin();
+    const u = await signUp();
+    const find = async () => (await api(a, "GET", `/api/admin/users?q=${encodeURIComponent(u.email)}`)).json()[0];
+    const before = Date.now();
+    expect((await api(u, "GET", "/api/me")).statusCode).toBe(200);
+    const seen = (await find()).lastSeenAt;
+    expect(seen).toBeTruthy();
+    expect(new Date(seen).getTime()).toBeGreaterThanOrEqual(before - 5000);
+  });
+
   it("sets a per-account quota, blocks and unblocks", async () => {
     const a = await admin();
     const u = await signUp();

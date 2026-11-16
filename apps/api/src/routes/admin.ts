@@ -47,6 +47,7 @@ type UserRow = {
   books: string;
   used: string;
   quota_bytes: string | null;
+  last_seen_at: Date | null;
   plan: string | null;
   status: string | null;
   blocked: boolean | null;
@@ -77,8 +78,9 @@ export async function adminRoutes(app: FastifyInstance) {
       `SELECT u.id, u.name, u.email, u."createdAt",
               (SELECT count(*) FROM book b WHERE b.user_id = u.id) AS books,
               (SELECT COALESCE(SUM(size_bytes), 0) FROM book b WHERE b.user_id = u.id) AS used,
-              a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status
+              a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status, ua.last_seen_at
        FROM "user" u LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
+            LEFT JOIN user_activity ua ON ua.user_id = u.id
        WHERE lower(u.email) LIKE $1 OR lower(u.name) LIKE $1
        ORDER BY u."createdAt" DESC
        LIMIT 500`,
@@ -89,6 +91,8 @@ export async function adminRoutes(app: FastifyInstance) {
       name: r.name,
       email: r.email,
       createdAt: new Date(r.createdAt).toISOString(),
+      // When the account last used the app (web, Android, KOReader, OPDS); null if never seen.
+      lastSeenAt: r.last_seen_at?.toISOString() ?? null,
       books: Number(r.books),
       usedBytes: Number(r.used),
       isAdmin: isAdmin(r),
