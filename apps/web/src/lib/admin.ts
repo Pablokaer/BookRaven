@@ -16,6 +16,8 @@ export type AdminUser = {
   name: string;
   email: string;
   createdAt: string;
+  /** When the account last used the app (null = not since this was tracked). */
+  lastSeenAt: string | null;
   books: number;
   usedBytes: number;
   isAdmin: boolean;

@@ -2,6 +2,7 @@ import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import type { SessionUser } from "../auth.js";
 import { query } from "../db.js";
 import { APP_PASSWORD_WORDS } from "./appPasswordWords.js";
+import { noteActivity } from "./activity.js";
 import { TtlCache } from "./cache.js";
 import { isAccountBlocked } from "./moderation.js";
 
@@ -72,7 +73,10 @@ export async function verifyAppPassword(
   if (!key || !/^[0-9a-f]{32}$/i.test(key)) return null;
   const cacheKey = sha256(`${email.trim().toLowerCase()}:${key.toLowerCase()}`);
   const cached = verified.get(cacheKey);
-  if (cached) return { ...cached, blocked: false };
+  if (cached) {
+    await noteActivity(cached.user.id);
+    return { ...cached, blocked: false };
+  }
 
   const version = verified.version;
   const want = Buffer.from(hashFromMd5(key), "hex");
@@ -92,5 +96,6 @@ export async function verifyAppPassword(
     [match.id],
   );
   verified.set(cacheKey, { user, appPasswordId: match.id }, VERIFIED_TTL, version);
+  await noteActivity(user.id);
   return { user, appPasswordId: match.id, blocked: false };
 }
