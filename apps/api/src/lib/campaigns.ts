@@ -15,7 +15,7 @@ import { FINISHED_AT } from "./progress.js";
  * List-Unsubscribe header); accounts that used it (email_opt_out) and blocked accounts are skipped.
  */
 
-export const TEMPLATE_IDS = ["missyou", "comeback", "continue", "classics", "recap", "announcement"] as const;
+export const TEMPLATE_IDS = ["missyou", "comeback", "continue", "classics", "share", "recap", "announcement"] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
 
@@ -112,6 +112,22 @@ export const TEMPLATES: Record<TemplateId, Template> = {
       buttonLabel: "Browse the Public Library",
       buttonPath: "/public",
       hero: "clouds",
+    },
+  },
+  share: {
+    name: "Upload and share",
+    description: "Shows readers they can upload their own books and comics, and share them with friends by link.",
+    audience: { segment: "all", days: 30 },
+    defaults: {
+      subject: "{name}, bring your books and share them with friends",
+      preheader: "Upload your ebooks, PDFs and comics, then send them to a friend with a link.",
+      eyebrow: "Your library, your way",
+      headline: "Bring your books. Share them with friends.",
+      message:
+        "BookRaven isn't only the classics on our shelves. Upload the ebooks, PDFs and comics you already have, and they follow you to every device with your place saved.\n\nLoved one? Send it to a friend with a link: one tap and it's in their library too, with their own bookmarks.",
+      buttonLabel: "Upload a book",
+      buttonPath: "/",
+      hero: "door",
     },
   },
   recap: {
@@ -356,6 +372,26 @@ const FEATURES = [
   ["Read together", "Start a book club, share a collection and talk about the chapter you just finished."],
 ] as const;
 
+const SHARE_STEPS = [
+  ["Upload", "Drag in your ebooks (EPUB, MOBI, AZW3, FB2), PDFs and comics (CBZ, CBR, CB7, CBT). Title, author and cover are read from the file."],
+  ["Share", "Send a link to one book or a whole collection. Friends who accept get their own copy and keep their own place."],
+  ["Read together", "Start a book club, follow each other's progress and talk about the chapter you just finished."],
+] as const;
+
+/** "Upload and share": the three steps, and the formats that can be uploaded. */
+function shareBlock(): Block {
+  const formats = ["EPUB", "MOBI", "PDF", "CBZ", "CBR"]
+    .map(
+      (f) =>
+        `<span style="display:inline-block;margin:0 3px 6px;padding:5px 10px;border:1px solid ${P.line};border-radius:3px;background:${P.paper};font:600 11px/1 ${SANS};letter-spacing:0.12em;color:${P.goldDeep};">${f}</span>`,
+    )
+    .join("");
+  return {
+    html: `${numbered(SHARE_STEPS)}<p style="margin:0 0 22px;text-align:center;">${formats}</p>`,
+    text: SHARE_STEPS.map(([t, d]) => `- ${t}: ${d}`).join("\n"),
+  };
+}
+
 function featuresBlock(): Block {
   return { html: numbered(FEATURES), text: FEATURES.map(([t, d]) => `- ${t}: ${d}`).join("\n") };
 }
@@ -450,6 +486,7 @@ function render(template: TemplateId, c: CampaignContent, r: Recipient, shared: 
   } else if (template === "comeback") block = featuresBlock();
   else if (template === "missyou" && personal.shelf) block = shelfBlock(personal.shelf);
   else if (template === "classics") block = classicsBlock(shared.classics);
+  else if (template === "share") block = shareBlock();
   else if (template === "recap" && personal.recap) block = recapBlock(personal.recap);
 
   const unsubscribe = unsubscribeUrl(r.id);
