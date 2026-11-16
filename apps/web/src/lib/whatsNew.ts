@@ -20,6 +20,14 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-16-email-automations",
+    date: "2026-11-16",
+    title: "Automatic emails for administrators",
+    items: [
+      "For administrators: Admin → Emails → Automations sends emails on its own, like a nudge back to a book left halfway or a note after a long absence. Each one is turned on separately, with its own text and preview.",
+    ],
+  },
+  {
     id: "2026-11-16-email-preferences",
     date: "2026-11-16",
     title: "Your choice of emails",

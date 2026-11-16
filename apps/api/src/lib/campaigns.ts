@@ -557,6 +557,25 @@ export async function sendTest(template: TemplateId, content: CampaignContent, u
   await sendMail({ ...mail, subject: `[Test] ${mail.subject}` });
 }
 
+export type { Recipient };
+
+/**
+ * Sends `template` to one reader (automations: lib/automations.ts). `shared` can be read once for
+ * many readers. Returns false, without sending, when the reader lacks what the template is about
+ * (no book in progress for "Continue reading", no classics for "New on the shelves").
+ */
+export async function sendTemplateTo(template: TemplateId, content: CampaignContent, r: Recipient, shared?: Shared) {
+  const s = shared ?? (await sharedData(template));
+  const personal = await personalData(template, r.id);
+  if (template === "continue" && !personal.bookmark) return false;
+  if (template === "classics" && !s.classics.length) return false;
+  const { preheader: _p, ...mail } = render(template, content, r, s, personal);
+  await sendMail(mail);
+  return true;
+}
+
+export { sharedData };
+
 // ---------------------------------------------------------------------------------------------
 // Sending
 
@@ -606,6 +625,8 @@ async function run(id: string, template: TemplateId, content: CampaignContent, r
       try {
         const { preheader: _p, ...mail } = render(template, content, r, shared, await personalData(template, r.id));
         await sendMail(mail);
+        // Counts toward the weekly spacing of automatic emails (lib/automations.ts).
+        await query(`INSERT INTO email_send_log (user_id, kind, ref) VALUES ($1, 'campaign', $2) ON CONFLICT DO NOTHING`, [r.id, id]);
         sent++;
       } catch (err) {
         failed++;
