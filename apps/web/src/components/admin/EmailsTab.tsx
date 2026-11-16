@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, KeyRound, Mail, Monitor, Send, Smartphone, Users } from "lucide-react";
+import { AlertTriangle, Check, KeyRound, Mail, Repeat, Monitor, Send, Smartphone, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../../lib/api";
 import {
@@ -26,6 +26,7 @@ import { useApi } from "../../lib/useApi";
 import { ProgressBar } from "../books/ProgressBar";
 import { Field } from "../ui/Field";
 import { Modal } from "../ui/Modal";
+import { AutomationsView } from "./AutomationsView";
 
 const DAYS = [7, 14, 30, 60, 90, 180];
 
@@ -35,7 +36,7 @@ const DAYS = [7, 14, 30, 60, 90, 180];
  */
 export function EmailsTab() {
   const { data } = useApi(listTemplates, []);
-  const [view, setView] = useState<"promo" | "account">("promo");
+  const [view, setView] = useState<"promo" | "automations" | "account">("promo");
   if (!data) return <div className="h-96 animate-pulse rounded-2xl bg-elevated/50" />;
   return (
     <div className="space-y-6">
@@ -43,11 +44,20 @@ export function EmailsTab() {
         <button type="button" role="tab" aria-selected={view === "promo"} className={`pill ${view === "promo" ? "pill-on" : ""}`} onClick={() => setView("promo")}>
           <Send className="h-4 w-4" /> Promotional emails
         </button>
+        <button type="button" role="tab" aria-selected={view === "automations"} className={`pill ${view === "automations" ? "pill-on" : ""}`} onClick={() => setView("automations")}>
+          <Repeat className="h-4 w-4" /> Automations
+        </button>
         <button type="button" role="tab" aria-selected={view === "account"} className={`pill ${view === "account" ? "pill-on" : ""}`} onClick={() => setView("account")}>
           <KeyRound className="h-4 w-4" /> Account emails
         </button>
       </div>
-      {view === "promo" ? <Composer templates={data.templates} mailEnabled={data.mailEnabled} /> : <AccountEmails />}
+      {view === "promo" ? (
+        <Composer templates={data.templates} mailEnabled={data.mailEnabled} />
+      ) : view === "automations" ? (
+        <AutomationsView />
+      ) : (
+        <AccountEmails />
+      )}
     </div>
   );
 }
@@ -108,28 +118,8 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
     setContent(t.defaults);
     setAudience(t.audience);
   };
-  const set = <K extends keyof CampaignContent>(key: K, value: CampaignContent[K]) => setContent((c) => ({ ...c, [key]: value }));
 
-  // The preview, rendered by the server for this administrator, a moment after typing stops.
-  const [preview, setPreview] = useState<EmailPreview | null>(null);
-  const [previewError, setPreviewError] = useState(false);
-  useEffect(() => {
-    let live = true;
-    const t = setTimeout(() => {
-      previewEmail(templateId, content).then(
-        (p) => {
-          if (!live) return;
-          setPreview(p);
-          setPreviewError(false);
-        },
-        () => live && setPreviewError(true),
-      );
-    }, 350);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [templateId, content]);
+  const { preview, error: previewError } = useEmailPreview(templateId, content);
 
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => {
@@ -152,7 +142,7 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
     return () => clearInterval(t);
   }, [sending, reloadCampaigns]);
 
-  const invalid = !content.subject.trim() || !content.headline.trim() || !content.buttonLabel.trim() || !/^\/[A-Za-z0-9/_?=&.%#-]*$/.test(content.buttonPath);
+  const invalid = contentInvalid(content);
 
   const test = async () => {
     setBusy("test");
@@ -214,54 +204,13 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
             </div>
           </section>
 
-          <section className="surface space-y-4 p-5">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 className="eyebrow">2 · Content</h3>
-              {edited && (
-                <button type="button" className="text-xs text-accent hover:underline" onClick={() => setContent(template.defaults)}>
-                  Restore the template's text
-                </button>
-              )}
-            </div>
-            <Field label="Subject">
-              <input className="input w-full" maxLength={150} value={content.subject} onChange={(e) => set("subject", e.target.value)} />
-            </Field>
-            <Field label="Preview text (shown after the subject in the inbox)">
-              <input className="input w-full" maxLength={200} value={content.preheader} onChange={(e) => set("preheader", e.target.value)} />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-              <Field label="Small title above">
-                <input className="input w-full" maxLength={60} value={content.eyebrow} onChange={(e) => set("eyebrow", e.target.value)} />
-              </Field>
-              <Field label="Headline">
-                <input className="input w-full" maxLength={150} value={content.headline} onChange={(e) => set("headline", e.target.value)} />
-              </Field>
-            </div>
-            <Field label="Message">
-              <textarea className="input min-h-40 w-full resize-y leading-relaxed" maxLength={5000} value={content.message} onChange={(e) => set("message", e.target.value)} />
-            </Field>
-            <p className="-mt-2 text-xs leading-relaxed text-muted">
-              <code className="text-fg">{"{name}"}</code> is each reader's first name, <code className="text-fg">{"{year}"}</code> this year. A blank line starts a
-              paragraph, lines starting with <code className="text-fg">-</code> make a list, <code className="text-fg">**bold**</code>.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Button text">
-                <input className="input w-full" maxLength={40} value={content.buttonLabel} onChange={(e) => set("buttonLabel", e.target.value)} />
-              </Field>
-              <Field label={templateId === "continue" ? "Button link (if they have no book open)" : "Button link (page of the app)"}>
-                <input className="input w-full font-mono" maxLength={300} value={content.buttonPath} onChange={(e) => set("buttonPath", e.target.value)} placeholder="/public" />
-              </Field>
-            </div>
-            <Field label="Picture">
-              <select className="input w-full" value={content.hero} onChange={(e) => set("hero", e.target.value as Hero)}>
-                {(Object.keys(HERO_LABELS) as Hero[]).map((h) => (
-                  <option key={h} value={h}>
-                    {HERO_LABELS[h]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </section>
+          <ContentFields
+            title="2 · Content"
+            templateId={templateId}
+            content={content}
+            onChange={setContent}
+            onRestore={edited ? () => setContent(template.defaults) : undefined}
+          />
 
           <section className="surface space-y-4 p-5">
             <h3 className="eyebrow">3 · Who receives it</h3>
@@ -341,7 +290,7 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
 }
 
 /** The email as the reader will see it: the inbox line, then the message at desktop or phone width. */
-function PreviewPane({ preview, error }: { preview: EmailPreview | null; error: boolean }) {
+export function PreviewPane({ preview, error }: { preview: EmailPreview | null; error: boolean }) {
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(900);
@@ -468,4 +417,99 @@ function errorText(e: unknown) {
     if (e.body?.error === "no_recipients") return "Nobody is in this audience right now.";
   }
   return "That did not work, try again.";
+}
+
+/** The fields of an email's texts and picture (campaigns and automations). */
+export function ContentFields({
+  title,
+  templateId,
+  content,
+  onChange,
+  onRestore,
+}: {
+  title: string;
+  templateId: TemplateId;
+  content: CampaignContent;
+  onChange: (c: CampaignContent) => void;
+  onRestore?: () => void;
+}) {
+  const set = <K extends keyof CampaignContent>(key: K, value: CampaignContent[K]) => onChange({ ...content, [key]: value });
+  return (
+    <section className="surface space-y-4 p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="eyebrow">{title}</h3>
+        {onRestore && (
+          <button type="button" className="text-xs text-accent hover:underline" onClick={onRestore}>
+            Restore the template's text
+          </button>
+        )}
+      </div>
+      <Field label="Subject">
+        <input className="input w-full" maxLength={150} value={content.subject} onChange={(e) => set("subject", e.target.value)} />
+      </Field>
+      <Field label="Preview text (shown after the subject in the inbox)">
+        <input className="input w-full" maxLength={200} value={content.preheader} onChange={(e) => set("preheader", e.target.value)} />
+      </Field>
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <Field label="Small title above">
+          <input className="input w-full" maxLength={60} value={content.eyebrow} onChange={(e) => set("eyebrow", e.target.value)} />
+        </Field>
+        <Field label="Headline">
+          <input className="input w-full" maxLength={150} value={content.headline} onChange={(e) => set("headline", e.target.value)} />
+        </Field>
+      </div>
+      <Field label="Message">
+        <textarea className="input min-h-40 w-full resize-y leading-relaxed" maxLength={5000} value={content.message} onChange={(e) => set("message", e.target.value)} />
+      </Field>
+      <p className="-mt-2 text-xs leading-relaxed text-muted">
+        <code className="text-fg">{"{name}"}</code> is each reader's first name, <code className="text-fg">{"{year}"}</code> this year. A blank line starts a
+        paragraph, lines starting with <code className="text-fg">-</code> make a list, <code className="text-fg">**bold**</code>.
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Button text">
+          <input className="input w-full" maxLength={40} value={content.buttonLabel} onChange={(e) => set("buttonLabel", e.target.value)} />
+        </Field>
+        <Field label={templateId === "continue" ? "Button link (if they have no book open)" : "Button link (page of the app)"}>
+          <input className="input w-full font-mono" maxLength={300} value={content.buttonPath} onChange={(e) => set("buttonPath", e.target.value)} placeholder="/public" />
+        </Field>
+      </div>
+      <Field label="Picture">
+        <select className="input w-full" value={content.hero} onChange={(e) => set("hero", e.target.value as Hero)}>
+          {(Object.keys(HERO_LABELS) as Hero[]).map((h) => (
+            <option key={h} value={h}>
+              {HERO_LABELS[h]}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </section>
+  );
+}
+
+/** Whether the texts can't be sent as they are (an empty subject, a link outside the app...). */
+export const contentInvalid = (c: CampaignContent) =>
+  !c.subject.trim() || !c.headline.trim() || !c.buttonLabel.trim() || !/^\/[A-Za-z0-9/_?=&.%#-]*$/.test(c.buttonPath);
+
+/** The email rendered by the server for this administrator, a moment after typing stops. */
+export function useEmailPreview(templateId: TemplateId, content: CampaignContent) {
+  const [preview, setPreview] = useState<EmailPreview | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const t = setTimeout(() => {
+      previewEmail(templateId, content).then(
+        (p) => {
+          if (!live) return;
+          setPreview(p);
+          setError(false);
+        },
+        () => live && setError(true),
+      );
+    }, 350);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [templateId, content]);
+  return { preview, error };
 }

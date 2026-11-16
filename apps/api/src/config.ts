@@ -8,6 +8,14 @@ function required(name: string, fallback?: string): string {
 
 const isProd = process.env.NODE_ENV === "production";
 
+/** "12-15" → { from: 12, to: 15 }; anything unreadable falls back to 12-15. */
+function parseHours(raw: string) {
+  const m = /^\s*(\d{1,2})\s*-\s*(\d{1,2})\s*$/.exec(raw);
+  const from = m ? Number(m[1]) : 12;
+  const to = m ? Number(m[2]) : 15;
+  return from <= 23 && to <= 24 && from !== to ? { from, to } : { from: 12, to: 15 };
+}
+
 export const config = {
   isProd,
   isTest: process.env.NODE_ENV === "test",
@@ -66,6 +74,11 @@ export const config = {
   /** SMTP connection URL for outgoing email, e.g. smtps://user:pass@smtp.example.com:465 */
   smtpUrl: process.env.SMTP_URL ?? "",
   mailFrom: process.env.MAIL_FROM ?? "BookRaven <no-reply@localhost>",
+  /**
+   * UTC hours in which automatic emails go out, as "from-to" (to excluded): default 12-15, morning
+   * in Brazil (09:00-12:00 in Brasília) and early afternoon in Europe.
+   */
+  automationHours: parseHours(process.env.EMAIL_AUTOMATION_HOURS ?? "12-15"),
   /** Dictionary lookups: "wiktionary" (default) or "none". */
   dictionaryProvider: (process.env.DICTIONARY_PROVIDER ?? "wiktionary") === "none" ? ("none" as const) : ("wiktionary" as const),
   /** Translation of selected text: "mymemory" (default, free), "libretranslate" or "none". */

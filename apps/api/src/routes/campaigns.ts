@@ -22,6 +22,7 @@ import {
 } from "../lib/campaigns.js";
 import { query } from "../db.js";
 import { accountEmailPreviews } from "../lib/emails.js";
+import { AUTOMATION_IDS, AUTOMATIONS, listAutomations, SPACING_DAYS, updateAutomation, type AutomationId } from "../lib/automations.js";
 import { requireAdmin } from "./admin.js";
 
 const contentSchema = obj(
@@ -99,6 +100,35 @@ export async function campaignAdminRoutes(app: FastifyInstance) {
       const started = await startCampaign(request.body.template, request.body.content, request.body.audience, request.user.id);
       if (!started) return reply.code(400).send({ error: "no_recipients" });
       return reply.code(202).send(started);
+    },
+  );
+
+  /** The automatic emails: their settings, who they would reach now and how they did in the last 30 days. */
+  app.get("/api/admin/emails/automations", async () => ({
+    automations: await listAutomations(),
+    hours: config.automationHours,
+    spacingDays: SPACING_DAYS,
+    mailEnabled,
+  }));
+
+  /** Turns an automation on or off, changes its days or its texts (`content: null` restores the template's). */
+  app.put<{ Params: { id: string }; Body: { enabled?: boolean; days?: number | null; content?: CampaignContent | null } }>(
+    "/api/admin/emails/automations/:id",
+    {
+      schema: {
+        body: obj({
+          enabled: { type: "boolean" },
+          days: { type: ["integer", "null"], minimum: 1, maximum: 3650 },
+          content: { anyOf: [contentSchema, { type: "null" }] },
+        }),
+      },
+    },
+    async (request, reply) => {
+      const id = request.params.id as AutomationId;
+      if (!(AUTOMATION_IDS as readonly string[]).includes(id)) return reply.code(404).send({ error: "not_found" });
+      if (request.body.days != null && AUTOMATIONS[id].days === null) return reply.code(400).send({ error: "no_days" });
+      await updateAutomation(id, request.body, request.user.id);
+      return reply.code(204).send();
     },
   );
 

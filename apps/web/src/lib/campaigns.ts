@@ -66,3 +66,27 @@ export const HERO_LABELS: Record<Hero, string> = {
   scholar: "The reader in his chair",
   none: "No picture",
 };
+
+/** Automatic emails (Admin → Emails → Automations); the server side is apps/api/src/lib/automations.ts. */
+export type Automation = {
+  id: string;
+  name: string;
+  template: TemplateId;
+  trigger: string;
+  enabled: boolean;
+  days: number | null;
+  daysChoices: number[];
+  content: CampaignContent;
+  customized: boolean;
+  /** Readers the rule fits right now (sent at the next pass within the sending hours). */
+  waiting: number;
+  sent30: number;
+  /** Of those, how many read again within 7 days of the email. */
+  returned30: number;
+  lastSentAt: string | null;
+};
+export type AutomationsInfo = { automations: Automation[]; hours: { from: number; to: number }; spacingDays: number; mailEnabled: boolean };
+
+export const listAutomations = () => apiJson<AutomationsInfo>("/api/admin/emails/automations");
+export const updateAutomation = (id: string, change: { enabled?: boolean; days?: number | null; content?: CampaignContent | null }) =>
+  apiOk(`/api/admin/emails/automations/${id}`, { method: "PUT", body: JSON.stringify(change) });
