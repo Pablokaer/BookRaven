@@ -12,7 +12,7 @@ import { FINISHED_AT } from "./progress.js";
  * List-Unsubscribe header); accounts that used it (email_opt_out) and blocked accounts are skipped.
  */
 
-export const TEMPLATE_IDS = ["comeback", "continue", "classics", "recap", "announcement"] as const;
+export const TEMPLATE_IDS = ["missyou", "comeback", "continue", "classics", "recap", "announcement"] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
 /** The engraving at the top of the email (apps/web/public/email/hero-*.jpg), or none. */
@@ -50,6 +50,22 @@ type Template = {
 };
 
 export const TEMPLATES: Record<TemplateId, Template> = {
+  missyou: {
+    name: "We miss you",
+    description: "A warm note for readers who have been gone a long time, with their own shelf as they left it.",
+    audience: { segment: "inactive", days: 60 },
+    defaults: {
+      subject: "We miss you, {name}",
+      preheader: "Your shelf is just as you left it, and there's a chair by the fire for you.",
+      eyebrow: "It's been a while",
+      headline: "We miss you, {name}",
+      message:
+        "The lamp is still lit and your bookmark hasn't moved. Whatever pulled you away, your books have waited patiently, every highlight and note in its place.\n\nCome back for a chapter. Just one, tonight. We'd love to have you reading with us again.",
+      buttonLabel: "Come back to my books",
+      buttonPath: "/",
+      hero: "clouds",
+    },
+  },
   comeback: {
     name: "We kept your place",
     description: "Invites readers who have been away back to their library, with what is waiting for them.",
@@ -171,7 +187,8 @@ type Recap = { hours: number; finished: number; days: number; goal: number };
 /** Read once per send: the same for every recipient. */
 type Shared = { classics: Classic[] };
 /** Read for each recipient. */
-type Personal = { bookmark?: Bookmark | null; recap?: Recap };
+type Shelf = { books: number; last: { title: string; author: string | null; at: Date } | null };
+type Personal = { bookmark?: Bookmark | null; recap?: Recap; shelf?: Shelf };
 
 async function sharedData(template: TemplateId): Promise<Shared> {
   if (template !== "classics") return { classics: [] };
@@ -192,6 +209,17 @@ async function personalData(template: TemplateId, userId: string): Promise<Perso
     );
     const r = rows[0];
     return { bookmark: r ? { id: r.id, title: r.title, author: r.author, percentage: r.percentage, updatedAt: r.updated_at } : null };
+  }
+  if (template === "missyou") {
+    const { rows } = await query<{ books: string; title: string | null; author: string | null; at: Date | null }>(
+      `SELECT (SELECT count(*) FROM book WHERE user_id = $1) AS books, l.title, l.author, l.updated_at AS at
+         FROM (SELECT 1) x
+         LEFT JOIN LATERAL (SELECT b.title, b.author, p.updated_at FROM reading_progress p JOIN book b ON b.id = p.book_id
+                             WHERE p.user_id = $1 ORDER BY p.updated_at DESC LIMIT 1) l ON true`,
+      [userId],
+    );
+    const r = rows[0]!;
+    return { shelf: { books: Number(r.books), last: r.title && r.at ? { title: r.title, author: r.author, at: r.at } : null } };
   }
   if (template === "recap") {
     const { rows } = await query<{ seconds: string; finished: string; days: string; goal: string | null }>(
@@ -220,6 +248,7 @@ async function personalData(template: TemplateId, userId: string): Promise<Perso
 const SAMPLE: Required<Personal> = {
   bookmark: { id: "", title: "The Fall of the House of Usher", author: "Edgar Allan Poe", percentage: 0.42, updatedAt: new Date(Date.now() - 12 * 86400_000) },
   recap: { hours: 37.5, finished: 6, days: 54, goal: 12 },
+  shelf: { books: 14, last: { title: "Wuthering Heights", author: "Emily Brontë", at: new Date(Date.now() - 74 * 86400_000) } },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -406,6 +435,36 @@ ${tile(hours, r.hours === 1 ? "hour read" : "hours read")}${tile(String(r.finish
   return { html, text: `This year: ${hours} hours read, ${r.finished} books finished, ${r.days} reading days (${r.finished} of ${r.goal} toward your goal).` };
 }
 
+/** "We miss you": the reader's shelf as they left it (how many books, the last one opened). */
+function shelfBlock(shelf: Shelf): Block {
+  if (!shelf.books) {
+    return {
+      html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 26px;background:${P.paper};border:1px solid ${P.line};border-radius:4px;">
+<tr><td align="center" style="padding:24px 22px;font:italic 19px/1.45 ${SERIF};color:${P.sepia};">Your shelf is still empty, and hundreds of free classics<br>are waiting in the Public Library to fill it.</td></tr></table>`,
+      text: "Your shelf is still empty, and hundreds of free classics are waiting in the Public Library.",
+    };
+  }
+  const books = `${shelf.books} ${shelf.books === 1 ? "book" : "books"}`;
+  const last = shelf.last;
+  return {
+    html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 26px;background:${P.paper};border:1px solid ${P.line};border-radius:4px;">
+<tr><td align="center" style="padding:24px 22px 22px;">
+  ${smallCaps("Your shelf, as you left it")}
+  <span style="display:block;margin:6px 0 4px;font:600 44px/1 ${SERIF};color:${P.ink};">${shelf.books}</span>
+  <span style="display:block;font:600 11px/1.3 ${SANS};letter-spacing:0.14em;text-transform:uppercase;color:${P.goldDeep};">${shelf.books === 1 ? "book waiting" : "books waiting"}</span>
+  ${
+    last
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-top:1px solid ${P.line};"><tr><td align="center" style="padding-top:16px;font:15px/1.5 ${SANS};color:${P.sepia};">
+    The last one you opened, ${daysAgo(last.at)}:<br>
+    <span style="font:600 20px/1.35 ${SERIF};color:${P.ink};">${esc(last.title)}</span>${last.author ? `<span style="font:italic 16px/1.35 ${SERIF};color:${P.sepia};"> by ${esc(last.author)}</span>` : ""}
+  </td></tr></table>`
+      : ""
+  }
+</td></tr></table>`,
+    text: `Your shelf, as you left it: ${books}.${last ? ` The last one you opened (${daysAgo(last.at)}): ${last.title}${last.author ? ` by ${last.author}` : ""}.` : ""}`,
+  };
+}
+
 export type Rendered = Mail & { preheader: string };
 
 /** The email for one reader. */
@@ -422,6 +481,7 @@ function render(template: TemplateId, c: CampaignContent, r: Recipient, shared: 
     block = bookmarkBlock(personal.bookmark);
     if (personal.bookmark.id) buttonUrl = appUrl(`/read/${personal.bookmark.id}`);
   } else if (template === "comeback") block = featuresBlock();
+  else if (template === "missyou" && personal.shelf) block = shelfBlock(personal.shelf);
   else if (template === "classics") block = classicsBlock(shared.classics);
   else if (template === "recap" && personal.recap) block = recapBlock(personal.recap);
 
@@ -520,6 +580,10 @@ export async function previewCampaign(template: TemplateId, content: CampaignCon
   let sample = false;
   if (template === "continue" && !personal.bookmark) {
     personal.bookmark = SAMPLE.bookmark;
+    sample = true;
+  }
+  if (template === "missyou" && personal.shelf && !personal.shelf.books) {
+    personal.shelf = SAMPLE.shelf;
     sample = true;
   }
   if (template === "recap" && personal.recap && !personal.recap.hours && !personal.recap.finished) {

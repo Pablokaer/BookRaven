@@ -2,7 +2,7 @@ import { apiJson, apiOk } from "./api";
 
 /** Promotional emails (Admin → Emails); the server side is apps/api/src/lib/campaigns.ts. */
 
-export type TemplateId = "comeback" | "continue" | "classics" | "recap" | "announcement";
+export type TemplateId = "missyou" | "comeback" | "continue" | "classics" | "recap" | "announcement";
 export type Hero = "clouds" | "door" | "scholar" | "none";
 export type Segment = "all" | "inactive" | "in_progress" | "never_read";
 export type Audience = { segment: Segment; days: number };
