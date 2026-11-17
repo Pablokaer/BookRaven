@@ -1,14 +1,24 @@
 import { Sparkles } from "lucide-react";
-import { useState } from "react";
-import { lastSeenNote, markNotesSeen, RELEASE_NOTES, unseenNotes } from "../lib/whatsNew";
+import { useEffect, useState } from "react";
+import { useLibrary } from "../lib/libraryStore";
+import { lastSeenNote, markNotesSeen, RELEASE_NOTES, unseenNotes, type ReleaseNote } from "../lib/whatsNew";
 import { Modal } from "./ui/Modal";
 
 const dateLabel = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
 
-/** "What's new": shown once after an update, with the notes not seen yet (lib/whatsNew.ts). */
+/**
+ * "What's new": shown once after an update, with the notes not seen yet (lib/whatsNew.ts). Waits for
+ * the account (`me`): notes about the Admin page are only for administrators.
+ */
 export function WhatsNew() {
-  const [notes, setNotes] = useState(() => unseenNotes(RELEASE_NOTES, lastSeenNote()));
-  if (!notes.length) return null;
+  const { me } = useLibrary();
+  const [notes, setNotes] = useState<ReleaseNote[] | null>(null);
+  const known = me != null;
+  const isAdmin = me?.isAdmin === true;
+  useEffect(() => {
+    if (known) setNotes((current) => current ?? unseenNotes(RELEASE_NOTES, lastSeenNote(), isAdmin));
+  }, [known, isAdmin]);
+  if (!notes?.length) return null;
   const close = () => {
     markNotesSeen();
     setNotes([]);

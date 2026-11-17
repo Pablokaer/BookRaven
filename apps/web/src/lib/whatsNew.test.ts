@@ -16,6 +16,22 @@ describe("what's new", () => {
     expect(ids(unseenNotes(notes, "removed"))).toEqual(["e", "d", "c"]);
   });
 
+  it("shows the notes about the Admin page to administrators only", () => {
+    const withAdmin = [{ ...note("f", "2026-10-16"), admin: true as const }, ...notes];
+    expect(ids(unseenNotes(withAdmin, "c"))).toEqual(["e", "d"]);
+    expect(ids(unseenNotes(withAdmin, "c", true))).toEqual(["f", "e", "d"]);
+    expect(ids(unseenNotes(withAdmin, null))).toEqual(["e", "d", "c"]);
+    // A reader who closed the window after an admin note was published sees nothing again.
+    expect(unseenNotes(withAdmin, "f")).toEqual([]);
+    expect(unseenNotes([withAdmin[0]!, ...notes], "e")).toEqual([]);
+  });
+
+  it("marks every note about the Admin page as one for administrators", () => {
+    for (const n of RELEASE_NOTES) {
+      if (n.items.some((i) => /^For administrators|Admin →/.test(i))) expect(n.admin, n.id).toBe(true);
+    }
+  });
+
   it("never shows more than a few at once", () => {
     const many = Array.from({ length: 10 }, (_, i) => note(`n${i}`, "2026-10-15"));
     expect(unseenNotes(many, null)).toHaveLength(MAX_SHOWN);

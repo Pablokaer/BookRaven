@@ -105,14 +105,15 @@ export const AUTOMATIONS: Record<AutomationId, Automation> = {
   onboarding: {
     name: "Upload and share",
     template: "share",
-    trigger: "{days} days after signing up, to accounts with no book yet. Once per account.",
-    days: 2,
+    trigger: "{days} days after signing up, to accounts that haven't uploaded a book. Once per account.",
+    days: 1,
     daysChoices: [1, 2, 3, 7],
     rule: {
+      // Uploaded: books added from a share link or the Public Library (shared_at) don't count.
       sql: `SELECT u.id, u.email, u.name, u."emailVerified" AS verified, 'once' AS ref FROM "user" u
              WHERE u."createdAt" < now() - make_interval(days => $1)
                AND u."createdAt" > now() - make_interval(days => $1 + 14)
-               AND NOT EXISTS (SELECT 1 FROM book b WHERE b.user_id = u.id)`,
+               AND NOT EXISTS (SELECT 1 FROM book b WHERE b.user_id = u.id AND b.shared_at IS NULL)`,
     },
   },
   classics: {

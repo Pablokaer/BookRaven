@@ -39,7 +39,14 @@ const contentSchema = obj(
   },
   ["subject", "preheader", "eyebrow", "headline", "message", "buttonLabel", "buttonPath", "hero"],
 );
-const audienceSchema = obj({ segment: { enum: SEGMENTS }, days: { type: "integer", minimum: 1, maximum: 3650 } }, ["segment", "days"]);
+const audienceSchema = obj(
+  {
+    segment: { enum: SEGMENTS },
+    days: { type: "integer", minimum: 1, maximum: 3650 },
+    userIds: { type: "array", maxItems: 200, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 64 } },
+  },
+  ["segment", "days"],
+);
 const templateSchema = { enum: TEMPLATE_IDS };
 
 type Draft = { template: TemplateId; content: CampaignContent };

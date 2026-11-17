@@ -1,6 +1,6 @@
-import { Ban, BookOpen, Flag, HardDrive, KeyRound, Mail, MoreHorizontal, Search, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
+import { Ban, BookOpen, Flag, HardDrive, KeyRound, Mail, MoreHorizontal, Search, Send, ShieldCheck, ShieldOff, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { EmailsTab } from "../components/admin/EmailsTab";
 import { EmptyState } from "../components/books/BookBrowser";
 import { ProgressBar } from "../components/books/ProgressBar";
@@ -29,7 +29,8 @@ import { fileSize, timeAgo } from "../lib/format";
 import { useLibrary } from "../lib/libraryStore";
 import { useApi } from "../lib/useApi";
 
-type Tab = "users" | "reports" | "blocked" | "emails";
+const TABS = ["users", "reports", "blocked", "emails"] as const;
+type Tab = (typeof TABS)[number];
 
 const REASONS: Record<string, string> = {
   copyright: "Copyright",
@@ -122,6 +123,7 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
   const filtered = books !== "any" || activity !== "any" || lastActive !== "any";
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [password, setPassword] = useState<{ email: string; value: string } | null>(null);
+  const navigate = useNavigate();
 
   const load = useCallback(() => {
     listUsers({ q, ...BOOK_FILTERS[books].filter, ...ACTIVITY_FILTERS[activity].filter, ...LAST_ACTIVE_FILTERS[lastActive].filter, sort })
@@ -217,7 +219,9 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
             <div key={u.id} className="flex flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4">
               <div className="min-w-0 flex-1 basis-56">
                 <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">{u.name || "—"}</span>
+                  <Link to={`/admin/users/${encodeURIComponent(u.id)}`} className="truncate font-medium hover:text-accent hover:underline">
+                    {u.name || u.email}
+                  </Link>
                   {u.isAdmin && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-xs text-accent">
                       <ShieldCheck className="h-3 w-3" /> Admin
@@ -252,6 +256,8 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
                 label={`Actions for ${u.email}`}
                 trigger={<MoreHorizontal className="h-4 w-4" />}
                 items={[
+                  { label: "Usage and details", icon: <BookOpen />, onSelect: () => navigate(`/admin/users/${encodeURIComponent(u.id)}`) },
+                  { label: "Send email…", icon: <Send />, onSelect: () => navigate(`/admin?tab=emails&to=${encodeURIComponent(u.id)}`) },
                   ...(!u.isAdmin ? [{ label: "Storage limit…", icon: <HardDrive />, onSelect: () => setQuota(u) }] : []),
                   { label: "Reset password…", icon: <KeyRound />, onSelect: () => void reset(u) },
                   ...(!u.isAdmin
@@ -391,7 +397,15 @@ function BlockedTab() {
 /** "/admin" — accounts, reports and blocked files (administrators only). */
 export function AdminPage() {
   const { me } = useLibrary();
-  const [tab, setTab] = useState<Tab>("users");
+  // ?tab=emails&to=<account id>: "Send email" on an account opens the composer for that account.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab");
+  const [tab, setTabState] = useState<Tab>(TABS.includes(asked as Tab) ? (asked as Tab) : "users");
+  const sendTo = params.get("to");
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    setParams(t === "users" ? {} : { tab: t }, { replace: true });
+  };
   // Only administrators may ask; for anyone else the page says so below.
   const { data: stats, reload: loadStats } = useApi(() => (me?.isAdmin ? getStats() : Promise.resolve(null)), [], { reloadOn: [me?.isAdmin] });
 
@@ -434,7 +448,7 @@ export function AdminPage() {
       {tab === "users" && <UsersTab onChanged={loadStats} />}
       {tab === "reports" && <ReportsTab onChanged={loadStats} />}
       {tab === "blocked" && <BlockedTab />}
-      {tab === "emails" && <EmailsTab />}
+      {tab === "emails" && <EmailsTab key={sendTo ?? ""} sendTo={sendTo} />}
     </>
   );
 }

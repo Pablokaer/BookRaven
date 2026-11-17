@@ -24,9 +24,10 @@ export type TemplateId = (typeof TEMPLATE_IDS)[number];
  * an account at least that old) and "in_progress" (a book started, not finished, nothing read
  * for that many days).
  */
-export const SEGMENTS = ["all", "inactive", "in_progress", "never_read"] as const;
+export const SEGMENTS = ["all", "inactive", "in_progress", "never_read", "accounts"] as const;
 export type Segment = (typeof SEGMENTS)[number];
-export type Audience = { segment: Segment; days: number };
+/** "accounts": only the accounts in `userIds`, picked by the administrator. */
+export type Audience = { segment: Segment; days: number; userIds?: string[] };
 
 /** What the administrator edits. {name} (the reader's first name) and {year} work in every text field. */
 export type CampaignContent = {
@@ -174,6 +175,7 @@ const SEGMENT_SQL: Record<Segment, string> = {
     AND NOT EXISTS (SELECT 1 FROM reading_activity r WHERE r.user_id = u.id AND r.hour > now() - make_interval(days => opts.days))`,
   never_read: `NOT EXISTS (SELECT 1 FROM reading_progress p WHERE p.user_id = u.id)
     AND NOT EXISTS (SELECT 1 FROM reading_activity r WHERE r.user_id = u.id)`,
+  accounts: `u.id = ANY(opts.ids)`,
 };
 
 type Recipient = { id: string; email: string; name: string };
@@ -181,14 +183,14 @@ type Recipient = { id: string; email: string; name: string };
 /** The accounts an audience reaches: never blocked ones, unsubscribed ones or (when sign-in needs it) unconfirmed emails. */
 export async function audienceRecipients(a: Audience) {
   const { rows } = await query<Recipient>(
-    `WITH opts AS (SELECT $1::int AS days, $2::boolean AS verified_only)
+    `WITH opts AS (SELECT $1::int AS days, $2::boolean AS verified_only, $3::text[] AS ids)
      SELECT u.id, u.email, u.name FROM "user" u, opts
       WHERE NOT EXISTS (SELECT 1 FROM account_admin ad WHERE ad.user_id = u.id AND ad.blocked)
         AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o.user_id = u.id)
         AND (NOT opts.verified_only OR u."emailVerified")
         AND ${SEGMENT_SQL[a.segment]}
       ORDER BY u."createdAt"`,
-    [a.days, config.requireEmailVerification],
+    [a.days, config.requireEmailVerification, a.segment === "accounts" ? (a.userIds ?? []) : []],
   );
   return rows;
 }

@@ -4,8 +4,9 @@ import { apiJson, apiOk } from "./api";
 
 export type TemplateId = "missyou" | "comeback" | "continue" | "classics" | "share" | "recap" | "announcement";
 export type Hero = "clouds" | "door" | "scholar" | "none";
-export type Segment = "all" | "inactive" | "in_progress" | "never_read";
-export type Audience = { segment: Segment; days: number };
+export type Segment = "all" | "inactive" | "in_progress" | "never_read" | "accounts";
+/** "accounts": only the accounts in `userIds`. */
+export type Audience = { segment: Segment; days: number; userIds?: string[] };
 
 export type CampaignContent = {
   subject: string;
@@ -58,6 +59,7 @@ export const SEGMENT_LABELS: Record<Segment, { label: string; hint: string; uses
   inactive: { label: "Away for a while", hint: "Nothing read in the last N days.", usesDays: true },
   in_progress: { label: "Book left halfway", hint: "A book started but not finished, nothing read in N days.", usesDays: true },
   never_read: { label: "Never started reading", hint: "Accounts that have not opened a book yet.", usesDays: false },
+  accounts: { label: "Specific accounts", hint: "Only the accounts you pick.", usesDays: false },
 };
 
 export const HERO_LABELS: Record<Hero, string> = {

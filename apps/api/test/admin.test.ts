@@ -79,6 +79,40 @@ describe("admin panel", () => {
     expect(await seenSoon()).toBeTruthy();
   });
 
+  it("shows one account's page: hours of use, reading, books, devices and emails", async () => {
+    const a = await admin();
+    const u = await signUp(undefined, "Page Reader");
+    const book = (await upload(u, "p.pdf", fakePdf(), { title: "Villette" })).json();
+    await query(
+      `INSERT INTO reading_progress (user_id, book_id, locator, percentage, device_id, device_name, updated_at)
+       VALUES ($1, $2, 'page:3', 0.25, 'd1', 'Kobo Libra', now())`,
+      [u.id, book.id],
+    );
+    await query(`INSERT INTO reading_activity (user_id, book_id, hour, seconds) VALUES ($1, $2, date_trunc('hour', now() - interval '2 days'), 900)`, [u.id, book.id]);
+    await query(`INSERT INTO email_send_log (user_id, kind, ref) VALUES ($1, 'onboarding', 'once')`, [u.id]);
+    await query(`DELETE FROM user_activity_hour WHERE user_id = $1`, [u.id]);
+    forgetRecentActivity();
+    expect((await api(u, "GET", "/api/me")).statusCode).toBe(200);
+
+    expect((await api(u, "GET", `/api/admin/users/${u.id}/overview`)).statusCode).toBe(403);
+    expect((await api(a, "GET", `/api/admin/users/nobody/overview`)).statusCode).toBe(404);
+    let page = (await api(a, "GET", `/api/admin/users/${u.id}/overview`)).json();
+    for (let i = 0; i < 50 && !page.activityHours.length; i++) {
+      await new Promise((r) => setTimeout(r, 20)); // the hour of use is noted after the answer
+      page = (await api(a, "GET", `/api/admin/users/${u.id}/overview`)).json();
+    }
+    expect(page.account).toMatchObject({ id: u.id, email: u.email, books: 1, optedOut: false });
+    expect(page.activityHours).toHaveLength(1);
+    expect(page.readingHours).toEqual([expect.objectContaining({ seconds: 900 })]);
+    expect(page.totals).toMatchObject({ readingSeconds: 900, readingDays: 1 });
+    expect(page.reading[0]).toMatchObject({ title: "Villette", percentage: 0.25, device: "Kobo Libra" });
+    expect(page.books).toMatchObject({ uploads: 1, added: 0 });
+    expect(page.books.recent[0]).toMatchObject({ title: "Villette", added: false });
+    expect(page.devices.readers).toEqual([expect.objectContaining({ name: "Kobo Libra" })]);
+    expect(page.devices.sessions.length).toBeGreaterThanOrEqual(1);
+    expect(page.emails).toEqual([expect.objectContaining({ kind: "onboarding", name: "Upload and share" })]);
+  });
+
   it("sets a per-account quota, blocks and unblocks", async () => {
     const a = await admin();
     const u = await signUp();

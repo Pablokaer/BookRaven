@@ -103,6 +103,37 @@ describe("automatic emails", () => {
     expect(got[0]!.subject).toMatch(/bookmark/); // "Continue reading" comes before "We miss you"
   });
 
+  it("send 'Upload and share' a day after sign-up to accounts that haven't uploaded a book", async () => {
+    const a = await admin();
+    const settings = (await api(a, "GET", "/api/admin/emails/automations")).json().automations.find((x: { id: string }) => x.id === "onboarding");
+    expect(settings.days).toBe(1);
+    const aged = async (hours: number) => {
+      const u = await signUp(undefined, "Nova Reader");
+      await query(`UPDATE "user" SET "createdAt" = now() - make_interval(hours => $2) WHERE id = $1`, [u.id, hours]);
+      return u;
+    };
+    const idle = await aged(26);
+    const fromShelf = await aged(26); // only added a book from a share link or the Public Library
+    const copy = (await upload(fromShelf, "c.pdf", fakePdf(), { title: "A gift" })).json();
+    await query(`UPDATE book SET shared_at = now() WHERE id = $1`, [copy.id]);
+    const uploader = await aged(26);
+    await upload(uploader, "u.pdf", fakePdf(), { title: "My own" });
+    const newcomer = await aged(5); // not a day yet
+    await api(a, "PUT", "/api/admin/emails/automations/onboarding", { enabled: true });
+
+    const before = outbox.length;
+    await runAutomations({ anyHour: true });
+    expect(mailsTo(idle.email, before)).toHaveLength(1);
+    expect(mailsTo(fromShelf.email, before)).toHaveLength(1);
+    expect(mailsTo(uploader.email, before)).toHaveLength(0);
+    expect(mailsTo(newcomer.email, before)).toHaveLength(0);
+
+    // Once per account.
+    const again = outbox.length;
+    await runAutomations({ anyHour: true });
+    expect(mailsTo(idle.email, again)).toHaveLength(0);
+  });
+
   it("only send inside the sending hours", () => {
     expect(inSendingHours(new Date("2026-11-16T13:00:00Z"))).toBe(true);
     expect(inSendingHours(new Date("2026-11-16T03:00:00Z"))).toBe(false);

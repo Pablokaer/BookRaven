@@ -12,6 +12,7 @@ import { quotaOf } from "../lib/quota.js";
 import { unpublishFile } from "../lib/publicCatalog.js";
 import { deleteAccount, deleteBooks } from "../lib/accounts.js";
 import { subscriptionBytes } from "../lib/billing.js";
+import { AUTOMATIONS, type AutomationId } from "../lib/automations.js";
 
 export async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   if (!isAdmin(request.user)) return reply.code(403).send({ error: "forbidden" });
@@ -52,7 +53,41 @@ type UserRow = {
   status: string | null;
   blocked: boolean | null;
   blocked_reason: string | null;
+  opted_out: boolean;
+  emailVerified: boolean;
 };
+
+/** One account row (list and account page): the columns, from "user" u, with what they join. */
+const USER_SQL = `SELECT u.id, u.name, u.email, u."createdAt", u."emailVerified", x.books, x.used,
+              a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status, ua.last_seen_at,
+              EXISTS (SELECT 1 FROM email_opt_out o WHERE o.user_id = u.id) AS opted_out
+       FROM "user" u
+            CROSS JOIN LATERAL (SELECT count(*) AS books, COALESCE(SUM(size_bytes), 0) AS used FROM book bk WHERE bk.user_id = u.id) x
+            LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
+            LEFT JOIN user_activity ua ON ua.user_id = u.id`;
+
+function userDto(r: UserRow) {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    createdAt: new Date(r.createdAt).toISOString(),
+    // When the account last used the app (web, Android, KOReader, OPDS); null if never seen.
+    lastSeenAt: r.last_seen_at?.toISOString() ?? null,
+    books: Number(r.books),
+    usedBytes: Number(r.used),
+    isAdmin: isAdmin(r),
+    quotaBytes: quotaOf(r, r.quota_bytes, r),
+    // The paid plan, while its subscription gives storage.
+    plan: subscriptionBytes(r) ? r.plan : null,
+    quotaOverride: r.quota_bytes != null ? Number(r.quota_bytes) : null,
+    blocked: r.blocked === true,
+    blockedReason: r.blocked_reason,
+    // Said no to promotional emails: campaigns and automations skip them.
+    optedOut: r.opted_out,
+    emailVerified: r.emailVerified,
+  };
+}
 
 type UsersQuery = {
   q?: string;
@@ -118,35 +153,112 @@ export async function adminRoutes(app: FastifyInstance) {
       lastActive: `ua.last_seen_at DESC NULLS LAST, u."createdAt" DESC`,
       books: `x.books DESC, u."createdAt" DESC`,
     }[f.sort ?? "newest"];
-    const { rows } = await query<UserRow>(
-      `SELECT u.id, u.name, u.email, u."createdAt", x.books, x.used,
-              a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status, ua.last_seen_at
-       FROM "user" u
-            CROSS JOIN LATERAL (SELECT count(*) AS books, COALESCE(SUM(size_bytes), 0) AS used FROM book bk WHERE bk.user_id = u.id) x
-            LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
-            LEFT JOIN user_activity ua ON ua.user_id = u.id
-       WHERE ${where.join(" AND ")}
-       ORDER BY ${order}
-       LIMIT 500`,
-      params,
-    );
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      email: r.email,
-      createdAt: new Date(r.createdAt).toISOString(),
-      // When the account last used the app (web, Android, KOReader, OPDS); null if never seen.
-      lastSeenAt: r.last_seen_at?.toISOString() ?? null,
-      books: Number(r.books),
-      usedBytes: Number(r.used),
-      isAdmin: isAdmin(r),
-      quotaBytes: quotaOf(r, r.quota_bytes, r),
-      // The paid plan, while its subscription gives storage.
-      plan: subscriptionBytes(r) ? r.plan : null,
-      quotaOverride: r.quota_bytes != null ? Number(r.quota_bytes) : null,
-      blocked: r.blocked === true,
-      blockedReason: r.blocked_reason,
-    }));
+    const { rows } = await query<UserRow>(`${USER_SQL} WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 500`, params);
+    return rows.map(userDto);
+  });
+
+  /**
+   * One account's page: the account, when in the day and the week it uses the app (hours of use
+   * and of reading in the last 90 days, UTC), what it reads and uploaded, its devices and the
+   * promotional emails it got.
+   */
+  app.get<{ Params: { id: string } }>("/api/admin/users/:id/overview", async (request, reply) => {
+    const id = request.params.id;
+    const { rows } = await query<UserRow>(`${USER_SQL} WHERE u.id = $1`, [id]);
+    if (!rows[0]) return reply.code(404).send({ error: "not_found" });
+    const [hours, reading, totals, progress, books, counts, sessions, appPasswords, readers, emails] = await Promise.all([
+      query<{ hour: Date }>(`SELECT hour FROM user_activity_hour WHERE user_id = $1 AND hour > now() - interval '90 days' ORDER BY hour`, [id]),
+      query<{ hour: Date; seconds: number }>(
+        `SELECT hour, sum(seconds)::int AS seconds FROM reading_activity
+          WHERE user_id = $1 AND hour > now() - interval '90 days' GROUP BY hour ORDER BY hour`,
+        [id],
+      ),
+      query<{ seconds: string; finished: string; days: string }>(
+        `SELECT COALESCE(sum(seconds), 0) AS seconds,
+                count(DISTINCT book_id) FILTER (WHERE finished) AS finished,
+                count(DISTINCT date_trunc('day', hour)) AS days
+           FROM reading_activity WHERE user_id = $1`,
+        [id],
+      ),
+      query<{ id: string; title: string; author: string | null; percentage: number; updated_at: Date; device_name: string | null }>(
+        `SELECT b.id, b.title, b.author, p.percentage, p.updated_at, p.device_name
+           FROM reading_progress p JOIN book b ON b.id = p.book_id
+          WHERE p.user_id = $1 ORDER BY p.updated_at DESC LIMIT 6`,
+        [id],
+      ),
+      query<{ id: string; title: string; author: string | null; format: string; size_bytes: string; created_at: Date; added: boolean; is_public: boolean }>(
+        `SELECT id, title, author, format, size_bytes, created_at, shared_at IS NOT NULL AS added, is_public
+           FROM book WHERE user_id = $1 ORDER BY created_at DESC LIMIT 8`,
+        [id],
+      ),
+      query<{ uploads: string; added: string; public: string }>(
+        `SELECT count(*) FILTER (WHERE shared_at IS NULL) AS uploads, count(*) FILTER (WHERE shared_at IS NOT NULL) AS added,
+                count(*) FILTER (WHERE is_public) AS public
+           FROM book WHERE user_id = $1`,
+        [id],
+      ),
+      query<{ user_agent: string | null; created_at: Date; updated_at: Date }>(
+        `SELECT "userAgent" AS user_agent, "createdAt" AS created_at, "updatedAt" AS updated_at
+           FROM session WHERE "userId" = $1 AND "expiresAt" > now() ORDER BY "updatedAt" DESC LIMIT 10`,
+        [id],
+      ),
+      query<{ name: string; created_at: Date; last_used_at: Date | null }>(
+        `SELECT name, created_at, last_used_at FROM app_password WHERE user_id = $1 ORDER BY last_used_at DESC NULLS LAST`,
+        [id],
+      ),
+      query<{ device_name: string; last: Date }>(
+        `SELECT device_name, max(updated_at) AS last FROM reading_progress
+          WHERE user_id = $1 AND device_name IS NOT NULL AND device_name <> '' GROUP BY device_name ORDER BY last DESC LIMIT 8`,
+        [id],
+      ),
+      query<{ kind: string; sent_at: Date; subject: string | null }>(
+        `SELECT l.kind, l.sent_at, c.subject FROM email_send_log l
+           LEFT JOIN email_campaign c ON l.kind = 'campaign' AND c.id::text = l.ref
+          WHERE l.user_id = $1 ORDER BY l.sent_at DESC LIMIT 20`,
+        [id],
+      ),
+    ]);
+    const t = totals.rows[0]!;
+    const c = counts.rows[0]!;
+    return {
+      account: userDto(rows[0]),
+      activityHours: hours.rows.map((r) => r.hour.toISOString()),
+      readingHours: reading.rows.map((r) => ({ hour: r.hour.toISOString(), seconds: r.seconds })),
+      totals: { readingSeconds: Number(t.seconds), finished: Number(t.finished), readingDays: Number(t.days) },
+      reading: progress.rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        author: r.author,
+        percentage: r.percentage,
+        updatedAt: r.updated_at.toISOString(),
+        device: r.device_name,
+      })),
+      books: {
+        uploads: Number(c.uploads),
+        added: Number(c.added),
+        public: Number(c.public),
+        recent: books.rows.map((b) => ({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          format: b.format,
+          sizeBytes: Number(b.size_bytes),
+          createdAt: b.created_at.toISOString(),
+          added: b.added,
+          isPublic: b.is_public,
+        })),
+      },
+      devices: {
+        sessions: sessions.rows.map((s) => ({ userAgent: s.user_agent, createdAt: s.created_at.toISOString(), lastUsedAt: s.updated_at.toISOString() })),
+        appPasswords: appPasswords.rows.map((p) => ({ name: p.name, createdAt: p.created_at.toISOString(), lastUsedAt: p.last_used_at?.toISOString() ?? null })),
+        readers: readers.rows.map((r) => ({ name: r.device_name, lastUsedAt: r.last.toISOString() })),
+      },
+      emails: emails.rows.map((e) => ({
+        kind: e.kind,
+        name: e.kind === "campaign" ? (e.subject ?? "Promotional email") : (AUTOMATIONS[e.kind as AutomationId]?.name ?? e.kind),
+        sentAt: e.sent_at.toISOString(),
+      })),
+    };
   });
 
   const loadTarget = (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) =>

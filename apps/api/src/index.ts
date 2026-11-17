@@ -2,6 +2,7 @@ import { buildServer } from "./app.js";
 import { runAuthMigrations } from "./auth.js";
 import { config, googleEnabled, turnstileEnabled } from "./config.js";
 import { pool, runAppMigrations } from "./db.js";
+import { scheduleActivityPrune } from "./lib/activity.js";
 import { scheduleAutomations } from "./lib/automations.js";
 import { markInterruptedCampaigns } from "./lib/campaigns.js";
 import { backfillKoreaderHashes } from "./lib/koreader.js";
@@ -19,6 +20,7 @@ async function main() {
   void backfillKoreaderHashes((m) => app.log.info(m));
   schedulePurge();
   scheduleAutomations();
+  scheduleActivityPrune();
   app.log.info(`Google sign-in ${googleEnabled ? "enabled" : "disabled"}; sign-up ${config.allowSignup ? "open" : "closed"}`);
   app.log.info(`Captcha (Turnstile) ${turnstileEnabled ? "on" : "off"}; email verification ${config.requireEmailVerification ? "required" : "optional"}`);
   const { host, port } = config.clamav;
