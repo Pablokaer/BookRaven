@@ -56,13 +56,18 @@ const NATIVE_BUILD = import.meta.env.MODE === "native";
 // every live update.
 const LandingPage = NATIVE_BUILD ? () => null : lazy(() => import("./pages/LandingPage").then((m) => ({ default: m.LandingPage })));
 
+/** The front page's addresses: "/" in English, "/pt" in Portuguese. */
+const LANDING_PATHS = new Set(["/", "/pt"]);
+
 /**
  * The server sent the landing page already rendered (landing.html, served at "/" without a
  * session cookie; scripts/prerender.mjs). The service worker may also hand that copy out at
  * another address, where it isn't used.
  */
 const landingMark =
-  !NATIVE_BUILD && typeof document !== "undefined" && window.location.pathname === "/" ? document.getElementById("root")?.getAttribute("data-landing") : null;
+  !NATIVE_BUILD && typeof document !== "undefined" && LANDING_PATHS.has(window.location.pathname)
+    ? document.getElementById("root")?.getAttribute("data-landing")
+    : null;
 export const prerenderedLanding = landingMark != null;
 /** Whether the prerendered page offered sign-up (ALLOW_SIGNUP when it was built), so hydration draws it the same. */
 const prerenderedSignup = landingMark !== "signup-closed";
@@ -179,6 +184,16 @@ function SignedOutApp({ onSignedIn }: { onSignedIn: () => void }) {
             )
           }
         />
+        {!(isNative || NATIVE_BUILD) && (
+          <Route
+            path="pt"
+            element={
+              <Suspense fallback={<AppLoading />}>
+                <LandingPage signupDefault={prerenderedSignup} lang="pt" />
+              </Suspense>
+            }
+          />
+        )}
         <Route path="login" element={<AuthRoute mode="signin" onSignedIn={onSignedIn} />} />
         <Route path="signup" element={<AuthRoute mode="signup" onSignedIn={onSignedIn} />} />
         <Route path="*" element={<LoginPage onSignedIn={onSignedIn} homeLink={!isNative} />} />

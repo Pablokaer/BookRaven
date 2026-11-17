@@ -78,11 +78,13 @@ async function cacheFirst(event, cacheName) {
  * index.html, push the previous version's shell out (and with it the files that version needs).
  */
 const isLandingPage = (html) => /<div id="root" data-landing/.test(html);
+/** The app's shell has the empty #root; pages drawn by the server (the classics, legal pages) don't. */
+const isAppShell = (html) => html.includes('<div id="root"></div>');
 
 /** Keeps a new shell, and the one it replaces when that was another version. */
 async function saveShell(response) {
   const after = await response.clone().text();
-  if (isLandingPage(after)) return;
+  if (isLandingPage(after) || !isAppShell(after)) return;
   const cache = await caches.open(APP);
   const current = await cache.match("/");
   if (current) {

@@ -16,6 +16,10 @@ history are only reachable after signing in; there is no public API or API key.
 - Someone with an account wants to read the server's Public Library of public-domain classics
   (Project Gutenberg, Standard Ebooks, Wikisource).
 
+- Someone looks for a public-domain classic to read online for free: every one in the Public
+  Library has a public page at `/classics` (by language at `/classics/en`, `/classics/pt`…), with
+  a "Read free" button.
+
 Not a fit for: buying or downloading copyrighted books, or reading other people's libraries.
 
 ## How to use it

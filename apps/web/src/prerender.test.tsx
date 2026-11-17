@@ -18,6 +18,14 @@ describe("prerendered landing page", () => {
     expect(page).toContain("New accounts are by invitation on this server.");
   });
 
+  it("renders the Portuguese page too", () => {
+    const { page } = renderLanding({ signupOpen: true, lang: "pt" });
+    expect(page).toContain("Cada livro");
+    expect(page).toContain('href="/classics/pt"');
+    expect(page).not.toContain("Every book");
+    expect(JSON.parse(structuredDataJson("https://books.example.com", "pt"))["@graph"][0].url).toBe("https://books.example.com/pt");
+  });
+
   it("writes structured data that can't close its script tag", () => {
     const json = structuredDataJson("https://books.example.com");
     expect(JSON.parse(json)["@graph"][0].url).toBe("https://books.example.com/");

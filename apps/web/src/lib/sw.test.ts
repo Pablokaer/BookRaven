@@ -9,14 +9,15 @@ const importScripts = (url: string) => {
   expect(url).toBe(`/${OFFLINE_COPIES_SCRIPT}`);
   new Function("self", offlineCopiesScript())(self);
 };
-const { unreachableAssets, isLandingPage, API, API_CACHED, OFFLINE_COPY } = new Function(
+const { unreachableAssets, isLandingPage, isAppShell, API, API_CACHED, OFFLINE_COPY } = new Function(
   "self",
   "importScripts",
   `${source}
-return { unreachableAssets, isLandingPage, API, API_CACHED, OFFLINE_COPY };`,
+return { unreachableAssets, isLandingPage, isAppShell, API, API_CACHED, OFFLINE_COPY };`,
 )(self, importScripts) as {
   unreachableAssets: (roots: string[], names: string[], readText: (name: string) => Promise<string>) => Promise<string[]>;
   isLandingPage: (html: string) => boolean;
+  isAppShell: (html: string) => boolean;
   API: string;
   API_CACHED: RegExp[];
   OFFLINE_COPY: string;
@@ -68,6 +69,11 @@ describe("service worker pruning", () => {
 });
 
 describe("service worker shell", () => {
+  it("doesn't take a page drawn by the server (a classic's page) for the app's shell", () => {
+    expect(isAppShell('<body><div id="root"></div><script type="module" src="/assets/index.js"></script>')).toBe(true);
+    expect(isAppShell('<!doctype html><html lang="pt-BR"><body><header class="top">')).toBe(false);
+  });
+
   it("doesn't take the prerendered landing page for the app's shell", () => {
     expect(isLandingPage('<body><div id="root" data-landing><!--$--><div class="lit">')).toBe(true);
     expect(isLandingPage('<body><div id="root" data-landing="signup-closed"><!--$-->')).toBe(true);

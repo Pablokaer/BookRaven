@@ -1,5 +1,5 @@
 import { ArrowRight, ChevronLeft, ListTree, Smartphone, Type } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { Link } from "react-router";
 import clouds1600 from "../assets/landing/raven-clouds-1600.webp";
 import clouds900 from "../assets/landing/raven-clouds-900.webp";
@@ -12,6 +12,11 @@ import { ArchedPlate, Fleuron, Medallion, type Vignette } from "../components/ui
 import { apiJson, type ServerConfig } from "../lib/api";
 import { structuredDataJson } from "../lib/structuredData";
 import { THEME_INFO, THEME_ORDER } from "../lib/themes";
+import { LANDING_COPY, type LandingCopy, type LandingLang } from "./landingCopy";
+
+/** The page's words, in the language of its address ("/" English, "/pt" Portuguese). */
+const Copy = createContext<LandingCopy>(LANDING_COPY.en);
+const useCopy = () => useContext(Copy);
 
 /**
  * What a signed-out visitor sees at "/" on the web: what BookRaven does, and the way in (sign in,
@@ -23,7 +28,8 @@ import { THEME_INFO, THEME_ORDER } from "../lib/themes";
  * `signupDefault`: whether to offer sign-up until /api/config answers. The prerendered page was
  * drawn with the server's ALLOW_SIGNUP, and the browser starts from the same answer to hydrate it.
  */
-export function LandingPage({ signupDefault = true }: { signupDefault?: boolean }) {
+export function LandingPage({ signupDefault = true, lang = "en" }: { signupDefault?: boolean; lang?: LandingLang }) {
+  const c = LANDING_COPY[lang];
   const [cfg, setCfg] = useState<ServerConfig | null>(null);
   const root = useRef<HTMLDivElement>(null);
   useReveal(root);
@@ -36,31 +42,35 @@ export function LandingPage({ signupDefault = true }: { signupDefault?: boolean 
 
   useEffect(() => {
     const previous = document.title;
-    document.title = "BookRaven · Self-hosted ebook, PDF and comic reader with synced progress";
+    document.title = c.title;
     // Structured data for search engines: the site's name, and what BookRaven is. The prerendered
     // page has it in <head> already; otherwise it is added here (Google reads it after running the
     // page's scripts). It isn't a script that runs, so the CSP doesn't apply.
     const data =
       document.head.querySelector("script[data-landing-ld]") ??
       document.head.appendChild(
-        Object.assign(document.createElement("script"), { type: "application/ld+json", textContent: structuredDataJson(window.location.origin) }),
+        Object.assign(document.createElement("script"), { type: "application/ld+json", textContent: structuredDataJson(window.location.origin, lang) }),
       );
+    const htmlLang = document.documentElement.lang;
+    document.documentElement.lang = c.htmlLang;
     return () => {
       document.title = previous;
+      document.documentElement.lang = htmlLang;
       data.remove();
     };
-  }, []);
+  }, [c, lang]);
 
   // Like the sign-in form: offer sign-up unless the server says it is closed.
   const signupOpen = cfg ? cfg.allowSignup !== false : signupDefault;
 
   return (
+    <Copy.Provider value={c}>
     <div ref={root} className="lit min-h-dvh overflow-x-clip">
       <a
         href="#main"
         className="sr-only z-50 rounded-[3px] bg-ivory px-4 py-2 text-sm text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
       >
-        Skip to content
+        {c.skip}
       </a>
 
       <Header signupOpen={signupOpen} />
@@ -75,6 +85,7 @@ export function LandingPage({ signupDefault = true }: { signupDefault?: boolean 
 
       <Colophon signupOpen={signupOpen} />
     </div>
+    </Copy.Provider>
   );
 }
 
@@ -106,6 +117,7 @@ function useReveal(root: RefObject<HTMLElement | null>) {
 const delay = (ms: number) => ({ "--lit-delay": `${ms}ms` }) as CSSProperties;
 
 function Header({ signupOpen }: { signupOpen: boolean }) {
+  const c = useCopy();
   // Clear over the hero; once the page scrolls, a midnight band keeps the links readable.
   // The scroll handler only sets state when the answer changes (React bails out on equal values).
   const [scrolled, setScrolled] = useState(false);
@@ -133,17 +145,13 @@ function Header({ signupOpen }: { signupOpen: boolean }) {
       }`}
     >
       <div className="mx-auto flex h-[72px] max-w-[1240px] items-center justify-between gap-4 px-5 sm:h-20 sm:px-8">
-        <Link to="/" className="flex items-center gap-3 rounded-[3px]" aria-label="BookRaven home">
+        <Link to={c.home} className="flex items-center gap-3 rounded-[3px]" aria-label={c.homeLabel}>
           <img src={logoIcon} alt="" width={40} height={40} className="h-10 w-10 rounded-[11px] shadow-[0_6px_18px_-6px_rgb(0_0_0/0.8)] sm:h-11 sm:w-11" />
           <img src={wordmark} alt="" width={111} height={18} className="h-[17px] w-auto sm:h-[19px]" />
         </Link>
         <nav aria-label="Main" className="flex items-center gap-1 sm:gap-2">
           <ul className="mr-3 hidden items-center gap-7 text-[14px] text-silver lg:flex">
-            {[
-              ["#library", "The library"],
-              ["#journey", "How it works"],
-              ["#shelves", "Public Library"],
-            ].map(([href, label]) => (
+            {c.nav.map(([href, label]) => (
               <li key={href}>
                 <a href={href} className="rounded-[2px] py-2 transition-colors hover:text-ivory">
                   {label}
@@ -151,12 +159,15 @@ function Header({ signupOpen }: { signupOpen: boolean }) {
               </li>
             ))}
           </ul>
+          <a href={c.otherHome} hrefLang={c.otherLang} lang={c.otherLang} className="lit-link min-h-10 whitespace-nowrap px-2 text-[13px] text-silver">
+            {c.otherLabel}
+          </a>
           <Link to="/login" className="lit-link min-h-10 whitespace-nowrap px-3 text-[14px] text-ivory">
-            Sign in
+            {c.signIn}
           </Link>
           {signupOpen && (
             <Link to="/signup" className="lit-btn lit-btn-sm hidden sm:inline-flex">
-              Create account
+              {c.createAccount}
             </Link>
           )}
         </nav>
@@ -167,25 +178,26 @@ function Header({ signupOpen }: { signupOpen: boolean }) {
 
 /** Primary and secondary way in. When the server takes no sign-ups, signing in is all there is. */
 function Actions({ signupOpen, className = "" }: { signupOpen: boolean; className?: string }) {
+  const c = useCopy();
   return (
     <div className={`flex flex-wrap items-center gap-x-6 gap-y-3 ${className}`}>
       {signupOpen ? (
         <>
           <Link to="/signup" className="lit-btn group">
-            Create an account
+            {c.createAnAccount}
             <ArrowRight className="h-4 w-4 transition-transform duration-300 motion-safe:group-hover:translate-x-1" aria-hidden="true" />
           </Link>
           <Link to="/login" className="lit-link text-ivory">
-            Sign in
+            {c.signIn}
           </Link>
         </>
       ) : (
         <>
           <Link to="/login" className="lit-btn group">
-            Sign in
+            {c.signIn}
             <ArrowRight className="h-4 w-4 transition-transform duration-300 motion-safe:group-hover:translate-x-1" aria-hidden="true" />
           </Link>
-          <p className="text-sm text-silver">New accounts are by invitation on this server.</p>
+          <p className="text-sm text-silver">{c.invitationOnly}</p>
         </>
       )}
     </div>
@@ -197,6 +209,7 @@ function Actions({ signupOpen, className = "" }: { signupOpen: boolean; classNam
 // The hero is above the fold: it fades in with CSS as soon as it is drawn (.lit-intro), not after
 // the scripts run like the .lit-reveal sections below, so it is never blank while the page loads.
 function Hero({ signupOpen }: { signupOpen: boolean }) {
+  const c = useCopy();
   return (
     <section aria-labelledby="hero-title" className="lit-grain lit-grain-night relative">
       {/* Moonlight from the upper right, a candle's warmth low on the left. */}
@@ -215,7 +228,7 @@ function Hero({ signupOpen }: { signupOpen: boolean }) {
             <figcaption className="-mt-6 hidden text-center font-literary text-[15px] italic leading-snug text-silver lg:block">
               &ldquo;Perched upon a bust of Pallas just above my chamber door.&rdquo;
               <span className="mt-1.5 block font-sans text-[10.5px] not-italic uppercase tracking-[0.2em] text-silver/70">
-                Plate after Gustave Doré, 1884
+                {c.heroPlate}
               </span>
             </figcaption>
           </figure>
@@ -224,20 +237,21 @@ function Hero({ signupOpen }: { signupOpen: boolean }) {
 
         <div className="relative z-10 -mt-20 text-center sm:-mt-24 lg:order-1 lg:col-span-7 lg:mt-0 lg:text-left">
           <p className="lit-eyebrow lit-intro text-gold" style={delay(60)}>
-            A library of your own<span className="hidden sm:inline"> · ebooks, PDFs &amp; comics</span>
+            {c.heroEyebrow[0]}
+            <span className="hidden sm:inline"> · {c.heroEyebrow[1]}</span>
           </p>
           <h1
             id="hero-title"
             className="lit-title lit-intro mt-6 text-[3.5rem] text-ivory sm:text-[5rem] lg:text-[5.9rem] xl:text-[6.6rem]"
           >
-            Every book <br className="hidden sm:block" />holds <em className="italic text-gold">a world.</em>
+            {c.heroTitle[0]} <br className="hidden sm:block" />
+            {c.heroTitle[1]} <em className="italic text-gold">{c.heroTitle[2]}</em>
           </h1>
           <p
             className="lit-intro mx-auto mt-7 max-w-[33rem] text-[16.5px] leading-[1.75] text-silver text-pretty sm:text-[17.5px] lg:mx-0"
             style={delay(120)}
           >
-            Your stories, your collection, kept on a server of your own. Read in the browser, the Android app or on an e-reader, and every device opens on the
-            very sentence where you stopped.
+            {c.heroText}
           </p>
           <div className="lit-intro" style={delay(180)}>
             <Actions signupOpen={signupOpen} className="mt-10 justify-center lg:justify-start" />
@@ -258,9 +272,10 @@ function Hero({ signupOpen }: { signupOpen: boolean }) {
  * the note the reader shows when another device read further.
  */
 function ReaderCard({ className = "", style }: { className?: string; style?: CSSProperties }) {
+  const c = useCopy();
   return (
     <figure className={className} style={style}>
-      <figcaption className="sr-only">The reader open on a page of The Raven, with a highlight, a bookmark and the place synced from a phone.</figcaption>
+      <figcaption className="sr-only">{c.readerCaption}</figcaption>
       <div aria-hidden="true" className="select-none">
         <div className="w-[272px] rotate-[-2.5deg] rounded-[3px] bg-ivory text-ink shadow-[0_30px_60px_-24px_rgb(0_0_0/0.9),0_0_0_1px_rgb(201_164_116/0.35)]">
           <div className="flex items-center gap-2 border-b border-ink/10 px-3.5 py-2.5 text-[11px] text-sepia">
@@ -290,7 +305,7 @@ function ReaderCard({ className = "", style }: { className?: string; style?: CSS
         </div>
         <div className="relative z-10 -mt-3 ml-10 inline-flex items-center gap-2 rounded-full bg-navy px-3.5 py-2 text-[11.5px] text-parchment shadow-[0_12px_30px_-12px_rgb(0_0_0/0.9)] ring-1 ring-gold/30">
           <Smartphone className="h-3.5 w-3.5 text-gold" />
-          Continued from your phone · just now
+          {c.readerSynced}
         </div>
       </div>
     </figure>
@@ -299,28 +314,10 @@ function ReaderCard({ className = "", style }: { className?: string; style?: CSS
 
 /* ------------------------------------------------------------------------------------------------ */
 
-const ARTICLES: { title: string; text: string }[] = [
-  {
-    title: "Every format, one shelf",
-    text: "EPUB, MOBI, AZW3 and FB2, PDFs, and comics as CBZ, CBR, CB7 or CBT. Drop them in, or bring a whole Calibre library and your Goodreads shelves: title, author and cover are read from each file, and duplicates are skipped.",
-  },
-  {
-    title: "Your place, on every device",
-    text: "The web reader, the Android app and KOReader on e-ink keep one bookmark of where you are, down to the sentence. Positions are saved offline too, and the newest one always wins.",
-  },
-  {
-    title: "Notes in the margin",
-    text: "Highlights in four colors, notes and bookmarks, a pen for writing on PDFs, and a dictionary and translation for any word you select.",
-  },
-  {
-    title: "Books for company",
-    text: "Share a book or a whole collection by link, publish it to the Public Library, or read together in a book club and talk about passages.",
-  },
-];
-
 const ROMAN = ["I", "II", "III", "IV"];
 
 function LibraryChapter() {
+  const c = useCopy();
   return (
     <section id="library" aria-labelledby="library-title" className="lit-parchment lit-grain relative scroll-mt-16">
       <Edge className="text-parchment" />
@@ -328,17 +325,16 @@ function LibraryChapter() {
         <Collage className="lg:col-span-5" />
 
         <div className="lg:col-span-6 lg:col-start-7">
-          <p className="lit-eyebrow lit-reveal text-gold-deep">Chapter I · The library</p>
+          <p className="lit-eyebrow lit-reveal text-gold-deep">{c.libraryEyebrow}</p>
           <h2 id="library-title" className="lit-title lit-reveal mt-5 text-[2.9rem] sm:text-[3.8rem] lg:text-[4.3rem]" style={delay(80)}>
-            A library of your own, <em className="italic text-gold-deep">kept on your own shelves.</em>
+            {c.libraryTitle[0]} <em className="italic text-gold-deep">{c.libraryTitle[1]}</em>
           </h2>
           <p className="lit-dropcap lit-reveal mt-9 max-w-[36rem] text-[17px] leading-[1.8] text-ink/85 text-pretty" style={delay(160)}>
-            BookRaven gathers the books you own into one library that lives on a server of your choosing, not in a store&rsquo;s cloud. It reads DRM-free files,
-            so the books you bring are the books you keep, with every highlight, note and reading hour that comes with them.
+            {c.libraryText}
           </p>
 
           <ol className="mt-16 grid gap-x-12 gap-y-12 sm:grid-cols-2">
-            {ARTICLES.map((a, i) => (
+            {c.articles.map((a, i) => (
               <li key={a.title} className={`lit-reveal ${i % 2 === 1 ? "sm:translate-y-14" : ""}`} style={delay(i * 90)}>
                 <div className="flex items-baseline gap-3 border-t border-ink/20 pt-4">
                   <span className="font-literary text-[1.7rem] italic leading-none text-gold-deep" aria-hidden="true">
@@ -358,6 +354,7 @@ function LibraryChapter() {
 
 /** A plate, a loose manuscript page and a quill, laid on the parchment together. */
 function Collage({ className = "" }: { className?: string }) {
+  const c = useCopy();
   return (
     <div className={`relative mx-auto w-full max-w-[470px] lg:sticky lg:top-28 lg:mt-6 lg:self-start ${className}`}>
       <figure className="lit-reveal relative ml-[10%] w-[90%]">
@@ -371,13 +368,13 @@ function Collage({ className = "" }: { className?: string }) {
               height={1251}
               loading="lazy"
               decoding="async"
-              alt="An engraving of a scholar in an armchair beside his bookshelves, a beam of lamplight crossing the dark room."
+              alt={c.scholarAlt}
               className="lit-parallax h-auto w-full"
             />
           </div>
         </div>
         <figcaption className="mt-3 pl-1 font-literary text-[14px] italic text-sepia">
-          Plate II · &ldquo;Over many a quaint and curious volume of forgotten lore&rdquo;
+          {c.plateII} · &ldquo;Over many a quaint and curious volume of forgotten lore&rdquo;
         </figcaption>
       </figure>
 
@@ -400,34 +397,11 @@ function Collage({ className = "" }: { className?: string }) {
 
 /* ------------------------------------------------------------------------------------------------ */
 
-const JOURNEY: { title: string; text: string; plate: Vignette; alt: string }[] = [
-  {
-    title: "Discover",
-    text: "Browse the Public Library: public-domain classics from Project Gutenberg, Standard Ebooks and Wikisource, with suggestions drawn from what you read.",
-    plate: "arrival",
-    alt: "A raven flying in past a heavy curtain.",
-  },
-  {
-    title: "Collect",
-    text: "Upload EPUBs, PDFs and comics, or import a Calibre library. Sort them into collections, tags and favorites.",
-    plate: "shelves",
-    alt: "Leather-bound books stacked on a draped table.",
-  },
-  {
-    title: "Read",
-    text: "Open a book in the browser, the Android app or KOReader. It streams in pieces, keeps working offline, and remembers your place.",
-    plate: "lamp",
-    alt: "A reader leaning on his desk beside a lamp.",
-  },
-  {
-    title: "Share",
-    text: "Send a book or a collection by link, publish it for everyone on the server, or read together in a book club.",
-    plate: "flight",
-    alt: "A raven at a shuttered window, its shadow cast across an ivy-covered wall.",
-  },
-];
+/** The engraving of each step of the journey (the words are in landingCopy.ts). */
+const JOURNEY_PLATES: Vignette[] = ["arrival", "shelves", "lamp", "flight"];
 
 function Journey() {
+  const c = useCopy();
   return (
     <section id="journey" aria-labelledby="journey-title" className="lit-grain lit-grain-night relative scroll-mt-16 bg-navy text-parchment">
       <Edge className="text-navy" mirror />
@@ -439,14 +413,13 @@ function Journey() {
       <div className="mx-auto max-w-[1240px] px-5 pb-32 pt-24 sm:px-8 lg:pb-44 lg:pt-36">
         <div className="grid gap-8 lg:grid-cols-12 lg:items-end">
           <div className="text-center lg:col-span-7 lg:text-left">
-            <p className="lit-eyebrow lit-reveal text-gold">Chapter II · The journey</p>
+            <p className="lit-eyebrow lit-reveal text-gold">{c.journeyEyebrow}</p>
             <h2 id="journey-title" className="lit-title lit-reveal mt-5 text-[2.9rem] text-ivory sm:text-[3.8rem] lg:text-[4.3rem]" style={delay(80)}>
-              From the first page found <em className="italic text-gold">to the last one read.</em>
+              {c.journeyTitle[0]} <em className="italic text-gold">{c.journeyTitle[1]}</em>
             </h2>
           </div>
           <p className="lit-reveal mx-auto max-w-md text-center text-[16px] leading-[1.75] text-silver lg:col-span-4 lg:col-start-9 lg:mx-0 lg:text-left" style={delay(160)}>
-            Every book takes the same road through BookRaven, and you can join it anywhere: bring your own files, or start from the shelves already
-            there.
+            {c.journeyText}
           </p>
         </div>
 
@@ -470,14 +443,14 @@ function Journey() {
           </svg>
           <span aria-hidden="true" className="absolute bottom-6 left-[2.75rem] top-6 w-px bg-gradient-to-b from-gold/0 via-gold/35 to-gold/0 md:hidden" />
 
-          {JOURNEY.map((step, i) => (
+          {c.journey.map((step, i) => (
             <li
               key={step.title}
               className={`lit-reveal relative grid grid-cols-[5.5rem_1fr] items-start gap-5 md:block md:text-center ${i % 2 === 1 ? "md:mt-16" : ""}`}
               style={delay(i * 140)}
             >
               <Medallion
-                plate={step.plate}
+                plate={JOURNEY_PLATES[i]!}
                 alt={step.alt}
                 seal={<span className="font-literary text-[15px] italic">{ROMAN[i]}</span>}
                 className="mx-auto h-[5.5rem] w-[5.5rem] md:h-40 md:w-40 md:p-[7px]"
@@ -512,9 +485,11 @@ const SPINES: { h: number; w: number; bg: string; fg: string; lean?: boolean }[]
 ];
 
 function Shelves() {
+  const c = useCopy();
   const [hover, setHover] = useState<string | null>(null);
-  const info = hover ? THEME_INFO[hover] : null;
-  const caption = info ? `${info.label} — ${info.blurb}` : "Choose a section to browse its shelf.";
+  const theme = (key: string) => c.themes?.[key] ?? THEME_INFO[key]!;
+  const info = hover ? theme(hover) : null;
+  const caption = info ? `${info.label} — ${info.blurb}` : c.shelvesPick;
   // Phones get two shorter shelves; wider screens, one long one.
   const rows: [string, string[]][] = [
     ["md:hidden", THEME_ORDER.slice(0, 6)],
@@ -527,36 +502,36 @@ function Shelves() {
       <Edge className="text-ivory" />
       <div className="mx-auto grid max-w-[1240px] gap-16 px-5 pb-32 pt-24 sm:px-8 lg:grid-cols-12 lg:gap-10 lg:pb-44 lg:pt-36">
         <div className="text-center lg:col-span-4 lg:text-left">
-          <p className="lit-eyebrow lit-reveal text-gold-deep">Chapter III · The Public Library</p>
+          <p className="lit-eyebrow lit-reveal text-gold-deep">{c.shelvesEyebrow}</p>
           <h2 id="shelves-title" className="lit-title lit-reveal mt-5 text-[2.9rem] sm:text-[3.6rem] lg:text-[3.7rem]" style={delay(80)}>
-            Shelves of classics, <em className="italic text-gold-deep">open to every reader here.</em>
+            {c.shelvesTitle[0]} <em className="italic text-gold-deep">{c.shelvesTitle[1]}</em>
           </h2>
           <p className="lit-reveal mx-auto mt-7 max-w-md text-[16px] leading-[1.75] text-sepia lg:mx-0" style={delay(160)}>
-            Every account on a server shares its Public Library: public-domain books in English and Portuguese, and anything readers choose to publish.
-            Request what is missing and vote for the requests you want most.
+            {c.shelvesText}
           </p>
           <dl className="lit-reveal mx-auto mt-9 grid max-w-md gap-3 text-left text-[14px] lg:mx-0" style={delay(220)}>
-            {[
-              ["Sources", "Project Gutenberg · Standard Ebooks · Wikisource"],
-              ["Shelved by", "Eleven sections, from philosophy to children’s books"],
-              ["Suggested", "Recommended for you, from the books you read"],
-            ].map(([k, v]) => (
+            {c.shelvesFacts.map(([k, v]) => (
               <div key={k} className="grid grid-cols-[6.5rem_1fr] gap-3 border-t border-ink/15 pt-3">
                 <dt className="font-literary text-[15px] italic text-gold-deep">{k}</dt>
                 <dd className="text-sepia">{v}</dd>
               </div>
             ))}
           </dl>
+          <p className="lit-reveal mx-auto mt-8 max-w-md lg:mx-0" style={delay(260)}>
+            <a href={c.classicsLink} className="lit-link font-medium text-gold-deep">
+              {c.classicsCta} &rarr;
+            </a>
+          </p>
         </div>
 
         <div className="lit-reveal lg:col-span-8 lg:col-start-5 lg:pt-8" style={delay(120)}>
-          <nav aria-label="Public Library sections">
+          <nav aria-label={c.shelvesNav}>
             {rows.map(([visibility, keys], r) => (
               <div key={r} className={`${visibility} ${r === 1 ? "mt-10" : ""} flex-col`}>
                 <ul className="flex items-end justify-center gap-[3px] px-2">
                   {keys.map((key) => {
                     const s = SPINES[THEME_ORDER.indexOf(key)];
-                    const t = THEME_INFO[key];
+                    const t = theme(key);
                     return (
                       <li key={key} className="flex">
                         <Link
@@ -598,7 +573,7 @@ function Shelves() {
             {caption}
           </p>
           <p className="mt-2 text-center text-[13px] text-sepia/90">
-            What is on the shelves depends on this server: its administrator chooses what to import.
+            {c.shelvesNote}
           </p>
         </div>
       </div>
@@ -609,6 +584,7 @@ function Shelves() {
 /* ------------------------------------------------------------------------------------------------ */
 
 function Finale({ signupOpen }: { signupOpen: boolean }) {
+  const c = useCopy();
   return (
     <section aria-labelledby="closing-title" className="relative isolate bg-midnight">
       <Edge className="text-midnight" mirror />
@@ -635,12 +611,10 @@ function Finale({ signupOpen }: { signupOpen: boolean }) {
       <div className="mx-auto flex max-w-[1240px] flex-col items-center px-5 pb-36 pt-36 text-center sm:px-8 lg:pb-48 lg:pt-52">
         <Fleuron className="lit-reveal w-28 text-gold/70" />
         <h2 id="closing-title" className="lit-title lit-reveal mt-7 max-w-4xl text-[3.1rem] text-ivory sm:text-[4.5rem] lg:text-[5.6rem]" style={delay(100)}>
-          Your next chapter <em className="italic text-gold">begins here.</em>
+          {c.finaleTitle[0]} <em className="italic text-gold">{c.finaleTitle[1]}</em>
         </h2>
         <p className="lit-reveal mt-7 max-w-xl text-[17px] leading-[1.75] text-parchment/85" style={delay(180)}>
-          {signupOpen
-            ? "Make an account on this server, add your first book, and open it on whatever is closest."
-            : "Sign in, and the book you were reading opens where you left it."}
+          {signupOpen ? c.finaleOpen : c.finaleClosed}
         </p>
         <div className="lit-reveal" style={delay(260)}>
           <Actions signupOpen={signupOpen} className="mt-10 justify-center" />
@@ -650,14 +624,8 @@ function Finale({ signupOpen }: { signupOpen: boolean }) {
   );
 }
 
-const COLOPHON: { title: string; text: ReactNode }[] = [
-  { title: "Your files, your server", text: "Books, notes and reading history are kept by this server, on its disk or in its own storage bucket." },
-  { title: "Works offline", text: "The library opens without a connection, and books you have opened keep working." },
-  { title: "An Android app, no store needed", text: "Installed straight from the server, and it keeps itself up to date." },
-  { title: "Fits in with your other apps", text: "An OPDS catalog, KOReader progress sync, and imports from Goodreads and Calibre." },
-];
-
 function Colophon({ signupOpen }: { signupOpen: boolean }) {
+  const c = useCopy();
   return (
     <footer className="border-t border-gold/15 bg-midnight">
       <div className="mx-auto max-w-[1240px] px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-16 sm:px-8 lg:pt-20">
@@ -668,16 +636,16 @@ function Colophon({ signupOpen }: { signupOpen: boolean }) {
               <img src={wordmark} alt="BookRaven" width={98} height={16} loading="lazy" className="h-4 w-auto" />
             </p>
             <p className="mx-auto mt-5 max-w-xs font-literary text-[18px] italic leading-snug text-silver lg:mx-0">
-              A self-hosted reader for ebooks, PDFs and comics.
+              {c.tagline}
             </p>
           </div>
           <div className="lg:col-span-8">
-            <h2 className="lit-eyebrow text-center text-gold lg:text-left">Colophon</h2>
+            <h2 className="lit-eyebrow text-center text-gold lg:text-left">{c.colophonTitle}</h2>
             <dl className="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2">
-              {COLOPHON.map((c) => (
-                <div key={c.title} className="border-t border-gold/15 pt-4">
-                  <dt className="font-literary text-[19px] font-semibold text-ivory">{c.title}</dt>
-                  <dd className="mt-1.5 text-[14px] leading-relaxed text-silver">{c.text}</dd>
+              {c.colophon.map((item) => (
+                <div key={item.title} className="border-t border-gold/15 pt-4">
+                  <dt className="font-literary text-[19px] font-semibold text-ivory">{item.title}</dt>
+                  <dd className="mt-1.5 text-[14px] leading-relaxed text-silver">{item.text}</dd>
                 </div>
               ))}
             </dl>
@@ -687,19 +655,26 @@ function Colophon({ signupOpen }: { signupOpen: boolean }) {
         <div className="mt-16 flex flex-col items-center gap-6 border-t border-gold/15 pt-8 text-[13px] text-silver lg:flex-row lg:justify-between">
           <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-7 gap-y-2">
             <Link to="/login" className="hover:text-ivory">
-              Sign in
+              {c.signIn}
             </Link>
             {signupOpen && (
               <Link to="/signup" className="hover:text-ivory">
-                Create account
+                {c.createAccount}
               </Link>
             )}
+            <a href={c.classicsLink} className="hover:text-ivory">
+              {c.classicsShort}
+            </a>
+            <a href={c.otherHome} hrefLang={c.otherLang} lang={c.otherLang} className="hover:text-ivory">
+              {c.otherLabel}
+            </a>
             <a href="https://github.com/Pablokaer/BookRaven" className="hover:text-ivory" rel="noopener noreferrer" target="_blank">
-              Source code<span className="sr-only"> (opens GitHub in a new tab)</span>
+              {c.sourceCode}
+              <span className="sr-only"> {c.newTab}</span>
             </a>
           </nav>
           <p className="max-w-xl text-center text-[12px] leading-relaxed text-silver/75 lg:text-right">
-            Engravings by Gustave Doré for Edgar Allan Poe&rsquo;s <i>The Raven</i> (1884), in the public domain. Set in Cormorant Garamond and Inter.
+            {c.credits[0]} <i>The Raven</i> {c.credits[1]}
           </p>
         </div>
       </div>

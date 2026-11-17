@@ -20,6 +20,15 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-17-classics-pages",
+    date: "2026-11-17",
+    title: "Classics anyone can find",
+    items: [
+      "Every public-domain classic in the Public Library now has its own page that anyone can open, even without an account, at /classics. Share one with a friend, and \"Read free\" brings them straight to the book.",
+      "The front page is also in Portuguese, at /pt.",
+    ],
+  },
+  {
     id: "2026-11-16-admin-account-filters",
     date: "2026-11-16",
     title: "Find accounts faster",
