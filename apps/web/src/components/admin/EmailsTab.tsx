@@ -1,5 +1,6 @@
-import { AlertTriangle, Check, KeyRound, Mail, Repeat, Monitor, Send, Smartphone, Users } from "lucide-react";
+import { AlertTriangle, Check, KeyRound, Mail, Repeat, Monitor, Search, Send, Smartphone, Users, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getAccountOverview, listUsers, type AdminUser } from "../../lib/admin";
 import { ApiError } from "../../lib/api";
 import {
   audienceSize,
@@ -34,7 +35,7 @@ const DAYS = [7, 14, 30, 60, 90, 180];
  * Admin → Emails. Promotional: pick a template, edit it, watch the preview, test it on yourself,
  * then send. Account emails: see the emails the server sends on its own (welcome, password reset…).
  */
-export function EmailsTab() {
+export function EmailsTab({ sendTo = null }: { sendTo?: string | null }) {
   const { data } = useApi(listTemplates, []);
   const [view, setView] = useState<"promo" | "automations" | "account">("promo");
   if (!data) return <div className="h-96 animate-pulse rounded-2xl bg-elevated/50" />;
@@ -52,7 +53,7 @@ export function EmailsTab() {
         </button>
       </div>
       {view === "promo" ? (
-        <Composer templates={data.templates} mailEnabled={data.mailEnabled} />
+        <Composer templates={data.templates} mailEnabled={data.mailEnabled} sendTo={sendTo} />
       ) : view === "automations" ? (
         <AutomationsView />
       ) : (
@@ -100,11 +101,12 @@ function AccountEmails() {
   );
 }
 
-function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mailEnabled: boolean }) {
-  const [templateId, setTemplateId] = useState<TemplateId>(templates[0]!.id);
+function Composer({ templates, mailEnabled, sendTo }: { templates: EmailTemplate[]; mailEnabled: boolean; sendTo: string | null }) {
+  // For one account ("Send email" on it): a free-form announcement to that account.
+  const [templateId, setTemplateId] = useState<TemplateId>(() => (sendTo && templates.some((t) => t.id === "announcement") ? "announcement" : templates[0]!.id));
   const template = templates.find((t) => t.id === templateId)!;
   const [content, setContent] = useState<CampaignContent>(template.defaults);
-  const [audience, setAudience] = useState<Audience>(template.audience);
+  const [audience, setAudience] = useState<Audience>(() => (sendTo ? { segment: "accounts", days: 30, userIds: [sendTo] } : template.audience));
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState<"test" | "send" | null>(null);
   const { data: campaigns, reload: reloadCampaigns } = useApi(listCampaigns, [], { fallback: [] });
@@ -116,7 +118,8 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
     if (edited && !window.confirm("Switch template? Your edits to this one are lost.")) return;
     setTemplateId(t.id);
     setContent(t.defaults);
-    setAudience(t.audience);
+    // Picked accounts stay picked.
+    if (audience.segment !== "accounts") setAudience(t.audience);
   };
 
   const { preview, error: previewError } = useEmailPreview(templateId, content);
@@ -227,7 +230,7 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
                     name="segment"
                     className="mt-1 accent-[var(--color-primary)]"
                     checked={audience.segment === s}
-                    onChange={() => setAudience((a) => ({ ...a, segment: s }))}
+                    onChange={() => setAudience((a) => ({ ...a, segment: s, userIds: s === "accounts" ? (a.userIds ?? []) : undefined }))}
                   />
                   <span>
                     <span className="block text-sm font-medium">{SEGMENT_LABELS[s].label}</span>
@@ -236,6 +239,9 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
                 </label>
               ))}
             </div>
+            {audience.segment === "accounts" && (
+              <AccountPicker ids={audience.userIds ?? []} onChange={(userIds) => setAudience((a) => ({ ...a, userIds }))} />
+            )}
             {SEGMENT_LABELS[audience.segment].usesDays && (
               <Field label="Quiet for at least">
                 <select className="input w-full sm:w-48" value={audience.days} onChange={(e) => setAudience((a) => ({ ...a, days: Number(e.target.value) }))}>
@@ -285,6 +291,99 @@ function Composer({ templates, mailEnabled }: { templates: EmailTemplate[]; mail
           </p>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/** "Specific accounts": search by name or email and pick; unsubscribed accounts are marked (they won't receive it). */
+function AccountPicker({ ids, onChange }: { ids: string[]; onChange: (ids: string[]) => void }) {
+  const [known, setKnown] = useState<Record<string, AdminUser>>({});
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<AdminUser[]>([]);
+
+  // Accounts picked elsewhere ("Send email" on an account) arrive as ids only.
+  useEffect(() => {
+    for (const id of ids) {
+      if (known[id]) continue;
+      getAccountOverview(id).then(
+        (o) => setKnown((k) => ({ ...k, [id]: o.account })),
+        () => {},
+      );
+    }
+  }, [ids, known]);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) return setFound([]);
+    let live = true;
+    const t = setTimeout(() => {
+      listUsers({ q: term }).then(
+        (users) => live && setFound(users.slice(0, 8)),
+        () => live && setFound([]),
+      );
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [q]);
+
+  const add = (u: AdminUser) => {
+    setKnown((k) => ({ ...k, [u.id]: u }));
+    if (!ids.includes(u.id)) onChange([...ids, u.id]);
+    setQ("");
+    setFound([]);
+  };
+
+  return (
+    <div className="space-y-2">
+      {ids.length > 0 && (
+        <ul className="flex flex-wrap gap-2" aria-label="Picked accounts">
+          {ids.map((id) => {
+            const u = known[id];
+            return (
+              <li key={id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line bg-elevated py-1 pl-3 pr-1.5 text-sm">
+                <span className="truncate">{u ? u.name || u.email : "…"}</span>
+                {u && u.name && <span className="hidden truncate text-xs text-muted sm:inline">{u.email}</span>}
+                {u?.optedOut && <span className="rounded-full bg-amber-400/15 px-1.5 text-[11px] text-amber-200">unsubscribed</span>}
+                <button
+                  type="button"
+                  className="rounded-full p-0.5 text-muted hover:text-fg"
+                  aria-label={`Remove ${u?.email ?? "account"}`}
+                  onClick={() => onChange(ids.filter((x) => x !== id))}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+        <input className="input w-full pl-9" placeholder="Add an account by name or email" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Find an account" />
+        {found.length > 0 && (
+          <ul className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-line bg-elevated py-1 shadow-pop" role="listbox">
+            {found.map((u) => (
+              <li key={u.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={ids.includes(u.id)}
+                  disabled={ids.includes(u.id)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-white/5 disabled:opacity-50"
+                  onClick={() => add(u)}
+                >
+                  <span className="min-w-0 flex-1 truncate">
+                    {u.name || u.email} {u.name && <span className="text-xs text-muted">{u.email}</span>}
+                  </span>
+                  {u.optedOut && <span className="shrink-0 text-[11px] text-amber-200">unsubscribed</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -380,6 +479,7 @@ function CampaignHistory({ campaigns, templates }: { campaigns: Campaign[] | nul
               </div>
               <div className="text-xs text-muted">
                 {name(c.template)} · {SEGMENT_LABELS[c.audience.segment]?.label ?? c.audience.segment}
+                {c.audience.segment === "accounts" && c.audience.userIds ? ` (${c.audience.userIds.length})` : ""}
                 {SEGMENT_LABELS[c.audience.segment]?.usesDays ? ` (${c.audience.days} days)` : ""} · {timeAgo(c.createdAt)}
                 {c.createdBy ? ` · by ${c.createdBy}` : ""}
               </div>

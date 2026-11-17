@@ -123,4 +123,24 @@ describe("promotional emails", () => {
     expect((await api(quitter, "PUT", "/api/me/email-preferences", { promotional: true })).statusCode).toBe(204);
     expect((await api(a, "POST", "/api/admin/emails/audience", all)).json().count).toBe(withoutQuitter + 1);
   });
+
+  it("sends to the accounts the administrator picked, and only to them", async () => {
+    const a = await admin();
+    const one = await signUp(undefined, "Una Picked");
+    const two = await signUp(undefined, "Dos Picked");
+    const quiet = await signUp(undefined, "Tres Quiet");
+    await api(quiet, "PUT", "/api/me/email-preferences", { promotional: false });
+    const audience = { segment: "accounts", days: 30, userIds: [one.id, two.id, quiet.id] };
+    expect((await api(a, "POST", "/api/admin/emails/audience", audience)).json().count).toBe(2);
+    expect((await api(a, "POST", "/api/admin/emails/audience", { segment: "accounts", days: 30 })).json().count).toBe(0);
+
+    const before = outbox.length;
+    const res = await api(a, "POST", "/api/admin/emails/send", { ...draft("announcement", { subject: "Just for you, {name}" }), audience: { ...audience, userIds: [one.id] } });
+    expect(res.statusCode).toBe(202);
+    expect(res.json().recipients).toBe(1);
+    await campaignDone();
+    const sent = outbox.slice(before);
+    expect(sent.map((m) => m.to)).toEqual([one.email]);
+    expect(sent[0]!.subject).toBe("Just for you, Una");
+  });
 });

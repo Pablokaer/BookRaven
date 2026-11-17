@@ -16,9 +16,22 @@ export type ReleaseNote = {
   date: string;
   title: string;
   items: string[];
+  /** Only administrators see it (changes to the Admin page). */
+  admin?: true;
 };
 
 export const RELEASE_NOTES: ReleaseNote[] = [
+  {
+    id: "2026-11-17-admin-account-page",
+    date: "2026-11-17",
+    admin: true,
+    title: "Each reader's routine, and emails to one reader",
+    items: [
+      "Admin → Accounts: click an account to see when in the day and the week it uses BookRaven, what it is reading, what it uploaded, its devices and the emails it got.",
+      "Admin → Emails can now go to specific accounts: pick them in Who receives it, or use Send email on an account.",
+      "The Upload and share email now goes out on its own one day after sign-up to accounts that haven't uploaded a book.",
+    ],
+  },
   {
     id: "2026-11-17-classics-pages",
     date: "2026-11-17",
@@ -31,6 +44,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
   {
     id: "2026-11-16-admin-account-filters",
     date: "2026-11-16",
+    admin: true,
     title: "Find accounts faster",
     items: [
       "For administrators: Admin → Accounts can now be filtered by number of books, by whether the account was ever active and by when it was last active, and sorted by most recently active or most books.",
@@ -39,6 +53,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
   {
     id: "2026-11-16-admin-last-active",
     date: "2026-11-16",
+    admin: true,
     title: "When each account was last active",
     items: [
       "For administrators: Admin → Accounts now shows when each account last used BookRaven, on the web, the Android app, KOReader or an OPDS reader.",
@@ -47,6 +62,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
   {
     id: "2026-11-16-email-automations",
     date: "2026-11-16",
+    admin: true,
     title: "Automatic emails for administrators",
     items: [
       "For administrators: Admin → Emails → Automations sends emails on its own, like a nudge back to a book left halfway or a note after a long absence. Each one is turned on separately, with its own text and preview.",
@@ -65,6 +81,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
   {
     id: "2026-11-11-centered-admin-cards",
     date: "2026-11-11",
+    admin: true,
     title: "Tidier admin numbers",
     items: [
       "For administrators: the numbers at the top of the Admin page (accounts, books, storage, public books, open requests) are now centred in their cards.",
@@ -452,14 +469,18 @@ const FIRST_VISIT_DAYS = 14;
 /** The window shows at most this many notes. */
 export const MAX_SHOWN = 6;
 
-/** The notes to show, newest first, given the id of the newest one already seen (null: none yet). */
-export function unseenNotes(notes: ReleaseNote[], lastSeen: string | null): ReleaseNote[] {
+/**
+ * The notes to show, newest first, given the id of the newest one already seen (null: none yet).
+ * Notes for administrators are left out for everyone else (`lastSeen` may still be one of them).
+ */
+export function unseenNotes(notes: ReleaseNote[], lastSeen: string | null, isAdmin = false): ReleaseNote[] {
   if (!notes.length || lastSeen === notes[0]!.id) return [];
+  const forReader = (list: ReleaseNote[]) => (isAdmin ? list : list.filter((n) => !n.admin)).slice(0, MAX_SHOWN);
   const seenAt = lastSeen ? notes.findIndex((n) => n.id === lastSeen) : -1;
-  if (seenAt > 0) return notes.slice(0, Math.min(seenAt, MAX_SHOWN));
+  if (seenAt > 0) return forReader(notes.slice(0, seenAt));
   // First visit (or the seen note was removed): only the recent ones.
   const newest = Date.parse(notes[0]!.date);
-  return notes.filter((n) => newest - Date.parse(n.date) <= FIRST_VISIT_DAYS * 86_400_000).slice(0, MAX_SHOWN);
+  return forReader(notes.filter((n) => newest - Date.parse(n.date) <= FIRST_VISIT_DAYS * 86_400_000));
 }
 
 const KEY = "readsync.whatsNewSeen";

@@ -31,6 +31,7 @@ function lazyPage<M extends Record<K, ComponentType<any>>, K extends keyof M>(lo
 // The library views open the app and load with it; the other pages come when first visited
 // (or when the browser is idle, see prefetchPages), so the first screen downloads less.
 const AdminPage = lazyPage(() => import("./pages/AdminPage"), "AdminPage");
+const AdminAccountPage = lazyPage(() => import("./pages/AdminAccountPage"), "AdminAccountPage");
 const ClubsPage = lazyPage(() => import("./pages/ClubPages"), "ClubsPage");
 const ClubPage = lazyPage(() => import("./pages/ClubPages"), "ClubPage");
 const ClubInvitePage = lazyPage(() => import("./pages/ClubPages"), "ClubInvitePage");
@@ -325,6 +326,7 @@ const SignedInApp = memo(function SignedInApp({ userId, name, email, createdAt }
               <Route path="profile" element={<ProfilePage user={user} />} />
               <Route path="stats" element={<StatsPage />} />
               <Route path="admin" element={<AdminPage />} />
+              <Route path="admin/users/:id" element={<AdminAccountPage />} />
               <Route path="download" element={<DownloadPage />} />
               <Route path="clubs" element={<ClubsPage />} />
               <Route path="clubs/join/:token" element={<ClubInvitePage />} />

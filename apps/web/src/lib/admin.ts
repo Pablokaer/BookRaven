@@ -27,6 +27,32 @@ export type AdminUser = {
   quotaOverride: number | null;
   blocked: boolean;
   blockedReason: string | null;
+  /** Unsubscribed from promotional emails (campaigns and automations skip the account). */
+  optedOut: boolean;
+  emailVerified: boolean;
+};
+
+/** One account's page in Admin → Accounts (GET /api/admin/users/:id/overview). Hours are UTC instants. */
+export type AccountOverview = {
+  account: AdminUser;
+  /** Each hour (start) in which the account used the app, last 90 days. */
+  activityHours: string[];
+  /** Seconds read in each hour, last 90 days. */
+  readingHours: { hour: string; seconds: number }[];
+  totals: { readingSeconds: number; finished: number; readingDays: number };
+  reading: { id: string; title: string; author: string | null; percentage: number; updatedAt: string; device: string | null }[];
+  books: {
+    uploads: number;
+    added: number;
+    public: number;
+    recent: { id: string; title: string; author: string | null; format: string; sizeBytes: number; createdAt: string; added: boolean; isPublic: boolean }[];
+  };
+  devices: {
+    sessions: { userAgent: string | null; createdAt: string; lastUsedAt: string }[];
+    appPasswords: { name: string; createdAt: string; lastUsedAt: string | null }[];
+    readers: { name: string; lastUsedAt: string }[];
+  };
+  emails: { kind: string; name: string; sentAt: string }[];
 };
 
 export type ReportReason = "copyright" | "illegal" | "offensive" | "spam" | "other";
@@ -69,6 +95,7 @@ export const listUsers = (filters: UserFilters | string = {}) => {
   for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== "") params.set(k, String(v));
   return apiJson<AdminUser[]>(`/api/admin/users?${params}`);
 };
+export const getAccountOverview = (id: string) => apiJson<AccountOverview>(`/api/admin/users/${encodeURIComponent(id)}/overview`);
 export const updateUser = (id: string, patch: { quotaMb?: number | null; blocked?: boolean; blockedReason?: string | null }) =>
   apiOk(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const resetUserPassword = (id: string) => apiJson<{ password: string }>(`/api/admin/users/${id}/reset-password`, { method: "POST" });
