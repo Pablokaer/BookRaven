@@ -23,6 +23,8 @@ export type AdminUser = {
   isAdmin: boolean;
   /** Effective limit (null = unlimited). */
   quotaBytes: number | null;
+  /** The paid plan, while its subscription gives storage. */
+  plan: string | null;
   /** Set when an administrator changed this account's limit. */
   quotaOverride: number | null;
   blocked: boolean;
