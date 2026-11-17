@@ -6,6 +6,7 @@ import { allowedOrigins, config, googleEnabled, turnstileEnabled } from "./confi
 import { pool } from "./db.js";
 import { mailEnabled } from "./lib/mailer.js";
 import { connectionCount } from "./lib/events.js";
+import { noteActivity } from "./lib/activity.js";
 import { jsonEtag } from "./lib/http.js";
 import { learnSecretRoute, log, RequestLogController } from "./lib/log.js";
 import { authRoutes } from "./routes/auth.js";
@@ -48,6 +49,11 @@ export async function buildServer() {
   });
   app.addHook("onRoute", learnSecretRoute);
   app.addHook("onSend", jsonEtag);
+  // "Last active" in Admin: any signed-in request (session, bearer token or app password), noted
+  // after it was answered so it never waits for the write.
+  app.addHook("onResponse", async (request) => {
+    if (request.user) void noteActivity(request.user.id);
+  });
 
   await app.register(cors, {
     origin: allowedOrigins,

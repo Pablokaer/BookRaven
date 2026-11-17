@@ -6,7 +6,6 @@ import { bearer, captcha } from "better-auth/plugins";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { allowedOrigins, config, googleEnabled, turnstileEnabled } from "./config.js";
 import { pool } from "./db.js";
-import { noteActivity } from "./lib/activity.js";
 import { TtlCache } from "./lib/cache.js";
 import { forgetAppPasswords } from "./lib/devices.js";
 import { resetPasswordEmail, verifyEmailEmail, welcomeEmail } from "./lib/emails.js";
@@ -194,5 +193,4 @@ export async function requireUser(request: FastifyRequest, reply: FastifyReply) 
     return reply.code(403).send({ error: "account_blocked" });
   }
   request.user = found.user;
-  await noteActivity(found.user.id);
 }
