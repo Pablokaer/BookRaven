@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { query } from "../src/db.js";
 import { outbox } from "../src/lib/mailer.js";
-import { adminSession, api, fakePdf, signUp, upload, type TestUser } from "./helpers.js";
+import { forgetRecentActivity } from "../src/lib/activity.js";
+import { adminSession, api, fakePdf, getApp, signUp, upload, type TestUser } from "./helpers.js";
 
 let adminUser: TestUser | null = null;
 const admin = async () => (adminUser ??= await adminSession());
@@ -41,15 +42,41 @@ describe("admin panel", () => {
     expect((await api(a, "GET", "/api/admin/users?activity=sometimes")).statusCode).toBe(400);
   });
 
-  it("shows when each account last used the app", async () => {
+  it("shows when each account last used the app, signed in or through an e-reader", async () => {
     const a = await admin();
     const u = await signUp();
-    const find = async () => (await api(a, "GET", `/api/admin/users?q=${encodeURIComponent(u.email)}`)).json()[0];
+    const { password } = (await api(u, "POST", "/api/app-passwords", { name: "Kobo" })).json();
+    const lastSeen = async (): Promise<string | null> =>
+      (await api(a, "GET", `/api/admin/users?q=${encodeURIComponent(u.email)}`)).json()[0].lastSeenAt;
+    const forget = async () => {
+      await query(`DELETE FROM user_activity WHERE user_id = $1`, [u.id]);
+      forgetRecentActivity();
+    };
+    // Noted after the answer, without making the request wait: give the write a moment.
+    const seenSoon = async () => {
+      for (let i = 0; i < 50; i++) {
+        const seen = await lastSeen();
+        if (seen) return seen;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return null;
+    };
+
+    // Creating the app password was noted too: let that write land before starting clean.
+    expect(await seenSoon()).toBeTruthy();
+    await forget();
+    expect(await lastSeen()).toBeNull();
     const before = Date.now();
     expect((await api(u, "GET", "/api/me")).statusCode).toBe(200);
-    const seen = (await find()).lastSeenAt;
+    const seen = await seenSoon();
     expect(seen).toBeTruthy();
-    expect(new Date(seen).getTime()).toBeGreaterThanOrEqual(before - 5000);
+    expect(new Date(seen!).getTime()).toBeGreaterThanOrEqual(before - 5000);
+
+    await forget();
+    const basic = Buffer.from(`${u.email}:${password}`).toString("base64");
+    const opds = await (await getApp()).inject({ method: "GET", url: "/opds", headers: { authorization: `Basic ${basic}` } });
+    expect(opds.statusCode).toBe(200);
+    expect(await seenSoon()).toBeTruthy();
   });
 
   it("sets a per-account quota, blocks and unblocks", async () => {
