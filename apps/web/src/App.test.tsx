@@ -134,13 +134,25 @@ describe("routing by sign-in state", () => {
   it("describes the site to search engines on the landing page only", async () => {
     await open("/", signedOut);
     const ld = () => document.head.querySelector('script[type="application/ld+json"]');
-    expect(document.title).toContain("Self-hosted ebook, PDF and comic reader");
+    expect(document.title).toContain("Read ebooks, PDFs and comics online");
     const data = JSON.parse(ld()!.textContent!);
     expect(data["@graph"].map((n: { "@type": string }) => n["@type"])).toEqual(["WebSite", "WebApplication"]);
     expect(data["@graph"][0].url).toBe(`${window.location.origin}/`);
 
     await act(async () => link("Sign in")!.click());
     expect(ld()).toBeNull();
+  });
+
+  it("shows the landing page in Portuguese at /pt", async () => {
+    await open("/pt", signedOut);
+    expect(landingTitle()?.textContent).toContain("Cada livro guarda um mundo");
+    expect(link("Criar uma conta")?.getAttribute("href")).toBe("/signup");
+    expect(link("Clássicos grátis")?.getAttribute("href")).toBe("/classics/pt");
+    expect(link("English")?.getAttribute("href")).toBe("/");
+    expect(document.documentElement.lang).toBe("pt-BR");
+    expect(document.title).toContain("Leia e-books, PDFs e quadrinhos online");
+    const data = JSON.parse(document.head.querySelector('script[type="application/ld+json"]')!.textContent!);
+    expect(data["@graph"][0].url).toBe(`${window.location.origin}/pt`);
   });
 
   it("goes from the landing page to the sign-in and sign-up forms", async () => {

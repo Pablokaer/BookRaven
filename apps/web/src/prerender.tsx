@@ -2,8 +2,10 @@ import { StrictMode, Suspense } from "react";
 import { renderToString } from "react-dom/server";
 import { StaticRouter } from "react-router";
 import { LandingPage } from "./pages/LandingPage";
+import { LANDING_COPY, type LandingLang } from "./pages/landingCopy";
 
 export { structuredDataJson } from "./lib/structuredData";
+export { LANDING_COPY } from "./pages/landingCopy";
 
 /**
  * The landing page as HTML, written into dist/landing.html at build time (scripts/prerender.mjs),
@@ -14,12 +16,12 @@ export { structuredDataJson } from "./lib/structuredData";
  * Returns the page and, apart, the preloads React writes ahead of it for the images it renders
  * (the plates above the fold): they belong in <head>, and #root must hold only the page.
  */
-export function renderLanding({ signupOpen }: { signupOpen: boolean }) {
+export function renderLanding({ signupOpen, lang = "en" }: { signupOpen: boolean; lang?: LandingLang }) {
   const html = renderToString(
     <StrictMode>
-      <StaticRouter location="/">
+      <StaticRouter location={LANDING_COPY[lang].home}>
         <Suspense fallback={null}>
-          <LandingPage signupDefault={signupOpen} />
+          <LandingPage signupDefault={signupOpen} lang={lang} />
         </Suspense>
       </StaticRouter>
     </StrictMode>,

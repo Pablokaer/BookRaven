@@ -14,8 +14,9 @@
 	@compress not path /api/events
 	encode @compress zstd gzip
 
-	# API (auth, books, files, progress, SSE), OPDS catalog and KOReader sync
-	@api path /api/* /opds /opds/* /kosync/*
+	# API (auth, books, files, progress, SSE), OPDS catalog, KOReader sync, and the pages search
+	# engines index: the public-domain classics and the sitemap (apps/api/src/routes/classics.ts)
+	@api path /api/* /opds /opds/* /kosync/* /classics /classics/* /sitemap.xml
 	handle @api {
 		reverse_proxy api:3000 {
 			# The API takes the client's address from here (rate limits, audit trail): only the one
@@ -41,9 +42,10 @@
 		file_server
 	}
 
-	# Search engines: only the front page is meant to be found. robots.txt lets crawlers fetch
-	# everything (a blocked page can't tell them not to index it, and Google needs the scripts and
-	# /api/config to draw the page); every other address says noindex in a header below.
+	# Search engines: the front page (English at /, Portuguese at /pt) and the classics are meant to
+	# be found (the sitemap, from the API, lists them). robots.txt lets crawlers fetch everything (a
+	# blocked page can't tell them not to index it, and Google needs the scripts and /api/config to
+	# draw the page); every other address says noindex in a header below.
 	handle /robots.txt {
 		header Content-Type "text/plain; charset=utf-8"
 		respond <<TXT
@@ -53,16 +55,6 @@
 			Sitemap: {$PUBLIC_URL}/sitemap.xml
 			TXT 200
 	}
-	handle /sitemap.xml {
-		header Content-Type "application/xml; charset=utf-8"
-		respond <<XML
-			<?xml version="1.0" encoding="UTF-8"?>
-			<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-			  <url><loc>{$PUBLIC_URL}/</loc></url>
-			</urlset>
-			XML 200
-	}
-
 	# Static frontend (SPA)
 	handle {
 		root * /srv
@@ -81,7 +73,14 @@
 			not header Cookie *session_token*
 		}
 		rewrite @landing /landing.html
+		# The same page in Portuguese
+		@landingPt {
+			path /pt
+			not header Cookie *session_token*
+		}
+		rewrite @landingPt /landing-pt.html
 		header / Vary "Cookie, Accept"
+		header /pt Vary "Cookie"
 		header @markdown Content-Type "text/markdown; charset=utf-8"
 		@mdfile path *.md
 		header @mdfile Content-Type "text/markdown; charset=utf-8"
@@ -89,7 +88,7 @@
 		# isn't a file is a real 404 (below), not the app shell answering 200 for everything.
 		@app {
 			not file
-			path /login /signup /reset-password /read/* /public /public/* /search /books/* /discover /shared /reading /uploads /import /collections /collections/* /favorites /profile /stats /admin /download /clubs /clubs/* /share/*
+			path /pt /login /signup /reset-password /read/* /public /public/* /search /books/* /discover /shared /reading /uploads /import /collections /collections/* /favorites /profile /stats /admin /download /clubs /clubs/* /share/*
 		}
 		rewrite @app /index.html
 		# The privacy policy and how to delete an account (apps/web/legal), linked from app stores
@@ -133,12 +132,13 @@
 	}
 
 	# The app's routes all answer with index.html, so the sign-in form, the reader and share links would
-	# all look like pages to a crawler: only the front page may be indexed, under one address
-	# (PUBLIC_URL), whatever query string a link added. The link-preview image stays fetchable
-	# without a noindex header for the chat apps and search engines that show it.
-	@noindex not path / /robots.txt /sitemap.xml /og-image.png
+	# all look like pages to a crawler: only the front page (each language under one address, whatever
+	# query string a link added) and the classics with their covers may be indexed. The link-preview
+	# image stays fetchable without a noindex header for the chat apps and search engines that show it.
+	@noindex not path / /pt /classics /classics/* /api/classics/* /robots.txt /sitemap.xml /og-image.png /icon-192.png
 	header @noindex X-Robots-Tag "noindex, nofollow"
 	header / Link `<{$PUBLIC_URL}/>; rel="canonical"`
+	header /pt Link `<{$PUBLIC_URL}/pt>; rel="canonical"`
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
