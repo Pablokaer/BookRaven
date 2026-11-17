@@ -62,6 +62,8 @@ describe("admin panel", () => {
       return null;
     };
 
+    // Creating the app password was noted too: let that write land before starting clean.
+    expect(await seenSoon()).toBeTruthy();
     await forget();
     expect(await lastSeen()).toBeNull();
     const before = Date.now();
