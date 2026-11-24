@@ -49,10 +49,12 @@ SELECT DISTINCT ON (s."userId") s."userId", signup_net(s."ipAddress"), u."create
  ORDER BY s."userId", s."createdAt"
 ON CONFLICT DO NOTHING;
 
--- 3. Accounts made while email confirmation was off and already in use count as confirmed, so
--- turning REQUIRE_EMAIL_VERIFICATION on doesn't ask every current reader to confirm at the next
--- sign-in. Unused ones still have to (and are deleted after UNVERIFIED_ACCOUNT_DAYS if they don't).
+-- 3. Accounts made while email confirmation was off and already in use (activity, a session or
+-- books) count as confirmed, so turning REQUIRE_EMAIL_VERIFICATION on doesn't ask every current
+-- reader to confirm at the next sign-in. Unused ones still have to (and are deleted after
+-- UNVERIFIED_ACCOUNT_DAYS if they don't).
 UPDATE "user" u SET "emailVerified" = true
  WHERE u."emailVerified" = false
    AND (EXISTS (SELECT 1 FROM user_activity a WHERE a.user_id = u.id)
+        OR EXISTS (SELECT 1 FROM session s WHERE s."userId" = u.id)
         OR EXISTS (SELECT 1 FROM book b WHERE b.user_id = u.id));
