@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen, Clock, Laptop, Mail, Send, ShieldCheck, Smartphone, Tablet, Upload } from "lucide-react";
+import { ArrowLeft, BookOpen, Clock, Laptop, Mail, Send, ShieldCheck, Smartphone, Tablet, Upload, Users } from "lucide-react";
 import { useMemo } from "react";
 import { Link, useParams } from "react-router";
 import { EmptyState } from "../components/books/BookBrowser";
@@ -453,6 +453,33 @@ export function AdminAccountPage() {
                 </li>
               ))}
             </ul>
+          )}
+        </Section>
+
+        <Section title="Possibly the same person" className="lg:col-span-2">
+          {data.linkedAccounts.length === 0 ? (
+            <p className="text-sm text-muted">No other account shares its inbox or its network.</p>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-muted">
+                Other accounts of the same inbox (dots or a +tag), or signed up or signed in from the same network. A shared network can also be a
+                family, a school or a mobile carrier.
+              </p>
+              <ul className="space-y-2 text-sm">
+                {data.linkedAccounts.map((l) => (
+                  <li key={l.id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <Users className="h-4 w-4 shrink-0 text-accent" />
+                    <Link to={`/admin/users/${encodeURIComponent(l.id)}`} className="min-w-0 truncate font-medium hover:text-accent hover:underline">
+                      {l.name || l.email}
+                    </Link>
+                    <span className="min-w-0 truncate text-xs text-muted">{l.email}</span>
+                    {l.sameInbox && <Badge tone="warn">same inbox</Badge>}
+                    {l.sameNetwork && <Badge>same network</Badge>}
+                    <span className="ml-auto shrink-0 text-xs text-muted">joined {shortDate(l.createdAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </Section>
       </div>

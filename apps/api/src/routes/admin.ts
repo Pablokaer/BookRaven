@@ -49,6 +49,7 @@ type UserRow = {
   used: string;
   quota_bytes: string | null;
   last_seen_at: Date | null;
+  linked: string;
   plan: string | null;
   status: string | null;
   blocked: boolean | null;
@@ -60,9 +61,17 @@ type UserRow = {
 /** One account row (list and account page): the columns, from "user" u, with what they join. */
 const USER_SQL = `SELECT u.id, u.name, u.email, u."createdAt", u."emailVerified", x.books, x.used,
               a.quota_bytes, a.blocked, a.blocked_reason, b.plan, b.status, ua.last_seen_at,
-              EXISTS (SELECT 1 FROM email_opt_out o WHERE o.user_id = u.id) AS opted_out
+              EXISTS (SELECT 1 FROM email_opt_out o WHERE o.user_id = u.id) AS opted_out, l.linked
        FROM "user" u
             CROSS JOIN LATERAL (SELECT count(*) AS books, COALESCE(SUM(size_bytes), 0) AS used FROM book bk WHERE bk.user_id = u.id) x
+            -- Other accounts of the same inbox (dots, +tag) or signed up from the same network (migration 029).
+            CROSS JOIN LATERAL (
+              SELECT count(*) AS linked FROM (
+                SELECT u2.id FROM "user" u2 WHERE email_key(u2.email) = email_key(u.email) AND u2.id <> u.id
+                UNION
+                SELECT s2.user_id FROM signup_ip s1 JOIN signup_ip s2 ON s2.net = s1.net WHERE s1.user_id = u.id AND s2.user_id <> u.id
+              ) z
+            ) l
             LEFT JOIN account_admin a ON a.user_id = u.id LEFT JOIN billing b ON b.user_id = u.id
             LEFT JOIN user_activity ua ON ua.user_id = u.id`;
 
@@ -86,6 +95,8 @@ function userDto(r: UserRow) {
     // Said no to promotional emails: campaigns and automations skip them.
     optedOut: r.opted_out,
     emailVerified: r.emailVerified,
+    // Other accounts of the same inbox or signed up from the same network: maybe one person.
+    linkedAccounts: Number(r.linked),
   };
 }
 
@@ -166,7 +177,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const id = request.params.id;
     const { rows } = await query<UserRow>(`${USER_SQL} WHERE u.id = $1`, [id]);
     if (!rows[0]) return reply.code(404).send({ error: "not_found" });
-    const [hours, reading, totals, progress, books, counts, sessions, appPasswords, readers, emails] = await Promise.all([
+    const [hours, reading, totals, progress, books, counts, sessions, appPasswords, readers, emails, linked] = await Promise.all([
       query<{ hour: Date }>(`SELECT hour FROM user_activity_hour WHERE user_id = $1 AND hour > now() - interval '90 days' ORDER BY hour`, [id]),
       query<{ hour: Date; seconds: number }>(
         `SELECT hour, sum(seconds)::int AS seconds FROM reading_activity
@@ -217,6 +228,26 @@ export async function adminRoutes(app: FastifyInstance) {
           WHERE l.user_id = $1 ORDER BY l.sent_at DESC LIMIT 20`,
         [id],
       ),
+      // Accounts that may be the same person: the same inbox (fulano+2@gmail.com), or signed up
+      // or signed in from a network this account signed up or signed in from.
+      query<{ id: string; name: string; email: string; createdAt: Date; why: string[] }>(
+        `WITH nets AS (
+           SELECT net FROM signup_ip WHERE user_id = $1
+           UNION SELECT signup_net("ipAddress") FROM session WHERE "userId" = $1
+         ), hits AS (
+           SELECT u2.id, 'inbox' AS why FROM "user" u2
+            WHERE email_key(u2.email) = (SELECT email_key(email) FROM "user" WHERE id = $1) AND u2.id <> $1
+           UNION
+           SELECT si.user_id, 'network' FROM signup_ip si WHERE si.net IN (SELECT net FROM nets WHERE net IS NOT NULL) AND si.user_id <> $1
+           UNION
+           SELECT s."userId", 'network' FROM session s
+            WHERE signup_net(s."ipAddress") IN (SELECT net FROM nets WHERE net IS NOT NULL) AND s."userId" <> $1
+         )
+         SELECT u.id, u.name, u.email, u."createdAt", array_agg(DISTINCT h.why ORDER BY h.why) AS why
+           FROM hits h JOIN "user" u ON u.id = h.id
+          GROUP BY u.id ORDER BY u."createdAt" DESC LIMIT 20`,
+        [id],
+      ),
     ]);
     const t = totals.rows[0]!;
     const c = counts.rows[0]!;
@@ -257,6 +288,14 @@ export async function adminRoutes(app: FastifyInstance) {
         kind: e.kind,
         name: e.kind === "campaign" ? (e.subject ?? "Promotional email") : (AUTOMATIONS[e.kind as AutomationId]?.name ?? e.kind),
         sentAt: e.sent_at.toISOString(),
+      })),
+      linkedAccounts: linked.rows.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        createdAt: new Date(u.createdAt).toISOString(),
+        sameInbox: u.why.includes("inbox"),
+        sameNetwork: u.why.includes("network"),
       })),
     };
   });

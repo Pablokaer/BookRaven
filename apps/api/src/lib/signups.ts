@@ -6,7 +6,9 @@ import { audit, log } from "./log.js";
 /**
  * Defences against accounts made by bots, besides the captcha (auth.ts) and the rate limits
  * (routes/auth.ts): throwaway email addresses are refused, and accounts that never confirmed
- * their email are deleted after a while.
+ * their email are deleted after a while. Against one person making many accounts: an address that
+ * reaches an existing account's inbox (dots, +tag) is refused, and so are sign-ups past
+ * SIGNUPS_PER_IP_PER_DAY from one network (email_key and signup_net, migration 029).
  */
 
 let disposable: Set<string> | null = null;
@@ -20,6 +22,36 @@ export function isDisposableEmail(email: string) {
     if (disposable.has(parts.slice(i).join("."))) return true;
   }
   return false;
+}
+
+/** The existing account whose inbox this address reaches (f.ulano+2@gmail.com → fulano@gmail.com), if any. */
+export async function accountWithSameInbox(email: string) {
+  const { rows } = await query<{ id: string }>(`SELECT id FROM "user" WHERE email_key(email) = email_key($1) LIMIT 1`, [email]);
+  return rows[0]?.id ?? null;
+}
+
+/** Whether this network (an IPv4 address, or an IPv6 /64) already made SIGNUPS_PER_IP_PER_DAY accounts in 24 hours. */
+export async function signupLimitReached(ip: string) {
+  const max = config.signupsPerIpPerDay;
+  if (max <= 0 || !ip) return false;
+  const { rows } = await query<{ n: string }>(
+    `SELECT count(*) AS n FROM signup_ip WHERE net = signup_net($1) AND created_at > now() - interval '24 hours'`,
+    [ip],
+  );
+  return Number(rows[0]?.n ?? 0) >= max;
+}
+
+/** Notes the network a new account signed up from (for the limit above and Admin → the account's page). */
+export async function noteSignup(userId: string, ip: string) {
+  await query(
+    `INSERT INTO signup_ip (user_id, net) SELECT $1, signup_net($2) WHERE signup_net($2) IS NOT NULL ON CONFLICT DO NOTHING`,
+    [userId, ip],
+  );
+}
+
+/** Forgets the networks accounts signed up from after 180 days. */
+export async function pruneSignupNetworks() {
+  await query(`DELETE FROM signup_ip WHERE created_at < now() - interval '180 days'`);
 }
 
 /**
@@ -44,10 +76,13 @@ export async function purgeUnverifiedAccounts(now = new Date()) {
   return rows.length;
 }
 
-/** Runs the purge now and every six hours (not under test, where the tests call it). */
+/** Runs the purge (and the sign-up networks' pruning) now and every six hours (not under test, where the tests call it). */
 export function schedulePurge() {
   if (config.isTest) return;
-  const run = () => purgeUnverifiedAccounts().catch((err) => log.error({ err }, "purging unverified accounts failed"));
+  const run = () => {
+    purgeUnverifiedAccounts().catch((err) => log.error({ err }, "purging unverified accounts failed"));
+    pruneSignupNetworks().catch((err) => log.error({ err }, "pruning sign-up networks failed"));
+  };
   void run();
   setInterval(run, 6 * 60 * 60 * 1000).unref();
 }

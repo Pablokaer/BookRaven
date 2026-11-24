@@ -232,6 +232,15 @@ function UsersTab({ onChanged }: { onChanged: () => void }) {
                       Blocked
                     </span>
                   )}
+                  {u.linkedAccounts > 0 && (
+                    <Link
+                      to={`/admin/users/${encodeURIComponent(u.id)}`}
+                      className="shrink-0 rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-200 hover:underline"
+                      title="Other accounts of the same inbox or signed up from the same network: maybe the same person"
+                    >
+                      +{u.linkedAccounts} linked
+                    </Link>
+                  )}
                 </div>
                 <div className="truncate text-xs text-muted">
                   {u.email} · joined {shortDate(u.createdAt)} ·{" "}
