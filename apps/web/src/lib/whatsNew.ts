@@ -22,6 +22,16 @@ export type ReleaseNote = {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    id: "2026-11-24-multiple-accounts",
+    date: "2026-11-24",
+    admin: true,
+    title: "Fewer accounts per person",
+    items: [
+      "Sign-up now refuses another address of an existing account's inbox (a Gmail address with dots or a +tag), and more than 3 new accounts from one network in a day.",
+      "Admin → Accounts marks accounts linked to others by inbox or network, and each account's page lists them under Possibly the same person.",
+    ],
+  },
+  {
     id: "2026-11-17-admin-account-page",
     date: "2026-11-17",
     admin: true,

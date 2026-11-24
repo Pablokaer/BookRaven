@@ -12,7 +12,7 @@ import { resetPasswordEmail, verifyEmailEmail, welcomeEmail } from "./lib/emails
 import { audit, log } from "./lib/log.js";
 import { sendMailInBackground } from "./lib/mailer.js";
 import { isAccountBlocked } from "./lib/moderation.js";
-import { isDisposableEmail } from "./lib/signups.js";
+import { accountWithSameInbox, isDisposableEmail, noteSignup, signupLimitReached } from "./lib/signups.js";
 
 /** The client's address: routes/auth.ts hands Better Auth Fastify's request.ip as X-Forwarded-For. */
 const clientIp = (from: { headers?: Headers } | null | undefined) => from?.headers?.get("x-forwarded-for") ?? "";
@@ -43,6 +43,8 @@ export const auth = betterAuth({
   },
   emailVerification: {
     sendOnSignUp: config.requireEmailVerification,
+    // Signing in before confirming sends the link again (the sign-in form says it was sent).
+    sendOnSignIn: config.requireEmailVerification,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
       sendMailInBackground(verifyEmailEmail(user, url));
@@ -76,9 +78,27 @@ export const auth = betterAuth({
               code: "DISPOSABLE_EMAIL",
             });
           }
+          // One person, many accounts: another address of the same inbox (fulano+2@gmail.com).
+          // The very same address is Better Auth's own "already exists" answer.
+          const sameInbox = config.blockEmailAliases ? await accountWithSameInbox(user.email) : null;
+          if (sameInbox) {
+            audit("auth.email_alias_refused", { email: user.email, existingUserId: sameInbox, ip: clientIp(ctx) }, "warn");
+            throw new APIError("BAD_REQUEST", {
+              message: "This email reaches the inbox of an account that already exists (dots and a +tag don't make a new address). Sign in with it instead.",
+              code: "EMAIL_ALIAS",
+            });
+          }
+          if (!config.adminEmails.includes(user.email.toLowerCase()) && (await signupLimitReached(clientIp(ctx)))) {
+            audit("auth.signup_limit", { email: user.email, ip: clientIp(ctx) }, "warn");
+            throw new APIError("TOO_MANY_REQUESTS", {
+              message: "Too many accounts were created from this network today. Please try again tomorrow.",
+              code: "SIGNUP_LIMIT",
+            });
+          }
         },
-        after: async (user) => {
+        after: async (user, ctx) => {
           audit("auth.account_created", { userId: user.id });
+          await noteSignup(user.id, clientIp(ctx)).catch((err) => log.warn({ err }, "noting the sign-up network failed"));
           sendMailInBackground(welcomeEmail(user));
         },
       },

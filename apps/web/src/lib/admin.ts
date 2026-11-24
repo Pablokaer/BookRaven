@@ -32,6 +32,8 @@ export type AdminUser = {
   /** Unsubscribed from promotional emails (campaigns and automations skip the account). */
   optedOut: boolean;
   emailVerified: boolean;
+  /** Other accounts of the same inbox (dots, +tag) or signed up from the same network. */
+  linkedAccounts: number;
 };
 
 /** One account's page in Admin → Accounts (GET /api/admin/users/:id/overview). Hours are UTC instants. */
@@ -55,6 +57,8 @@ export type AccountOverview = {
     readers: { name: string; lastUsedAt: string }[];
   };
   emails: { kind: string; name: string; sentAt: string }[];
+  /** Accounts that may be the same person: the same inbox, or the same network (sign-up or sign-in). */
+  linkedAccounts: { id: string; name: string; email: string; createdAt: string; sameInbox: boolean; sameNetwork: boolean }[];
 };
 
 export type ReportReason = "copyright" | "illegal" | "offensive" | "spam" | "other";

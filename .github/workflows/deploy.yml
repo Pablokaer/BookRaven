@@ -47,8 +47,13 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_AUTOMATIC_TAX: ${{ vars.STRIPE_AUTOMATIC_TAX }}
+          # Sign-up protection (README → Bot protection).
+          TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          REQUIRE_EMAIL_VERIFICATION: ${{ vars.REQUIRE_EMAIL_VERIFICATION }}
+          SIGNUPS_PER_IP_PER_DAY: ${{ vars.SIGNUPS_PER_IP_PER_DAY }}
         run: |
-          for key in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_AUTOMATIC_TAX; do
+          for key in STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET STRIPE_AUTOMATIC_TAX TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY REQUIRE_EMAIL_VERIFICATION SIGNUPS_PER_IP_PER_DAY; do
             if [ -n "${!key}" ]; then printf '%s=%s\n' "$key" "${!key}"; fi
           done | ssh vps "umask 077 && cat > '$APP_DIR/.env.incoming'"
           ssh vps bash -s -- "$APP_DIR" < infra/set-env.sh

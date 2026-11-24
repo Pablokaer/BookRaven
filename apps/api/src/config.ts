@@ -45,6 +45,13 @@ export const config = {
   /** Refuse sign-ups from throwaway email services (mailinator, 10minutemail...). */
   blockDisposableEmails: (process.env.BLOCK_DISPOSABLE_EMAILS ?? "true").toLowerCase() !== "false",
   /**
+   * New accounts per network (IPv4 address, or IPv6 /64) in 24 hours; 0 turns the limit off.
+   * Off under test, where every account comes from 127.0.0.1 (tests that need it set it).
+   */
+  signupsPerIpPerDay: Math.max(0, Number(process.env.SIGNUPS_PER_IP_PER_DAY ?? (process.env.NODE_ENV === "test" ? 0 : 3)) || 0),
+  /** Refuse sign-ups with an address that reaches an existing account's inbox (dots or a +tag). */
+  blockEmailAliases: (process.env.BLOCK_EMAIL_ALIASES ?? "true").toLowerCase() !== "false",
+  /**
    * Cloudflare Turnstile on sign-up and "Forgot password?": both keys set turns it on. The site
    * key is public (the web app shows the widget with it); the secret key stays on the server.
    */
